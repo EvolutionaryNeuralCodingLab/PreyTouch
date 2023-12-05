@@ -89,7 +89,6 @@ class HitPredictor:
                 self.detector.set_input_size(width, height)
 
         detection = self.detect_pogona_head(frame)
-
         return self.handle_detection(detection)
 
     def handle_detection(self, detection):
@@ -122,6 +121,9 @@ class HitPredictor:
             )
             if forecast is not None:
                 hit_point, hit_steps = self.predict_hit(forecast)
+
+        if config.is_predictor_experiment and detection is not None:
+            forecast, hit_point, hit_steps = detection, np.array([0, 0, 0, 0]), 1
 
         self.frame_num += 1
         self.forecasts.append(forecast)

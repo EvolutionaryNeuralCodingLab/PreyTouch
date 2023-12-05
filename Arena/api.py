@@ -1,4 +1,6 @@
 import io
+import time
+
 import cv2
 import json
 import warnings
@@ -29,6 +31,7 @@ app = Flask('ArenaAPI')
 cache = None
 arena_mgr = None
 periphery_mgr = None
+queue_app = None
 
 
 @app.route('/')
@@ -41,11 +44,16 @@ def index():
         cameras = list(config.cameras.keys())
     else:
         cameras = list(arena_mgr.units.keys())
+    if config.IS_ANALYSIS_ONLY:
+        toggels, feeders = [], []
+    else:
+        toggels, feeders = periphery_mgr.toggles, periphery_mgr.feeders
     return render_template('index.html', cameras=cameras, exposure=config.DEFAULT_EXPOSURE, arena_name=config.ARENA_NAME,
                            config=app_config, log_channel=config.ui_console_channel, reward_types=config.reward_types,
                            experiment_types=config.experiment_types, media_files=list_media(),
-                           max_blocks=config.api_max_blocks_to_show, psycho_files=get_psycho_files(),
-                           extra_time_recording=config.extra_time_recording,
+                           blank_rec_types=config.blank_rec_types,
+                           max_blocks=config.api_max_blocks_to_show, toggels=toggels, psycho_files=get_psycho_files(),
+                           extra_time_recording=config.extra_time_recording, feeders=feeders,
                            acquire_stop={'num_frames': 'Num Frames', 'rec_time': 'Record Time [sec]'})
 
 
@@ -63,7 +71,7 @@ def check():
         res['n_rewards'] = f'{rewards_dict["auto"]} ({rewards_dict["manual"]})'
     else:
         res.update({'temperature': None, 'n_strikes': 0, 'n_rewards': 0})
-    res['reward_left'] = cache.get(cc.REWARD_LEFT)
+    res['reward_left'] = periphery_mgr.get_feeders_counts()
     res['streaming_camera'] = arena_mgr.get_streaming_camera()
     res['schedules'] = arena_mgr.schedules
     res['cached_experiments'] = sorted([c.stem for c in Path(config.experiment_cache_path).glob('*.json')])
@@ -154,8 +162,10 @@ def delete_schedule():
 @app.route('/update_reward_count', methods=['POST'])
 def update_reward_count():
     data = request.json
+    feeder_name = data.get('name')
     reward_count = int(data.get('reward_count', 0))
-    cache.set(cc.REWARD_LEFT, reward_count)
+    arena_mgr.logger.info(f'Update {feeder_name} to {reward_count}')
+    periphery_mgr.update_reward_count(feeder_name, reward_count)
     return Response('ok')
 
 
@@ -180,6 +190,9 @@ def get_current_animal():
     if config.DISABLE_DB:
         return jsonify({})
     animal_id = cache.get(cc.CURRENT_ANIMAL_ID)
+    if not animal_id:
+        arena_mgr.logger.warning('No animal ID is set')
+        return jsonify({})
     animal_dict = arena_mgr.orm.get_animal_settings(animal_id)
     return jsonify(animal_dict)
 
@@ -277,13 +290,10 @@ def reward():
 
 @app.route('/arena_switch/<name>/<state>')
 def arena_switch(name, state):
-    d = {
-        'ir': config.IR_NAME,
-        'led': config.LED_NAME
-    }
-    assert name in d.keys(), f'unknown device: {name}'
-    assert int(state) in [0, 1], f'state must be 0 or 1; received {state}'
-    periphery_mgr.switch(d[name], int(state))
+    state = int(state)
+    assert state in [0, 1], f'state must be 0 or 1; received {state}'
+    arena_mgr.logger.debug(f'Turn {name} {"on" if state == 1 else "off"}')
+    periphery_mgr.switch(name, state)
     return Response('ok')
 
 
@@ -523,6 +533,36 @@ def play():
     return render_template('management/play_video.html')
 
 
+@app.route('/restart')
+def restart():
+    arena_mgr.arena_shutdown()
+    queue_app.put('restart')
+    return Response('ok')
+
+
+def start_app(queue):
+    global cache, arena_mgr, periphery_mgr, queue_app
+    queue_app = queue
+
+    import torch
+    torch.cuda.set_device(0)
+    logging.getLogger('werkzeug').setLevel(logging.WARNING)
+    init_logger_config()
+    arena_handler = create_arena_handler('API')
+    app.logger.addHandler(arena_handler)
+    app.logger.setLevel(logging.INFO)
+
+    cache = RedisCache()
+    if not config.IS_ANALYSIS_ONLY:
+        arena_mgr = ArenaManager()
+        periphery_mgr = PeripheryIntegrator()
+        utils.turn_display_off()
+        if arena_mgr.is_cam_trigger_setup() and not config.DISABLE_PERIPHERY:
+            periphery_mgr.cam_trigger(1)
+
+    app.run(host='0.0.0.0', port=config.FLASK_PORT, debug=False)
+
+
 if __name__ == "__main__":
     assert pytest.main(['-x', 'tests']) == 0
 
@@ -548,19 +588,19 @@ if __name__ == "__main__":
 
     mp.freeze_support()
     mp.set_start_method('spawn', force=True)
+    queue_app = mp.Queue()
 
-    import torch
-    torch.cuda.set_device(0)
-    logging.getLogger('werkzeug').setLevel(logging.WARNING)
-    init_logger_config()
-    arena_handler = create_arena_handler('API')
-    app.logger.addHandler(arena_handler)
-    app.logger.setLevel(logging.INFO)
-    cache = RedisCache()
-    if not config.IS_ANALYSIS_ONLY:
-        arena_mgr = ArenaManager()
-        periphery_mgr = PeripheryIntegrator()
-        periphery_mgr.cam_trigger(1)
+    while True:
+        p = mp.Process(target=start_app, args=(queue_app,), name='MAIN')
+        p.start()
+        while True:
+            if queue_app.empty():
+                time.sleep(1)
+            else:
+                x = queue_app.get()
+                break
+        app.logger.warning('Restarting Arena!')
+        p.terminate()
 
     app.run(host='0.0.0.0', port=config.FLASK_PORT, debug=False)
 
