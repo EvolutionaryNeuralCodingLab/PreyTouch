@@ -13,3 +13,4 @@ Open-source software for prey catching experiments with a touch screen.
 - [Adding new camera](docs/new_camera.md)
 - [Adding new DeepLabCut model](docs/adding_dlc.md)
 - [Adding custom detection model](docs/custom_detection_model.md)
+- [Configurations](docs/configurations.md)
