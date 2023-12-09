@@ -21,16 +21,22 @@ class Agent:
         self.logger = get_logger('Agent')
         self.cache = RedisCache()
         self.exp_validation = ExperimentValidation(logger=self.logger, orm=self.orm, cache=self.cache, is_silent=True)
-        agent_config = yaml.load(Path(CONFIG_PATH).open(), Loader=yaml.FullLoader)
-        self.check_agent_config(agent_config)
         self.animal_id = None
-        self.trials = agent_config['trials']
-        self.default_struct = agent_config['default_struct']
-        self.times = agent_config['times']
         self.history = {}
         self.next_trial_name = None
 
+        if Path(CONFIG_PATH).exists():
+            agent_config = yaml.load(Path(CONFIG_PATH).open(), Loader=yaml.FullLoader)
+            self.check_agent_config(agent_config)
+            self.trials = agent_config['trials']
+            self.default_struct = agent_config['default_struct']
+            self.times = agent_config['times']
+        else:
+            self.trials = {}
+        
     def update(self, animal_id=None):
+        if not self.trials:
+            return
         self.animal_id = animal_id or self.cache.get(cc.CURRENT_ANIMAL_ID)
         self.init_history()
         self.load_history()

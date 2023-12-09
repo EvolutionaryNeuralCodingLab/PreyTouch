@@ -1,0 +1,6 @@
+# ORM
+sqlalchemy==1.4.39
+sqlalchemy-utils==0.38.3
+psycopg2==2.9.3
+psycopg2-binary==2.9.5
+alembic==1.8.1

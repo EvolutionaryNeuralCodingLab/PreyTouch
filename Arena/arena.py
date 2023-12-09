@@ -607,6 +607,7 @@ class ArenaManager(SyncManager):
                             cam_config, self.log_queue)
             self.units[cam_name] = cu
         self.logger.info('Arena started')
+        self.logger.debug(config.management_url)
 
     def update_camera_unit(self, cam_name, data):
         if cam_name not in self.units:

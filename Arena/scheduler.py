@@ -12,10 +12,13 @@ from compress_videos import get_videos_ids_for_compression, compress
 from periphery_integration import PeripheryIntegrator
 from analysis.pose import predict_all_videos
 from analysis.strikes.strikes import StrikeScanner
-from analysis.predictors.pogona_head import predict_tracking
 from db_models import DWH
 from agent import Agent
 import utils
+try:
+    from analysis.predictors.pogona_head import predict_tracking
+except Exception:
+    predict_tracking = None
 
 env = config.env
 TIME_TABLE = {
@@ -256,7 +259,8 @@ class Scheduler(threading.Thread):
 
     @schedule_method
     def tracking_pose(self):
-        if not self.is_in_range('tracking_pose') or cache.get(cc.IS_BLANK_CONTINUOUS_RECORDING) or self.dlc_on.is_set() or \
+        if predict_tracking is None or not self.is_in_range('tracking_pose') or \
+            cache.get(cc.IS_BLANK_CONTINUOUS_RECORDING) or self.dlc_on.is_set() or \
                 not config.IS_RUN_NIGHTLY_POSE_ESTIMATION or self.tracking_pose_on.is_set():
             return
 
