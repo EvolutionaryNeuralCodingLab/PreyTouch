@@ -24,7 +24,7 @@ stats/
 *.jpeg
 *.png
 std*.txt
-
+.config
 
 Archive/
 Arena/calibration/*
