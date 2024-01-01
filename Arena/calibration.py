@@ -137,7 +137,7 @@ class Calibrator:
 
 SIGN_MASKS = {
     'front': [-1, -1],
-    'top': [-1, -1]
+    'top': [1, -1]
 }
 
 
@@ -206,6 +206,7 @@ class CharucoEstimator:
         dy = self.sign_mask[1] * (frame_y - d['top_left'][1])
         xr = d['x'] + pixel2cm_x * (dx if not self.is_swap_xy else dy)
         yr = d['y'] + pixel2cm_y * (dy if not self.is_swap_xy else dx)
+        print(f'({frame_x},{frame_y}) - close_dot: ({d["top_left"]}), res: ({xr:.1f},{yr:.1f})')
         return xr, yr
 
     def find_aruco_markers(self, frame, is_plot=True):
@@ -317,7 +318,8 @@ class CharucoEstimator:
             cv2.circle(frame, (x_, y_), 2, (255, 0, 255), 3)
                 # if d['y'] == 0:  # screen axis
             # pos = (x_ - self.sign_mask[0] * 50, y_) if self.is_swap_xy else (x_, y_ - self.sign_mask[1] * 50)
-            cv2.putText(frame, f"{(d['x'],d['y'])}", d['top_right'], font, 1.5, (255, 0, 255), 2, line_type)
+            cv2.putText(frame, f"{(d['x'],d['y'])}", d['top_right'], font, 1.5, (255, 255, 255), 7, line_type)
+            cv2.putText(frame, f"{(d['x'], d['y'])}", d['top_right'], font, 1.5, (255, 0, 255), 3, line_type)
                 # if d['x'] == 0:
             # pos = (x_, y_ - self.sign_mask[1] * 50) if self.is_swap_xy else (x_ - self.sign_mask[0] * 50, y_)
             # cv2.putText(frame, f"{d['y']}", pos, font, font_size, (255, 0, 255), 2, line_type)
@@ -328,10 +330,13 @@ class CharucoEstimator:
         font, line_type, font_size = cv2.FONT_HERSHEY_PLAIN, cv2.LINE_AA, 1.8
         # plot center image coord for checking the get_location algorithm
         h, w = frame.shape[:2]
-        for frame_pos in [(w // 2, h // 2), (w // 2, h // 3), (w // 2, round(h / 1.3))]:
+        for frame_pos in [(w // 4, h // 3), (w // 4, h // 2), (w // 4, round(h / 1.3)),
+                          (w // 2, h // 3), (w // 2, h // 2), (w // 2, round(h / 1.3)),
+                          (3*w // 4, h // 3), (3*w // 4, h // 2), (3*w // 4, round(h / 1.3))]:
             xc, yc = self.get_location(*frame_pos, check_init=False)
-            cv2.circle(frame, frame_pos, 2, color, 3)
-            cv2.putText(frame, f"({xc:.1f}, {yc:.1f})", frame_pos, font, font_size, color, 3, line_type)
+            cv2.circle(frame, frame_pos, 4, color, 3)
+            cv2.putText(frame, f"({xc:.1f}, {yc:.1f})", frame_pos, font, 2, (255, 255, 255), 8, line_type)
+            cv2.putText(frame, f"({xc:.1f}, {yc:.1f})", frame_pos, font, 2, (0, 0, 0), 4, line_type)
         return frame
 
     def load_markers(self):
