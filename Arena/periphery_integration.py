@@ -4,7 +4,7 @@ import time
 from datetime import datetime
 import paho.mqtt.client as mqtt
 import paho.mqtt.subscribe as subscribe
-
+from pathlib import Path
 import utils
 from cache import RedisCache, CacheColumns as cc
 from loggers import get_logger
@@ -24,12 +24,17 @@ class PeripheryIntegrator:
         self.mqtt_client = mqtt.Client()
         self.orm = ORM()
         self.periphery_config = self.read_config()
-        self.devices = self.periphery_config['arena']['interfaces']
+        if self.periphery_config and 'arena' in self.periphery_config:
+            self.devices = self.periphery_config['arena']['interfaces']
+        else:
+            self.devices = []
 
     @staticmethod
     def read_config() -> dict:
-        with open(CONFIG_PATH, 'r') as f:
-            d = json.load(f)
+        d = {}
+        if Path(CONFIG_PATH).exists():
+            with open(CONFIG_PATH, 'r') as f:
+                d = json.load(f)
         return d
 
     def save_config_to_file(self):

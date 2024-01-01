@@ -1,5 +1,6 @@
 import os
 import yaml
+import socket
 from environs import Env
 from pathlib import Path
 
@@ -10,7 +11,7 @@ if env.bool('IS_PROD', 0):
 
 # General
 version = '2.2'
-ARENA_NAME = env('ARENA_NAME')
+ARENA_NAME = env('ARENA_NAME', socket.gethostname())
 is_debug_mode = env.bool('DEBUG', False)
 is_use_parport = env.bool('IS_USE_PARPORT', False)
 IS_ANALYSIS_ONLY = env.bool('IS_ANALYSIS_ONLY', False)
@@ -94,7 +95,9 @@ arena_modules = {
         'pogona_head': ('analysis.predictors.pogona_head', 'PogonaHead')
     }
 }
-cameras = yaml.load(Path('configurations/cam_config.yaml').open(), Loader=yaml.FullLoader)
+
+CAM_CONFIG_PATH = Path('configurations/cam_config.yaml')
+cameras = yaml.load(CAM_CONFIG_PATH.open(), Loader=yaml.FullLoader) if CAM_CONFIG_PATH.exists() else {}
 QUEUE_WAIT_TIME = env.int('QUEUE_WAIT_TIME', 2)
 SINK_QUEUE_TIMEOUT = env.int('SINK_QUEUE_TIMEOUT', 2)
 VIDEO_WRITER_FORMAT = env('VIDEO_WRITER_FORMAT', 'MJPG')

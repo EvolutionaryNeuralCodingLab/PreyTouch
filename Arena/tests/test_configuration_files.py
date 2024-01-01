@@ -1,4 +1,5 @@
 import pytest
+from pathlib import Path
 import importlib
 import inspect
 import config
@@ -9,6 +10,7 @@ def test_output_dir():
     for cam_name, cam_dict in config.cameras.items():
         assert 'output_dir' in cam_dict
         assert cam_dict['output_dir'] is None
+
 
 
 def test_cam_packages_exist():

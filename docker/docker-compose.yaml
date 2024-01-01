@@ -1,43 +1,43 @@
 version: '2.4'
 
 services:
-  arena:
-    build:
-      context: ..
-      dockerfile: ./docker/Dockerfile-arena
-    image: pogona_arena:${arena_tag-latest}
-    container_name: arena
-    privileged: true
-    user: "1000"
-    group_add:
-      - "1001"
-    depends_on:
-      - cache
-      - db
-      - mqtt
-      - periphery
-    volumes:
-      - ../Arena:${ROOT_DIR}/Arena
-      - ../pogona_hunter:${ROOT_DIR}/pogona_hunter
-      - /tmp/.X11-unix:/tmp/.X11-unix:ro
-      - /run/dbus:/run/dbus:rw
-      - /run/user/1000:/run/user/1000:rw
-      - /etc/passwd:/etc/passwd:ro
-      - /etc/group:/etc/group:ro
-      - ${MEDIA_DIR-/tmp}:/arena/media
-    restart: "unless-stopped"
-    runtime: nvidia
-    command: "python3 api.py"
-    ports:
-      - 0.0.0.0:5080:5084
-    working_dir: ${ROOT_DIR}/Arena
-    environment:
-      - FLASK_APP=api.py
-      - IS_PROD=1
-      - LC_ALL=C.UTF-8
-      - LANG=C.UTF-8
-      - PYTHONUNBUFFERED=1
-      - GENICAM_GENTL64_PATH=/arena/Vimba_6_0/VimbaUSBTL/CTI/x86_64bit
+  # arena:
+  #   build:
+  #     context: ..
+  #     dockerfile: ./docker/Dockerfile-arena
+  #   image: pogona_arena:${arena_tag-latest}
+  #   container_name: arena
+  #   privileged: true
+  #   user: "1000"
+  #   group_add:
+  #     - "1001"
+  #   depends_on:
+  #     - cache
+  #     - db
+  #     - mqtt
+  #     - periphery
+  #   volumes:
+  #     - ../Arena:${ROOT_DIR}/Arena
+  #     - ../pogona_hunter:${ROOT_DIR}/pogona_hunter
+  #     - /tmp/.X11-unix:/tmp/.X11-unix:ro
+  #     - /run/dbus:/run/dbus:rw
+  #     - /run/user/1000:/run/user/1000:rw
+  #     - /etc/passwd:/etc/passwd:ro
+  #     - /etc/group:/etc/group:ro
+  #     - ${MEDIA_DIR-/tmp}:/arena/media
+  #   restart: "unless-stopped"
+  #   runtime: nvidia
+  #   command: "python3 api.py"
+  #   ports:
+  #     - 0.0.0.0:5080:5084
+  #   working_dir: ${ROOT_DIR}/Arena
+  #   environment:
+  #     - FLASK_APP=api.py
+  #     - IS_PROD=1
+  #     - LC_ALL=C.UTF-8
+  #     - LANG=C.UTF-8
+  #     - PYTHONUNBUFFERED=1
+  #     - GENICAM_GENTL64_PATH=/arena/Vimba_6_0/VimbaUSBTL/CTI/x86_64bit
 
   app:
     build:
@@ -78,7 +78,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
     ports:
-      - 1884:1883
+      - 1883:1883
 #      - 0.0.0.0:9001:9001
 
   cache:

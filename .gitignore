@@ -24,7 +24,7 @@ stats/
 *.jpeg
 *.png
 std*.txt
-
+.config
 
 Archive/
 Arena/calibration/*
@@ -35,3 +35,8 @@ experiment_plots
 
 Arena/Prediction/Yolo4/darknet
 Arena/Prediction/Yolo4/libdarknet.so
+
+Arena/configurations/cam_config.yaml
+Arena/configurations/periphery_config.json
+Arena/configurations/predict_config.yaml
+Arena/configurations/agent_config.yaml

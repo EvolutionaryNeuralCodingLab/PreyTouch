@@ -6,13 +6,18 @@ from pathlib import Path
 periphery_config_path = Path('configurations/periphery_config.json')
 
 
-def test_periphery_config_exists():
-    assert periphery_config_path.exists()
-
-
 def test_structure():
+    cfg = {}
+    if not periphery_config_path.exists():
+        print('No periphery_config.json file was found')
+        return
+    
     with periphery_config_path.open('r') as f:
         cfg = json.load(f)
+
+    if not cfg:
+        print('No periphery modules are configured')
+        return
 
     assert 'arena' in cfg
     # assert 'camera_trigger' in cfg

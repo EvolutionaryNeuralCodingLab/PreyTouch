@@ -54,8 +54,12 @@ class Subscriber(threading.Thread):
                         return
                 time.sleep(0.01)
             p.punsubscribe()
-        except:
-            self.logger.exception(f'Error in subscriber {self.name}')
+        except BrokenPipeError:
+            print(f'{self.name} process is down!')
+            return
+        except Exception as exc:
+            print(f'error in {self.name}; {exc}')
+            # self.logger.exception(f'Error in subscriber {self.name}')
 
     def _run(self, channel, data):
         if self.callback is not None:
@@ -93,6 +97,9 @@ class ExperimentLogger(Subscriber):
                 self.commit_to_db(payload)
         except DoubleEvent:
             pass
+        except BrokenPipeError:
+            print(f'{self.name} process is down!')
+            return
         except Exception as exc:
             self.logger.exception(f'Unable to parse log payload of {self.name}: {exc}')
 
@@ -234,6 +241,9 @@ class TemperatureLogger(Subscriber):
 
         try:
             listener = ArenaListener(is_debug=False, stop_event=self.stop_event, callback=callback)
+        except BrokenPipeError:
+            print(f'{self.name} process is down!')
+            return
         except Exception as exc:
             self.logger.error(f'Error loading temperature listener; {exc}')
             return
@@ -280,6 +290,9 @@ class AppHealthCheck(Subscriber):
                         self.cache.delete(cc.OPEN_APP_HOST)
                 time.sleep(2)
             p.punsubscribe()
+        except BrokenPipeError:
+            print(f'{self.name} process is down!')
+            return
         except:
             self.logger.exception(f'Error in subscriber {self.name}')
 
