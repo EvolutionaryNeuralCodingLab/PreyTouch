@@ -304,13 +304,13 @@ if __name__ == '__main__':
     # check_dataset(is_load=True, min_dist=35, is_delete=True)
     # clean_wrong_size_images()
 
-    # TongueTrainer().train(is_plot=True, is_save=True)
+    # TongueTrainer(test_size=0.15).train(is_plot=True, is_save=True)
 
-    toa = TongueOutAnalyzer()
+    # toa = TongueOutAnalyzer()
     # toa.predict_strike(150, save_frames_above=0.5)
 
-    # tr = TongueTrainer(model_path=MODEL_PATH, threshold=0.5)
-    # tr.all_data_evaluation()
+    tr = TongueTrainer(model_path='/data/Pogona_Pursuit/output/models/tongue_out/20231128_162618', threshold=0.5)
+    tr.all_data_evaluation()
     # tr.plot_confusion_matrix()
 
     # target_ = 'tongues'

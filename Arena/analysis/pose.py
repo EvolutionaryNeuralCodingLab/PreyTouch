@@ -446,7 +446,9 @@ class SpatialAnalyzer:
             res[group_name] = pd.concat(res[group_name])
 
         # sort results by first split value
-        if len(self.split_by) == 2:
+        if not self.split_by:
+            pass
+        elif len(self.split_by) == 2:
             res = dict(sorted(res.items(), key=lambda x: (x[0].split(',')[0].split('=')[1], x[0].split(',')[1].split('=')[1])))
         elif len(self.split_by) == 1:
             res = dict(sorted(res.items(), key=lambda x: x[0].split(',')[0].split('=')[1]))
@@ -465,12 +467,13 @@ class SpatialAnalyzer:
             for c in ['x', 'y']:
                 pose_df[('mid_ears', c)] = pose_df[[('right_ear', c), ('left_ear', c)]].mean(axis=1)
             pose_df[('mid_ears', 'prob')] = pose_df[[('right_ear', 'prob'), ('left_ear', 'prob')]].min(axis=1)
-        return pd.concat([
+        l = [
             pd.to_datetime(pose_df['time'], unit='s'),
-            pose_df[self.bodypart],
-            pose_df['block_id'],
-            pose_df['animal_id']
-        ], axis=1)
+            pose_df[self.bodypart]
+        ]
+        if self.is_use_db:
+            l.extend([pose_df['block_id'], pose_df['animal_id']])
+        return pd.concat(l, axis=1)
 
     def get_videos_to_load(self, is_add_block_video_id=False) -> dict:
         """return list of lists of groups of video paths that are split using 'split_by'"""
@@ -538,6 +541,8 @@ class SpatialAnalyzer:
 
                 for p in tracking_dir.rglob('*.csv'):
                     df = pd.read_csv(p, index_col=0)
+                    if df.empty:
+                        continue
                     df = df[~df.x.isna()]
                     pose_.extend(df[['x', 'y']].to_records(index=False).tolist())
             groups_pose[group_name] = pose_
@@ -549,7 +554,7 @@ class SpatialAnalyzer:
         for i, (group_name, pose_list) in enumerate(groups_pose.items()):
             df = pd.DataFrame(pose_list, columns=['x', 'y'])
             sns.histplot(data=df, x='x', y='y', ax=axes[i], bins=(30, 30), cmap='Greens', stat='probability')
-            axes[i].set_xlim([0, 50])
+            # axes[i].set_xlim([0, 50])
         plt.show()
 
     def plot_spatial_hist(self, single_animal, pose_dict=None, cols=4, axes=None, is_title=True, animal_colors=None):
@@ -559,7 +564,7 @@ class SpatialAnalyzer:
         axes_ = self.get_axes(cols, len(pose_dict), axes=axes)
         for i, (group_name, pose_df) in enumerate(pose_dict.items()):
             cbar_ax = None
-            if i == len(pose_dict) - 1:
+            if i == len(pose_dict) - 1 and len(pose_dict) > 1:
                 # cbar_ax = axes_[i].inset_axes([1.05, 0.1, 0.03, 0.8])
                 cbar_ax = axes_[i].inset_axes([0.2, -0.3, 0.6, 0.05])
             df_ = pose_df.query('0 <= x <= 40 and y<20')
@@ -1079,12 +1084,12 @@ if __name__ == '__main__':
     # plt.imshow(img)
     # plt.show()
     # load_pose_from_videos('PV80', 'front', is_exit_agg=True) #, day='20221211')h
-    # SpatialAnalyzer(movement_type='low_horizontal', split_by=['exit_hole'], bodypart='nose', is_use_db=True).plot_spatial()
+    SpatialAnalyzer(animal_ids=['PV91'], bodypart='nose', is_use_db=True).plot_spatial_hist('PV91')
     # SpatialAnalyzer(movement_type='low_horizontal', split_by=['exit_hole'], bodypart='nose').find_crosses(y_value=5)
     # SpatialAnalyzer(animal_ids=['PV42', 'PV91'], movement_type='low_horizontal',
     #                 split_by=['animal_id', 'exit_hole'], bodypart='nose',
     #                 is_use_db=True).plot_trajectories(only_to_screen=True)
-    # SpatialAnalyzer(animal_id='PV91', movement_type='low_horizontal', split_by=['exit_hole'], bodypart='nose').plot_out_of_experiment_pose()
+    # SpatialAnalyzer(animal_ids=['PV91'], split_by=['exit_hole'], bodypart='nose').plot_out_of_experiment_pose()
     # fix_calibrations()
     # for vid in sa.get_videos_paths()['exit_hole=bottomLeft']:
     #     sa.play_trajectories(vid, only_to_screen=True)

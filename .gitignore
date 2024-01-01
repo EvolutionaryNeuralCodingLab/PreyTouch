@@ -23,8 +23,9 @@ stats/
 *.jpg
 *.jpeg
 *.png
+*.pkl
 std*.txt
-
+.config
 
 Archive/
 Arena/calibration/*

@@ -171,6 +171,7 @@ MAX_DAILY_REWARD = env.int('MAX_DAILY_REWARD', 40)
 experiment_cache_path = env('experiment_cache_path', 'cached_experiments')
 MAX_DURATION_CONT_BLANK = env.int('MAX_DURATION_CONT_BLANK', 48*3600)
 IS_HOLD_TRIGGERS = env.bool('IS_HOLD_TRIGGERS', True)
+IS_CHECK_ENGAGEMENT_LEVEL = env.bool('IS_CHECK_ENGAGEMENT_LEVEL', False)
 HOLD_TRIGGERS_TIME = env.int('HOLD_TRIGGERS_TIME', 2)
 experiment_types = {
     'bugs': ['reward_type', 'bug_types', 'reward_bugs', 'bug_speed', 'movement_type', 'time_between_bugs',

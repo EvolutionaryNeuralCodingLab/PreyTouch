@@ -68,6 +68,35 @@ TriggerInterface::TriggerInterface(JsonVariant conf)
   send_info(msg);
 }
 
+void TriggerInterface::run(JsonArray cmd) {
+  if (cmd[0] == "get") {
+    serializeValue();
+  }
+  else if (cmd[0] == "toggle") {
+    toggle();
+  }
+  else if (cmd[0] == "set") {
+    if (cmd.size() < 3) {
+      send_error("Missing set value");
+      return;
+    }
+
+    if (!cmd[2].is<int>()) {
+      send_error("Invalid set value");
+      return;
+    }
+
+    int v = cmd[2].as<int>();
+    set_value(v);
+  }
+  else if (cmd[0] == "set_fps") {
+
+  }
+  else {
+    send_error("Unknown command");
+  }
+}
+
 void TriggerInterface::loop() {
   if (value == 1) {
     unsigned long t = micros();
@@ -78,30 +107,30 @@ void TriggerInterface::loop() {
 
     if (pin_state == LOW) {
       if (dt >= low_dur) {
-	pin_state = HIGH;
-	prev_trans_time = t;
-	digitalWrite(pin, pin_state);
+        pin_state = HIGH;
+        prev_trans_time = t;
+        digitalWrite(pin, pin_state);
 
-	if (serial_trigger) {
-	  char msg[40];
-	  sprintf(msg, "%lu: HIGH, dt=%luμs", count, dt); 
-	  send_info(msg);
-	  
-	  count += 1;
-	}
-      }      
+        if (serial_trigger) {
+          char msg[40];
+          sprintf(msg, "%lu: HIGH, dt=%luμs", count, dt);
+          send_info(msg);
+
+          count += 1;
+        }
+      }
     }
     else {
       if (dt >= high_dur) {
-	pin_state = LOW;
-	prev_trans_time = t;
-	digitalWrite(pin, pin_state);
-	
-	if (serial_trigger) {
-	  char msg[40];
-	  sprintf(msg, "%lu: LOW, dt=%luμs", count, dt); 
-	  send_info(msg);
-	}	
+        pin_state = LOW;
+        prev_trans_time = t;
+        digitalWrite(pin, pin_state);
+
+        if (serial_trigger) {
+          char msg[40];
+          sprintf(msg, "%lu: LOW, dt=%luμs", count, dt);
+          send_info(msg);
+        }
       }
     }
   }

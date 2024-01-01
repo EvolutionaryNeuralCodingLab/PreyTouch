@@ -1,34 +1,46 @@
 # Adding Arduino
 
-### Install arduino-cli and packages
+## Install arduino-cli and packages
+
 In case you alreay did it, you can skip this step.
-This manual was taken from the reptilearn project https://github.com/neural-electrophysiology-tool-team/reptilearn
+This manual was taken from the reptilearn project <https://github.com/neural-electrophysiology-tool-team/reptilearn>
 
 1. install arduino-cli (activate your python interpreter before running)
+
 ```console
 curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR=$(dirname $(which python)) sh
 ```
+
 2. Once installed, run these commands to install the necessary Arduino libraries:
+
 ```console
 arduino-cli core update-index
 arduino-cli lib install AccelStepper ArduinoJson OneWire DallasTemperature
 ```
+
 3. Finally, install the software for your specific Arduino board model(s). For example for an Arduino Nano Every or UNO WiFi Rev 2 run:
+
 ```console
 arduino-cli core install arduino:megaavr
 ```
+
 For other models, the following command will list all available board IDs:
+
 ```console
 arduino-cli core list --all 
 ```
 
-### Add new arduino to periphery_config.json
+## Add new arduino to periphery_config.json
+
 1. First, you need the arduino serial number
+
 ```console
 cd periphery
 python main.py --list-ports
 ```
+
 2. Get the serial number from the output and create a new item in Arena/configurations/periphery_config.json:
+
 ```json
 # example of adding an arduino for camera trigger of 30Hz
 
@@ -49,6 +61,7 @@ python main.py --list-ports
     "serial_number": "<arduino_serial_number>"
 }
 ```
+
 ```json
 # example of adding an arduino for feeder, day lights, IR lights and temperature sensors
 
@@ -96,8 +109,10 @@ python main.py --list-ports
 ```
 
 3. Restart the periphery container
+
 ```console
 cd docker/
 docker-compose restart periphery
 ```
+
 4. Restart PreyTouch

@@ -1,3 +1,4 @@
+import pickle
 import sys
 import os
 import torch
@@ -30,6 +31,7 @@ class Trainer:
     batch_size: int = 16
     threshold: float = 0.8
     num_epochs: int = 30
+    test_size: float = None  # if given then test set is created
     kfolds: int = 5
     learning_rate: float = 1e-4
     weight_decay: float = 1e-2
@@ -44,6 +46,7 @@ class Trainer:
         self.model_name = self.get_model_name()
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model = None
+        self.test_indices = None
         if self.model_path:
             self.load()
             self.dataset = None
@@ -68,7 +71,13 @@ class Trainer:
         self.print(f"Start train for model {self.model_name}. Train will be running on {self.device} device")
         history = []
         splits = KFold(n_splits=self.kfolds, shuffle=True, random_state=self.seed)
-        indices = np.arange(len(self.dataset))
+        if self.test_size:
+            train_ds, test_ds = torch.utils.data.random_split(self.dataset, [1-self.test_size, self.test_size])
+            indices = train_ds.indices
+            self.test_indices = test_ds.indices
+        else:
+            indices = np.arange(len(self.dataset))
+
         if self.is_shuffle_dataset:
             indices = np.random.permutation(indices)
         for fold, (train_idx, val_idx) in enumerate(splits.split(indices)):
@@ -78,7 +87,7 @@ class Trainer:
             loss_fn = self.get_loss_fn()
             optimizer = self.get_optimizer()
             scheduler = self.get_scheduler(optimizer)
-            train_loader, val_loader = self.get_loaders(indices[train_idx], indices[val_idx])
+            train_loader, val_loader = self.get_training_loaders(indices[train_idx], indices[val_idx])
             with tqdm(range(self.num_epochs)) as pbar:
                 for _ in pbar:
                     epoch_metrics = dict()
@@ -96,13 +105,13 @@ class Trainer:
             self.model.load_state_dict(f_best_model_)
             history.append({'model_state': f_best_model_, 'score': f_best_score_, 'metrics': f_metrics})
 
-        chosen_idx = self.get_best_model(history)
-        self.print(f'Chosen model is of Fold#{chosen_idx+1}')
-        self.model.load_state_dict(history[chosen_idx]['model_state'])
+        chosen_fold_id = self.get_best_model(history)
+        self.print(f'Chosen model is of Fold#{chosen_fold_id+1}')
+        self.model.load_state_dict(history[chosen_fold_id]['model_state'])
         if is_save:
             self.save_model()
         if is_plot:
-            self.summary_plots(history, chosen_idx)
+            self.summary_plots(history, chosen_fold_id)
         return self
 
     def train_epoch(self, train_loader, optimizer, loss_fn):
@@ -146,7 +155,7 @@ class Trainer:
     def convert_inputs(self, x, y):
         return x.to(self.device).float(), y.to(self.device).float()
 
-    def get_loaders(self, train_idx=None, val_idx=None):
+    def get_training_loaders(self, train_idx=None, val_idx=None):
         params = {'batch_size': self.batch_size, 'num_workers': 6, 'drop_last': True}
         if train_idx is not None:
             train_sampler = SubsetRandomSampler(train_idx)
@@ -168,6 +177,8 @@ class Trainer:
         self.model.to(self.device)
         self.print(f'model {self.model_name} load from: {model_path}')
         self.cache_dir = model_path.parent
+        if (model_path / self.test_indices_filename).exists():
+            self.test_indices = torch.load(model_path / self.test_indices_filename)
 
     def save_model(self):
         dir_path = Path(f"{SAVED_MODEL_DIR}/{self.model_name}/{datetime.now().strftime('%Y%m%d_%H%M%S')}")
@@ -175,6 +186,8 @@ class Trainer:
         torch.save(self.model.state_dict(), dir_path / 'model.pth')
         self.print(f'model saved to {dir_path}')
         self.cache_dir = dir_path
+        if self.test_indices is not None:
+            torch.save(self.test_indices, dir_path / self.test_indices_filename)
 
     def get_dataset(self):
         raise NotImplemented('Must create a method get_dataset')
@@ -208,16 +221,16 @@ class Trainer:
             text = ', '.join(f'{k}: {v}' for k, v in s.iteritems())
             self.print(f'{key} dataset distribution: {text}')
 
-    def summary_plots(self, history, chosen_idx):
+    def summary_plots(self, history, chosen_fold_id):
         fig, axes = plt.subplots(2, 3, figsize=(25, 4))
-        self.plot_train_metrics(history, chosen_idx, axes[0, :])
+        self.plot_train_metrics(history, chosen_fold_id, axes[0, :])
         self.all_data_evaluation(axes=axes[1, :])
         if self.cache_dir:
             fig.savefig(self.cache_dir / 'summary_plots.jpg')
         plt.show()
 
-    def plot_train_metrics(self, history, chosen_idx, axes=None):
-        chosen_metrics = history[chosen_idx]['metrics']
+    def plot_train_metrics(self, history, chosen_fold_id, axes=None):
+        chosen_metrics = history[chosen_fold_id]['metrics']
         # Loss of chosen model
         epochs = np.arange(1, self.num_epochs + 1)
         axes[0].plot(epochs, chosen_metrics['train_loss'], color='k', label='train_loss')
@@ -231,9 +244,9 @@ class Trainer:
             axes[1].plot(epochs, v, label=k)
         axes[1].set_title('Validation Metrics')
         axes[1].legend()
-        # comparison of monitored metric
+        # Comparison of monitored metric
         for i, h in enumerate(history):
-            axes[2].plot(h['metrics'][self.monitored_metric], label=f'FOLD-{i+1}', color='r' if i == chosen_idx else 'k')
+            axes[2].plot(h['metrics'][self.monitored_metric], label=f'FOLD-{i+1}', color='r' if i == chosen_fold_id else 'k')
         axes[2].set_title(f'Comparison of {self.monitored_metric} between folds')
         axes[2].legend()
 
@@ -243,6 +256,10 @@ class Trainer:
     def print(self, msg):
         if self.is_debug:
             print(msg)
+
+    @property
+    def test_indices_filename(self):
+        return 'test_indices.pt'
 
 
 @dataclass
@@ -307,14 +324,18 @@ class ClassificationTrainer(Trainer):
         dataset.samples = samples_
         return dataset
 
-    def all_data_evaluation(self, axes=None):
+    def all_data_evaluation(self, axes=None, is_equalize_dataset=True, is_test_set=False):
         if axes is None:
             fig, axes_ = plt.subplots(1, 3, figsize=(18, 4))
         else:
             axes_ = axes
         assert len(axes_) == 3
         self.model.eval()
-        dataset = self.equalize_dataset(self.get_dataset())
+        dataset = self.get_dataset()
+        if is_test_set:
+            dataset = Subset(dataset, self.test_indices)
+        if is_equalize_dataset:
+            dataset = self.equalize_dataset(dataset)
         y_true, y_pred, y_score = [], [], []
         for x, y in tqdm(dataset):
             outputs = self.model(x.to(self.device).unsqueeze(0))
@@ -322,9 +343,10 @@ class ClassificationTrainer(Trainer):
             y_true.append(y)
             y_pred.append(label.item())
             y_score.append(prob.item())
+
         y_true, y_pred, y_score = np.vstack(y_true), np.vstack(y_pred), np.vstack(y_score)
         self.plot_confusion_matrix(y_true, y_pred, ax=axes_[0])
-        PrecisionRecallDisplay.from_predictions(y_true, y_score, ax=axes_[1])
+        PrecisionRecallDisplay.from_predictions(y_true, y_true, ax=axes_[1])
         RocCurveDisplay.from_predictions(y_true, y_score, ax=axes_[2])
         if axes is None:
             plt.show()
