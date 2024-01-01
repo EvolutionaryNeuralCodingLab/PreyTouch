@@ -34,9 +34,10 @@ export default {
       bugsSettings: { // extends the mixin's bugSettings
         holeSize: [200, 200],
         exitHole: 'bottomRight',
-        entranceHole: null
+        entranceHole: null,
+        holesHeight: 100
       },
-      pad: 100 // padding for holes
+      xpad: 100 // padding for holes
     }
   },
   computed: {
@@ -44,8 +45,8 @@ export default {
       let [canvasW, canvasH] = [this.canvas.width, this.canvas.height]
       let [holeW, holeH] = this.bugsSettings.holeSize
       return {
-        bottomLeft: [this.pad, canvasH - holeH - this.pad],
-        bottomRight: [canvasW - holeW - this.pad, canvasH - holeH - this.pad]
+        bottomLeft: [this.xpad, canvasH - holeH - this.bugsSettings.holesHeight],
+        bottomRight: [canvasW - holeW - this.xpad, canvasH - holeH - this.bugsSettings.holesHeight]
       }
     },
     exitHolePos: function () {
