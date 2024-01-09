@@ -6,11 +6,15 @@ __pycache__/
 .ipynb_checkpoints/
 output/*
 Arena/alembic/versions
+Arena/cached_experiments
+Arena/events
+Arena/.archive
 .env*
 *.weights
 *.avi
 *.mp4
 *.pth
+*.pdf
 *.conv.74
 *.*~
 *.log

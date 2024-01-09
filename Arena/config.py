@@ -144,7 +144,8 @@ SERIAL_BAUD = env.int('SERIAL_BAUD', 9600)
 calibration_dir = env('calibration_dir', f'{OUTPUT_DIR}/calibrations')
 min_calib_images = env.int('min_calib_images', 7)
 CHESSBOARD_DIM = env.list('CHESSBOARD_DIM', (9, 6))
-ARUCO_MARKER_SIZE = env.float('ARUCO_MARKER_SIZE', 2.65)  # centimeters
+ARUCO_MARKER_SIZE = env.float('ARUCO_MARKER_SIZE', 2.2)  # centimeters
+MARKERS_IMAGES_DIR = env('MARKERS_IMAGES_DIR', f'{calibration_dir}/charuco_images')
 
 # Schedules
 DISABLE_SCHEDULER = env.bool('DISABLE_SCHEDULER', False)
