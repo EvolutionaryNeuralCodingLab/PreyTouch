@@ -366,6 +366,17 @@ class StrikeAnalyzer:
 
     @cached_property
     def prediction_distance(self):
+        bug_pos = self.bug_pos_at_leap
+        if bug_pos is None:
+            return
+        if not self.is_y_pd:
+            d = distance(*bug_pos, *self.strike_position)
+        else:
+            d = bug_pos[1] - self.strike_position[1]
+        return pixels2cm(d)
+
+    @cached_property
+    def bug_pos_at_leap(self):
         if self.leap_frame is None:
             return
         if self.bug_traj is None:
@@ -374,11 +385,7 @@ class StrikeAnalyzer:
         if not traj_id:
             return
         bug_pos = self.bug_traj.loc[traj_id, ['x', 'y']].values.tolist()
-        if not self.is_y_pd:
-            d = distance(*bug_pos, *self.strike_position)
-        else:
-            d = bug_pos[1] - self.strike_position[1]
-        return pixels2cm(d)
+        return bug_pos
 
     @cached_property
     def bug_speed(self):
@@ -648,7 +655,7 @@ if __name__ == '__main__':
     # sa.plot_strike_analysis()
     # delete_duplicate_strikes('PV80')
     # play_strikes('PV80', start_time='2022-12-01', cam_name='front', is_load_pose=False, strikes_ids=[6365])
-    StrikeScanner(animal_id='PV91', is_skip_committed=False).scan()
+    StrikeScanner(animal_id='PV95', is_skip_committed=False).scan()
     # time2feeder(),
     # extract_bad_annotated_strike_frames('PV85')#, movement_type='random')
     # short_predict('PV80')

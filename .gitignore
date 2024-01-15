@@ -37,6 +37,7 @@ yolo_eval_frames
 yolo_fn_frames
 yolo_eval_labels
 experiment_plots
+notebooks/archive
 
 Arena/Prediction/Yolo4/darknet
 Arena/Prediction/Yolo4/libdarknet.so

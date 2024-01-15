@@ -621,18 +621,25 @@ class DWH:
 
         self.logger.info('Finished DWH commit')
 
-    def update_model(self, model, columns=()):
+    def update_model(self, db_model, columns=(), **filters):
         assert isinstance(columns, (list, tuple)), 'columns must be list or tuple'
         with self.local_session() as local_s:
             with self.dwh_session() as dwh_s:
-                recs = local_s.query(model).filter(model.dwh_key.is_not(None)).all()
-                columns = columns or [c.name for c in model.__table__.columns if c.name in ['id', 'dwh_key'] or c.foreign_keys]
+                recs = local_s.query(db_model)
+                if filters:
+                    recs = recs.filter_by(**filters)
+                recs = recs.filter(db_model.dwh_key.is_not(None)).all()
+                columns = columns or [c.name for c in db_model.__table__.columns if c.name in ['id', 'dwh_key'] or c.foreign_keys]
                 for rec in tqdm(recs):
-                    dwh_rec = dwh_s.query(model).filter_by(id=rec.dwh_key).first()
-                    for c in columns:
-                        setattr(dwh_rec, c, getattr(rec, c))
-                    dwh_s.commit()
-                print(f'Finished updating columns={columns} for {model.__name__}; Total rows updated: {len(recs)}')
+                    dwh_rec = dwh_s.query(db_model).filter_by(id=rec.dwh_key).first()
+                    if dwh_rec is None:  # object does not exist on dwh
+                        rec.dwh_key = None
+                        local_s.commit()
+                    else:
+                        for c in columns:
+                            setattr(dwh_rec, c, getattr(rec, c))
+                        dwh_s.commit()
+                print(f'Finished updating columns={columns} for {db_model.__name__}; Total rows updated: {len(recs)}')
 
     @staticmethod
     def get_prev_committed_dwh_fk(s, local_fk, table):
@@ -647,8 +654,9 @@ def get_engine():
 
 
 if __name__ == '__main__':
-    DWH().commit()
     # DWH().update_model(Strike, ['prediction_distance', 'calc_speed', 'projected_strike_coords', 'projected_leap_coords'])
+    DWH().update_model(VideoPrediction, ['data'], animal_id='PV91', model='front_head_only_resnet_152')
+    DWH().commit()
     sys.exit(0)
 
     # create all models
@@ -667,3 +675,4 @@ if __name__ == '__main__':
     #
     # and then to upgrade (make sure there are no open sessions before):
     # alembic upgrade head
+# 
