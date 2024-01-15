@@ -33,7 +33,7 @@
         {
             "type": "node-terminal",
             "request": "launch",
-            "command": "rsync -avu --delete '${workspaceFolder}/output/' 'regev@reptilearn5:/data/PreyTouch/output/' --exclude 'backups/' --exclude '*.avi'",
+            "command": "rsync -avu --delete '${workspaceFolder}/output/' 'regev@reptilearn5:/data/PreyTouch/output/' --exclude '*.avi'",
             "name": "Sync output to reptilearn5",
             "cwd": "${workspaceFolder}"
         }
