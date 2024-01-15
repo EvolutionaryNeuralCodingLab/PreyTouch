@@ -3,11 +3,51 @@ import yaml
 import socket
 from environs import Env
 from pathlib import Path
+from functools import wraps
 
-env = Env()
-env.read_env('configurations/.env')
-if env.bool('IS_PROD', 0):
-    env.read_env('configurations/.env.prod', override=True)
+class Conf:
+    def __init__(self):
+        self.env = Env()
+        self.env.read_env('configurations/.env')
+        if self.env.bool('IS_PROD', 0):
+            self.env.read_env('configurations/.env.prod', override=True)
+        self.groups = {}
+
+    def env_func(func):
+        @wraps(func)
+        def wrapper(self, env_name, default_value, group_name='other', desc=''):
+            val = getattr(self.env, func.__name__)(env_name, default_value)
+            g = self.groups.setdefault(group_name, {})
+            g[env_name] = (val, type(val), desc)
+            return val
+        return wrapper
+
+    @env_func
+    def __call__(self, *args, **kwargs):
+        pass
+
+    @env_func
+    def bool(self, *args, **kwargs):
+        pass
+
+    @env_func
+    def int(self, *args, **kwargs):
+        pass
+
+    @env_func
+    def float(self, *args, **kwargs):
+        pass
+
+    @env_func
+    def dict(self, *args, **kwargs):
+        pass
+
+    @env_func
+    def list(self, *args, **kwargs):
+        pass
+
+
+env = Conf()
 
 # General
 version = '2.2'

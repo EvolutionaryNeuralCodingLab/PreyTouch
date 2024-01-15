@@ -1,7 +1,6 @@
 import json
 import sys
 import time
-
 import pandas as pd
 from tqdm.auto import tqdm
 from functools import wraps
@@ -16,6 +15,29 @@ from cache import RedisCache, CacheColumns as cc
 from loggers import get_logger
 
 Base = declarative_base()
+
+
+class User(Base):
+    __tablename__ = 'users'
+
+    name = Column(String, primary_key=True)
+    password = Column(String)
+    authenticated = Column(Boolean, default=False)
+
+    def is_active(self):
+        """True, as all users are active."""
+        return True
+
+    def get_id(self):
+        return self.name
+
+    def is_authenticated(self):
+        """Return True if the user is authenticated."""
+        return self.authenticated
+
+    def is_anonymous(self):
+        """False, as anonymous users aren't supported."""
+        return False
 
 
 class Animal(Base):
