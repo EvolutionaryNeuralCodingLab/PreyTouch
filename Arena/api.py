@@ -1,6 +1,5 @@
 import io
 import time
-
 import cv2
 import json
 import warnings
@@ -12,7 +11,9 @@ from pathlib import Path
 from PIL import Image
 from datetime import datetime
 import torch.multiprocessing as mp
-from flask import Flask, render_template, Response, request, send_from_directory, jsonify, send_file
+from flask import Flask, render_template, Response, request, send_from_directory, jsonify, send_file, redirect, url_for, flash
+from flask_login import LoginManager, login_required, login_user, logout_user, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
 import sentry_sdk
 import config
 import utils
@@ -23,18 +24,35 @@ from arena import ArenaManager
 from loggers import init_logger_config, create_arena_handler
 from calibration import CharucoEstimator
 from periphery_integration import PeripheryIntegrator
+from db_models import User, ORM
 from agent import Agent
 import matplotlib
 matplotlib.use('Agg')
 
 app = Flask('ArenaAPI')
+app.secret_key = "super secret keysadfasnjdfaebfibadibvoa noabfibadf"
 cache = None
 arena_mgr = None
 periphery_mgr = None
 queue_app = None
+login_manager = LoginManager()
 
+@login_manager.user_loader
+def user_loader(user_id):
+    """Given *user_id*, return the associated User object.
+
+    :param unicode user_id: user_id (email) user to retrieve
+
+    """
+    with arena_mgr.orm.session() as s:
+        return s.query(User).filter_by(name=user_id).first()
+
+login_manager.login_view = 'login'
+login_manager.init_app(app)
 
 @app.route('/')
+@app.route('/index')
+@login_required
 def index():
     """Video streaming ."""
     cached_experiments = sorted([c.stem for c in Path(config.experiment_cache_path).glob('*.json')])
@@ -51,10 +69,66 @@ def index():
     return render_template('index.html', cameras=cameras, exposure=config.DEFAULT_EXPOSURE, arena_name=config.ARENA_NAME,
                            config=app_config, log_channel=config.ui_console_channel, reward_types=config.reward_types,
                            experiment_types=config.experiment_types, media_files=list_media(),
-                           blank_rec_types=config.blank_rec_types,
+                           blank_rec_types=config.blank_rec_types, current_user=current_user.name,
                            max_blocks=config.api_max_blocks_to_show, toggels=toggels, psycho_files=get_psycho_files(),
                            extra_time_recording=config.extra_time_recording, feeders=feeders,
                            acquire_stop={'num_frames': 'Num Frames', 'rec_time': 'Record Time [sec]'})
+
+
+@app.route("/login", methods=["GET"])
+def login():
+    return render_template("login.html")
+
+
+@app.route('/login', methods=['POST'])
+def login_post():
+    name = request.form.get('name')
+    password = request.form.get('password')
+    remember = True if request.form.get('remember') else False
+
+    with arena_mgr.orm.session() as s:
+        user = s.query(User).filter_by(name=name).first()
+
+    # check if the user actually exists
+    # take the user-supplied password, hash it, and compare it to the hashed password in the database
+    if not user or not check_password_hash(user.password, password):
+        flash('Please check your login details and try again.')
+        return redirect(url_for('login')) # if the user doesn't exist or password is wrong, reload the page
+
+    # if the above check passes, then we know the user has the right credentials
+    login_user(user, remember=remember)
+    return redirect(url_for('index'))
+
+
+@app.route("/logout")
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('login'))
+
+
+@app.route("/signup", methods=["GET"])
+def signup():
+    return render_template("signup.html")
+
+
+@app.route('/signup', methods=['POST'])
+def signup_post():
+    # code to validate and add user to database goes here
+    name = request.form.get('name')
+    password = request.form.get('password')
+
+    with arena_mgr.orm.session() as s:
+        user = s.query(User).filter_by(name=name).first()
+        if user: # if a user is found, we want to redirect back to signup page so user can try again
+            return redirect(url_for('signup'))
+
+        # create a new user with the form data. Hash the password so the plaintext version isn't saved.
+        new_user = User(name=name, password=generate_password_hash(password, method='scrypt'))
+        s.add(new_user)
+        s.commit()
+
+    return redirect(url_for('login'))
 
 
 @app.route('/check', methods=['GET'])
@@ -603,4 +677,3 @@ if __name__ == "__main__":
         p.terminate()
 
     app.run(host='0.0.0.0', port=config.FLASK_PORT, debug=False)
-

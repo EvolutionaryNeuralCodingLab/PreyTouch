@@ -205,6 +205,7 @@ def scan_cameras(is_print=True) -> pd.DataFrame:
                     break
             cam_names.append(cam_name)
         except Exception as exc:
+            sc = None
             print(f'Unable to load camera; {exc}')
 
     df = pd.DataFrame(df, index=cam_names)

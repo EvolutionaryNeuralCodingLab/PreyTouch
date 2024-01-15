@@ -1,0 +1,59 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+
+        {
+            "type": "chrome",
+            "request": "launch",
+            "name": "Run Pogona Hunter",
+            "url": "http://localhost:8090/holes",
+            "preLaunchTask": "npm: start - pogona_hunter",
+            "webRoot": "${workspaceFolder}/pogona_hunter",
+            "sourceMapPathOverrides": {
+                "webpack:///./src/*": "${webRoot}/src/*"
+            }
+        },
+        {
+            "name": "Python: Flask",
+            "type": "python",
+            "request": "launch",
+            "module": "flask",
+            "env": {
+                "FLASK_APP": "api.py",
+                "FLASK_DEBUG": "1"
+            },
+            "args": [
+                "run",
+                "--no-debugger",
+                "--no-reload"
+            ],
+            "jinja": true,
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}/Arena"
+        },
+        {
+            "type": "node-terminal",
+            "request": "launch",
+            "command": "docker-compose up -d --build --no-deps app && rm -rf ~/.cache/google-chrome",
+            "name": "Build APP",
+            "cwd": "${workspaceFolder}/docker"
+        },
+        {
+            "type": "node-terminal",
+            "request": "launch",
+            "command": "docker-compose exec db pg_dumpall > ${workspaceFolder}/output/backups/$(hostname)_db__$(date '+%d-%m-%Y_%H_%M_%S').sql",
+            "name": "Backup DB",
+            "cwd": "${workspaceFolder}/docker"
+        },
+        {
+            "type": "node-terminal",
+            "request": "launch",
+            "command": "rsync -avu --delete '${workspaceFolder}/output/' 'regev@reptilearn5:/data/PreyTouch/output/' --exclude '*.avi'",
+            "name": "Sync output to reptilearn5",
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}

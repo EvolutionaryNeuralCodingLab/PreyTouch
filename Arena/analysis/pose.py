@@ -1085,6 +1085,8 @@ def fix_calibrations(animal_id=None, model_path=None):
     ap = DLCArenaPose('front', is_use_db=False, model_path=model_path)
     is_initialized = False
     for i, video_path in enumerate(videos):
+        if i < 115:
+            continue
         ap.start_new_session(60)
         if not is_initialized:
             ap.init_from_video(video_path, caliber_only=True)
@@ -1093,7 +1095,7 @@ def fix_calibrations(animal_id=None, model_path=None):
             ap.caliber.set_image_date_and_load(video_path.stem.split('_')[1])
             cache_path = ap.get_predicted_cache_path(video_path)
             zf = pd.read_parquet(cache_path)
-            for i in tqdm(zf.index, desc=video_path.stem):
+            for i in tqdm(zf.index, desc=f'({i+1}/{len(videos)}) {video_path.stem}'):
                 row = zf.loc[i:i].copy()
                 new_row = ap.analyze_frame(row['time'].iloc[0], row.copy())
                 zf.loc[i] = new_row.iloc[0]
@@ -1101,7 +1103,7 @@ def fix_calibrations(animal_id=None, model_path=None):
             ap.save_predicted_video(zf, video_path)
         except MissingFile as exc:
             print(exc)
-        except ImportError:
+        except Exception:
             print(f'\n\n{traceback.format_exc()}\n')
 
 
@@ -1191,7 +1193,7 @@ if __name__ == '__main__':
     matplotlib.use('TkAgg')
     # DLCArenaPose('front').test_loaders(19)
     # print(get_videos_to_predict('PV148'))
-    commit_video_pred_to_db(animal_ids="PV91")
+    commit_video_pred_to_db(animal_ids="PV95")
     # predict_all_videos()
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
     # plt.imshow(img)
@@ -1203,7 +1205,7 @@ if __name__ == '__main__':
     #                 split_by=['animal_id', 'exit_hole'], bodypart='nose',
     #                 is_use_db=True).plot_trajectories(only_to_screen=True)
     # SpatialAnalyzer(animal_ids=['PV91'], split_by=['exit_hole'], bodypart='nose').plot_out_of_experiment_pose()
-    # fix_calibrations('PV91')
+    # fix_calibrations('PV95')
     # for vid in sa.get_videos_paths()['exit_hole=bottomLeft']:
     #     sa.play_trajectories(vid, only_to_screen=True)
     # compare_sides(animal_id='PV80')

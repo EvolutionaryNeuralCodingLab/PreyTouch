@@ -78,7 +78,7 @@ export default {
   },
   methods: {
     move() {
-      if (this.isDead || this.isRetreated) {
+      if (this.isDead || this.isRetreated || this.isJumped) {
         this.draw()
         return
       }
@@ -101,7 +101,6 @@ export default {
         this.straightMove(0)
       // jump up
       } else if (this.isJumpUpMovement) {
-        this.checkJumpTrack()
         this.straightMove(0)
       // random
       } else {
@@ -215,7 +214,7 @@ export default {
       }
       this.y = newY
       this.isJumped = true
-      this.setNextAngle(Math.PI / 2) // set direction towards the bottom
+      this.jumpTimeout()
     },
     isInsideHoleBoundaries() {
       return this.isInsideEntranceHoleBoundaries() || this.isInsideExitHoleBoundaries()
@@ -262,11 +261,14 @@ export default {
         this.startRetreat()
       }
     },
-    checkJumpTrack() {
-      if (this.isJumped && this.y >= this.exitHolePos[1] + (this.currentBugSize / 2)) {
+    jumpTimeout() {
+      this.isJumped = true
+      let t = setTimeout(() => {
         this.isJumped = false
+        this.y = this.exitHolePos[1] + (this.currentBugSize / 2)
         this.setNextAngle(this.directionAngle)
-      }
+        clearTimeout(t)
+      }, 300)
     }
   }
 }

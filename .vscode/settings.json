@@ -25,5 +25,16 @@
             }
         ]
     },
-    "git.untrackedChanges": "separate"
+    "git.untrackedChanges": "separate",
+    "sqltools.connections": [
+        {
+            "previewLimit": 50,
+            "server": "localhost",
+            "port": 5432,
+            "driver": "PostgreSQL",
+            "name": "Arena",
+            "database": "arena",
+            "username": "postgres"
+        }
+    ]
 }
