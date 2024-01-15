@@ -6,11 +6,15 @@ __pycache__/
 .ipynb_checkpoints/
 output/*
 Arena/alembic/versions
+Arena/cached_experiments
+Arena/events
+Arena/.archive
 .env*
 *.weights
 *.avi
 *.mp4
 *.pth
+*.pdf
 *.conv.74
 *.*~
 *.log
@@ -23,6 +27,7 @@ stats/
 *.jpg
 *.jpeg
 *.png
+*.pkl
 std*.txt
 .config
 
@@ -32,6 +37,7 @@ yolo_eval_frames
 yolo_fn_frames
 yolo_eval_labels
 experiment_plots
+notebooks/archive
 
 Arena/Prediction/Yolo4/darknet
 Arena/Prediction/Yolo4/libdarknet.so

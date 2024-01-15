@@ -184,7 +184,8 @@ SERIAL_BAUD = env.int('SERIAL_BAUD', 9600)
 calibration_dir = env('calibration_dir', f'{OUTPUT_DIR}/calibrations')
 min_calib_images = env.int('min_calib_images', 7)
 CHESSBOARD_DIM = env.list('CHESSBOARD_DIM', (9, 6))
-ARUCO_MARKER_SIZE = env.float('ARUCO_MARKER_SIZE', 2.65)  # centimeters
+ARUCO_MARKER_SIZE = env.float('ARUCO_MARKER_SIZE', 2.2)  # centimeters
+MARKERS_IMAGES_DIR = env('MARKERS_IMAGES_DIR', f'{calibration_dir}/charuco_images')
 
 # Schedules
 DISABLE_SCHEDULER = env.bool('DISABLE_SCHEDULER', False)
@@ -211,6 +212,7 @@ MAX_DAILY_REWARD = env.int('MAX_DAILY_REWARD', 40)
 experiment_cache_path = env('experiment_cache_path', 'cached_experiments')
 MAX_DURATION_CONT_BLANK = env.int('MAX_DURATION_CONT_BLANK', 48*3600)
 IS_HOLD_TRIGGERS = env.bool('IS_HOLD_TRIGGERS', True)
+IS_CHECK_ENGAGEMENT_LEVEL = env.bool('IS_CHECK_ENGAGEMENT_LEVEL', False)
 HOLD_TRIGGERS_TIME = env.int('HOLD_TRIGGERS_TIME', 2)
 experiment_types = {
     'bugs': ['reward_type', 'bug_types', 'reward_bugs', 'bug_speed', 'movement_type', 'time_between_bugs',

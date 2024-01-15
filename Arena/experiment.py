@@ -8,7 +8,7 @@ import time
 from typing import Union
 import humanize
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 from multiprocessing.pool import ThreadPool
 from threading import Event
@@ -24,7 +24,7 @@ from cache import RedisCache, CacheColumns as cc
 from utils import mkdir, to_integer, turn_display_on, turn_display_off, run_command, get_hdmi_xinput_id, get_psycho_files
 from subscribers import Subscriber, start_experiment_subscribers
 from periphery_integration import PeripheryIntegrator
-from db_models import ORM, Experiment as Experiment_Model
+from db_models import ORM, Experiment as Experiment_Model, Strike
 
 
 @dataclass
@@ -208,6 +208,7 @@ class Block:
     block_type: str = 'bugs'
     bug_speed: [int, list] = None
     bug_size: int = None
+    holes_height: int = 100
     is_default_bug_size: bool = True
     exit_hole: str = None
     reward_type: str = 'always'
@@ -305,6 +306,8 @@ class Block:
         self.save_block_log_files()
         self.cache.set(cc.EXPERIMENT_BLOCK_ID, self.block_id, timeout=self.overall_block_duration)
         self.cache.set(cc.EXPERIMENT_BLOCK_PATH, self.block_path, timeout=self.overall_block_duration + self.iti)
+        # check engagement of the animal
+        self.check_engagement_level()
         # start cameras for experiment with their predictors and set the output dir for videos
         self.periphery.cam_trigger(0)  # turn off trigger
         t0 = time.time()
@@ -453,6 +456,15 @@ class Block:
                 return
             time.sleep(0.1)
 
+    def check_engagement_level(self):
+        """check if there are any strikes in the previous 2 hours. If not, give a manual reward"""
+        if not config.IS_CHECK_ENGAGEMENT_LEVEL:
+            return
+        with self.orm.session() as s:
+            res = s.query(Strike).filter(Strike.time > datetime.now() - timedelta(hours=2)).all()
+        if not res:
+            self.periphery.feed(is_manual=True)
+
     def run_psycho(self):
         psycho_files = get_psycho_files()
         cmd = f'cd {psycho_files[self.psycho_file]} && DISPLAY="{config.ARENA_DISPLAY}" {config.PSYCHO_PYTHON_INTERPRETER} {self.psycho_file}.py'
@@ -529,7 +541,8 @@ class Block:
             'bugSize': self.bug_size,
             'backgroundColor': self.background_color,
             'exitHole': random.choice(['bottomLeft', 'bottomRight']) if self.exit_hole == 'random' else self.exit_hole,
-            'rewardAnyTouchProb': self.reward_any_touch_prob
+            'rewardAnyTouchProb': self.reward_any_touch_prob,
+            # 'holesHeight': self.holes_height
         }
 
     @property

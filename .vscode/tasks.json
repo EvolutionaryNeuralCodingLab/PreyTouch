@@ -1,0 +1,40 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "shell",
+			"label": "npm: start - pogona_hunter",
+			"command": "PORT=8090 npm run dev",
+			"detail": "npm run dev",
+			"isBackground": true,
+			"problemMatcher": {
+                "owner": "javascript",
+                "fileLocation": ["relative", "${workspaceFolder}"],
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+)\\s-\\s(error|warning|info)\\s-\\s(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "^\\s*\\[.*\\]\\s*Compiling\\.\\.\\.",
+                    "endsPattern": "Compiled successfully"
+                }
+            },
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+			"options": {
+				"cwd": "${workspaceFolder}/pogona_hunter",
+			}
+		}
+	]
+}

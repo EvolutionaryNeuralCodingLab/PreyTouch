@@ -3,5 +3,27 @@
         "Arena"
     ],
     "python.testing.unittestEnabled": false,
-    "python.testing.pytestEnabled": true
+    "python.testing.pytestEnabled": true,
+    "python.analysis.extraPaths": [
+        "Arena"
+    ],
+    "python.autoComplete.extraPaths": [
+        "Arena"
+    ],
+    "editor.tokenColorCustomizations": {
+        "textMateRules": [
+            {
+                "scope": [
+                    //"variable.language.special.self.python",
+                    "variable.parameter.function.language.special.self.python",
+                    //"variable.language.special.cls.python",
+                    //"variable.parameter.function.language.special.cls.python"
+                ],
+                "settings": {
+                    "fontStyle": "italic"
+                }
+            }
+        ]
+    },
+    "git.untrackedChanges": "separate"
 }

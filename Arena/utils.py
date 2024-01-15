@@ -6,6 +6,7 @@ import serial
 import time
 import threading
 from pathlib import Path
+import pandas as pd
 import numpy as np
 import asyncio
 from functools import wraps
@@ -223,14 +224,14 @@ class Kalman:
         self.kf.R = np.diag([r, r])
 
     def init(self, x0, y0):
-        if not np.isnan(x0) and not np.isnan(y0):
+        if not pd.isna(x0) and not pd.isna(y0):
             x0, y0 = 0, 0
         self.kf.x = np.array([x0, y0, 0, 0, 0, 0])
         self.is_initiated = True
 
     def get_filtered(self, x, y):
         self.kf.predict()
-        if not np.isnan(x) and not np.isnan(y):
+        if not pd.isna(x) and not pd.isna(y):
             z = np.array([x, y])
             self.kf.update(z)
         return self.kf.x

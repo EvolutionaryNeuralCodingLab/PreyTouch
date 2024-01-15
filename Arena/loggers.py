@@ -86,7 +86,7 @@ def create_arena_handler(name):
     if _handlers.get(name):
         h = _handlers[name]
     else:
-        h = ArenaHandler()
+        h = ArenaHandler(sys.stdout)
         h.setFormatter(logging.Formatter(DEFAULT_FORMAT, DEFAULT_DATEFMT))
         _handlers[name] = h
     return h

@@ -24,7 +24,7 @@ env = config.env
 TIME_TABLE = {
     'cameras_on': (env('CAMERAS_ON_TIME', '07:00'), env('CAMERAS_OFF_TIME', '19:00')),
     'run_pose': (env('POSE_ON_TIME', '19:30'), env('POSE_OFF_TIME', '06:00')),
-    'tracking_pose': (env('TRACKING_POSE_ON_TIME', '02:00'), env('TRACKING_POSE_OFF_TIME', '07:00')),
+    'tracking_pose': (env('TRACKING_POSE_ON_TIME', '09:00'), env('TRACKING_POSE_OFF_TIME', '18:30')),
     'lights_sunrise': env('LIGHTS_SUNRISE', '07:00'),
     'lights_sunset': env('LIGHTS_SUNSET', '19:00'),
     'dwh_commit_time': env('DWH_COMMIT_TIME', '07:00'),
@@ -273,10 +273,9 @@ class Scheduler(threading.Thread):
 
 def _run_pose_callback(dlc_on, errors_cache):
     try:
-        predict_all_videos(max_videos=20, errors_cache=errors_cache)
+        predict_all_videos(max_videos=20, errors_cache=errors_cache, is_tqdm=False)
     finally:
         dlc_on.clear()
-
 
 def _run_tracking_pose(tracking_pose_on):
     try:

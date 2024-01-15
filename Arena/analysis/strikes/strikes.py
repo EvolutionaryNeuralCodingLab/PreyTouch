@@ -23,30 +23,6 @@ NUM_POSE_FRAMES_PER_STRIKE = 30
 class StrikeAnalyzer:
     def __init__(self, loader: Loader = None, payload: dict = None, pose_df: pd.DataFrame = None,
                  bug_traj: pd.DataFrame = None, is_y_pd=False):
-        """
-        Payload fields:
-        - time: datetime
-        - x,y : strike position
-        - bug_x,bug_y : bug position at strike time
-        - is_hit: boolean
-        - is_reward_any_touch: boolean. Reward should be given due to any-touch probability
-        - is_reward_bug: boolean
-        - is_climbing: boolean
-        - bug_type: string
-        - bug_size: integer
-        - in_block_trial_id: integer. The trial number inside its block
-        - trial_id: trial DB index
-
-        Pose-DF columns:
-        - frame_id
-        - time
-        - <key-point> / x, y, cam_x, cam_y, prob : float
-
-        Bug Trajectory columns:
-        - time
-        - x
-        - y
-        """
         self.loader = loader
         self.payload = payload
         self.pose_df = pose_df
@@ -390,6 +366,17 @@ class StrikeAnalyzer:
 
     @cached_property
     def prediction_distance(self):
+        bug_pos = self.bug_pos_at_leap
+        if bug_pos is None:
+            return
+        if not self.is_y_pd:
+            d = distance(*bug_pos, *self.strike_position)
+        else:
+            d = bug_pos[1] - self.strike_position[1]
+        return pixels2cm(d)
+
+    @cached_property
+    def bug_pos_at_leap(self):
         if self.leap_frame is None:
             return
         if self.bug_traj is None:
@@ -398,11 +385,7 @@ class StrikeAnalyzer:
         if not traj_id:
             return
         bug_pos = self.bug_traj.loc[traj_id, ['x', 'y']].values.tolist()
-        if not self.is_y_pd:
-            d = distance(*bug_pos, *self.strike_position)
-        else:
-            d = bug_pos[1] - self.strike_position[1]
-        return pixels2cm(d)
+        return bug_pos
 
     @cached_property
     def bug_speed(self):
@@ -561,7 +544,7 @@ class StrikeScanner:
         errors = []
         for sid in tqdm(strikes_ids, desc='Strikes Scan'):
             try:
-                ld = Loader(sid, self.cam_name, is_debug=False, orm=self.orm)
+                ld = Loader(sid, self.cam_name, is_debug=False, orm=self.orm, is_use_db=False)
                 sa = StrikeAnalyzer(ld)
                 if self.is_plot_summary:
                     sa.plot_strike_analysis(only_save_to=self.output_dir.as_posix())
@@ -672,8 +655,8 @@ if __name__ == '__main__':
     # sa.plot_strike_analysis()
     # delete_duplicate_strikes('PV80')
     # play_strikes('PV80', start_time='2022-12-01', cam_name='front', is_load_pose=False, strikes_ids=[6365])
-    # StrikeScanner(is_skip_committed=False).scan()
-    time2feeder()
+    StrikeScanner(animal_id='PV95', is_skip_committed=False).scan()
+    # time2feeder(),
     # extract_bad_annotated_strike_frames('PV85')#, movement_type='random')
     # short_predict('PV80')
     # foo()

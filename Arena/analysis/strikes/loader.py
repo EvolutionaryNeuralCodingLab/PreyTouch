@@ -35,8 +35,7 @@ class Loader:
         self.strike_frame_id = None
         self.video_path = None
         self.avg_temperature = None
-        if self.is_load_pose:
-            self.dlc_pose = ArenaPose(cam_name, 'deeplabcut', is_use_db=is_use_db, orm=orm)
+        self.dlc_pose = ArenaPose(cam_name, 'deeplabcut', is_use_db=is_use_db, orm=orm)
         self.frames_df: pd.DataFrame = pd.DataFrame()
         self.traj_df: pd.DataFrame = pd.DataFrame(columns=['time', 'x', 'y'])
         self.info = {}
@@ -65,8 +64,7 @@ class Loader:
                 raise MissingStrikeData('No trial found in DB')
 
             self.load_bug_trajectory_data(trial, strk)
-            if self.is_load_pose:
-                self.load_frames_data(s, trial, strk)
+            self.load_frames_data(s, trial, strk)
             self.load_temperature(s, trial.block_id)
 
     def load_bug_trajectory_data(self, trial, strk):
@@ -100,6 +98,8 @@ class Loader:
                     (frames_times.iloc[0].time <= strk.time <= frames_times.iloc[-1].time):
                 # if load pose isn't needed finish here
                 self.strike_frame_id = (strk.time - frames_times.time).dt.total_seconds().abs().idxmin()
+                if not self.is_use_db:
+                    self.set_video_path(vid)
                 if not self.is_load_pose:
                     self.frames_df = frames_times
                 # otherwise, load all pose data around strike frame
@@ -119,7 +119,6 @@ class Loader:
 
     def load_pose(self, vid):
         if not self.is_use_db:
-            self.set_video_path(vid)
             pose_df = self.dlc_pose.load(video_path=self.video_path, only_load=True)
         else:
             pose_df = self.dlc_pose.load(video_db_id=vid.id)
@@ -220,7 +219,8 @@ class Loader:
     def play_strike(self, n_frames_back=None, n_frames_forward=None, annotations=None):
         n_frames_back = n_frames_back or self.n_frames_back
         n_frames_forward = n_frames_forward or self.n_frames_forward
-        nose_df = self.frames_df['nose']
+        if self.is_load_pose:
+            nose_df = self.frames_df['nose']
         for i, frame in self.gen_frames_around_strike(n_frames_back, n_frames_forward):
             frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
             if i == self.strike_frame_id:
@@ -230,11 +230,11 @@ class Loader:
             if self.is_load_pose:
                 self.dlc_pose.predictor.plot_predictions(frame, i, self.frames_df)
 
-            if i in nose_df.index and not np.isnan(nose_df['cam_x'][i]):
-                # put_text(f'({nose_df["cam_x"][i]:.0f}, {nose_df["cam_y"][i]:.0f})', frame, 1000, 30)
-                # put_text(f'({nose_df["x"][i]:.0f}, {nose_df["y"][i]:.0f})', frame, 1000, 70)
-                angle = self.frames_df.loc[i, [("angle", "")]]
-                put_text(f'Angle={math.degrees(angle):.0f}', frame, 1000, 30)
+                if i in nose_df.index and not np.isnan(nose_df['cam_x'][i]):
+                    # put_text(f'({nose_df["cam_x"][i]:.0f}, {nose_df["cam_y"][i]:.0f})', frame, 1000, 30)
+                    # put_text(f'({nose_df["x"][i]:.0f}, {nose_df["y"][i]:.0f})', frame, 1000, 70)
+                    angle = self.frames_df.loc[i, [("angle", "")]]
+                    put_text(f'Angle={math.degrees(angle):.0f}', frame, 1000, 30)
 
             frame = cv2.resize(frame, None, None, fx=0.5, fy=0.5)
             cv2.imshow(str(self), frame)

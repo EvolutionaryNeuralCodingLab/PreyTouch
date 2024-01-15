@@ -1,7 +1,7 @@
 import datetime
 import math
 import pickle
-
+import re
 import yaml
 import cv2
 import traceback
@@ -48,6 +48,32 @@ class NoFramesVideo(Exception):
 
 
 class ArenaPose:
+    """
+    ArenaPose is a class that provides a high-level interface for interacting with the pose estimation model. It handles loading and saving data from and to the database, as well as providing methods for predicting poses and analyzing data.
+
+    Args:
+        cam_name (str): The name of the camera from which the pose is being estimated.
+        predictor (str or object): The pose estimation model to use. If a string, it should be the name of a model from the config file. If an object, it should be an instantiated model.
+        is_use_db (bool, optional): Whether to use the database for loading and saving data. Defaults to True.
+        orm (object, optional): The ORM object to use for interacting with the database. Defaults to None.
+        model_path (str, optional): The path to the model file if it is not located in the default location. Defaults to None.
+
+    Attributes:
+        cam_name (str): The name of the camera from which the pose is being estimated.
+        predictor (object): The pose estimation model used for prediction.
+        model_path (str): The path to the model file if it is not located in the default location.
+        is_use_db (bool): Whether to use the database for loading and saving data.
+        orm (object): The ORM object used for interacting with the database.
+        last_commit (tuple): The timestamp and position of the last commit to the database.
+        caliber (object): The calibrator used for converting pixel coordinates to real-world coordinates.
+        predictions (list): A list of tuples containing the timestamp and position of each prediction.
+        current_position (tuple): The current position of the object, calculated using a Kalman filter.
+        current_velocity (tuple): The current velocity of the object, calculated using a Kalman filter.
+        is_initialized (bool): Whether the calibrator and predictor have been initialized.
+        example_writer (object): A video writer used for creating an example video with predictions.
+
+    """
+
     def __init__(self, cam_name, predictor, is_use_db=True, orm=None, model_path=None):
         self.cam_name = cam_name
         self.predictor = predictor
@@ -66,9 +92,19 @@ class ArenaPose:
         self.current_velocity = None
         self.is_initialized = False
         self.example_writer = None
-        # self.screen_coords = get_screen_coords('pogona_pursuit2')
 
     def init(self, img, caliber_only=False):
+        """
+        Initialize the pose estimator and caliber.
+
+        Args:
+            img (numpy.ndarray): The image to use for initialization.
+            caliber_only (bool, optional): Whether to only initialize the calibrator and not the predictor. Defaults to False.
+
+        Raises:
+            Exception: If the caliber could not be initialized, an exception is raised.
+
+        """
         if not caliber_only:
             self.predictor.init(img)
         self.caliber = CharucoEstimator(self.cam_name, is_debug=False)
@@ -78,6 +114,17 @@ class ArenaPose:
             raise Exception('Could not initiate caliber; closing ArenaPose')
 
     def init_from_video(self, video_path: [str, Path], caliber_only=False):
+        """
+        Initialize the pose estimator from a video file.
+
+        Args:
+            video_path (str or Path): The path to the video file.
+            caliber_only (bool, optional): Whether to only initialize the calibrator and not the predictor. Defaults to False.
+
+        Raises:
+            Exception: If the video file does not exist or has 0 frames, an exception is raised.
+
+        """
         if isinstance(video_path, Path):
             video_path = video_path.as_posix()
         cap = cv2.VideoCapture(video_path)
@@ -87,7 +134,33 @@ class ArenaPose:
         self.init(frame, caliber_only=caliber_only)
         cap.release()
 
+    def change_aruco_markers(self, video_path: str):
+        """
+        Change the loaded markers to match the video date.
+
+        Args:
+            video_path (str): The path to the video file.
+
+        """
+        if not re.match(r'\w+_\d{8}T\d{6}', Path(video_path).stem):
+            return
+        cam_name, vid_date = Path(video_path).stem.split('_')
+        self.caliber.set_image_date_and_load(vid_date)
+
     def load(self, video_path=None, video_db_id=None, only_load=False, prefix=''):
+        """
+        Load the pose data for a video.
+
+        Args:
+            video_path (str or Path, optional): The path to the video file. If not provided, the video will be loaded from the database.
+            video_db_id (int, optional): The database ID of the video. If not provided, the video will be loaded from the path.
+            only_load (bool, optional): Whether to only load the data without analyzing or saving it. Defaults to False.
+            prefix (str, optional): A prefix to use for the tqdm progress bar. Defaults to ''.
+
+        Returns:
+            pandas.DataFrame: The pose data for the video.
+
+        """
         if self.is_use_db:
             assert video_db_id, 'must provide video_db_id if is_use_db=True'
             return self._load_from_db(video_db_id)
@@ -127,6 +200,13 @@ class ArenaPose:
         return pose_df
 
     def test_loaders(self, db_video_id):
+        """
+        Test the loaders by comparing the local and database loaded data for a given video.
+
+        Args:
+            db_video_id (int): The database ID of the video.
+
+        """
         with self.orm.session() as s:
             video_path = s.query(Video).filter_by(id=db_video_id).first().path
             assert video_path and Path(video_path).exists()
@@ -154,7 +234,7 @@ class ArenaPose:
             self.predictor = getattr(prd_module, prd_class)(self.cam_name, self.model_path)
 
     def predict_video(self, db_video_id=None, video_path=None, is_save_cache=True, is_create_example_video=False,
-                      prefix=''):
+                      prefix='', is_tqdm=True):
         """
         predict pose for a given video
         @param db_video_id: The DB index of the video in the videos table
@@ -175,7 +255,9 @@ class ArenaPose:
             return
         fps = cap.get(cv2.CAP_PROP_FPS)
         self.start_new_session(fps)
-        for frame_id in tqdm(range(n_frames), desc=f'{prefix}{Path(video_path).stem}'):
+        self.change_aruco_markers(video_path)
+        iters = range(n_frames)
+        for frame_id in (tqdm(iters, desc=f'{prefix}{Path(video_path).stem}') if is_tqdm else iters):
             ret, frame = cap.read()
             if not self.is_initialized:
                 self.init(frame)
@@ -305,8 +387,19 @@ class ArenaPose:
             raise MissingFile(f'No prediction cache found under: {cache_path}')
         pose_df = pd.read_parquet(cache_path)
         return pose_df
+    
+    def save_predicted_video(self, pose_df: pd.DataFrame, video_path: str) -> None:
+        """
+        Save predicted pose data as a parquet file.
 
-    def save_predicted_video(self, pose_df, video_path):
+        Args:
+            pose_df (pd.DataFrame): The predicted pose data.
+            video_path (str): The path of the video.
+
+        Returns:
+            None
+
+        """
         cache_path = self.get_predicted_cache_path(video_path)
         pose_df.to_parquet(cache_path)
 
@@ -380,6 +473,38 @@ class DLCArenaPose(ArenaPose):
 
 
 class SpatialAnalyzer:
+    """
+    A class for analyzing the spatial data of the animals in the arena.
+
+    Args:
+        animal_ids (list, optional): A list of animal IDs to analyze. If None, all animals will be analyzed.
+        day (date, optional): The day of the experiment to analyze. If None, all experiments on the specified date range will be analyzed.
+        start_date (date, optional): The start date of the experiment to analyze. If None, all experiments on the specified date range will be analyzed.
+        cam_name (str, optional): The camera name to use for analysis. Defaults to 'front'.
+        bodypart (str, optional): The body part to analyze. Defaults to 'mid_ears'.
+        split_by (list, optional): A list of columns to split the data by. If None, no splitting will be performed. Defaults to None.
+        orm (ORM, optional): The ORM object to use for database access. If None, a new ORM object will be created. Defaults to None.
+        is_use_db (bool, optional): Whether to use the database for loading data. If False, the video paths will be used for loading data. Defaults to False.
+        cache_dir (str, optional): The directory to use for caching data. If None, no caching will be performed. Defaults to None.
+        arena_name (str, optional): The name of the arena to analyze. If None, all arenas will be analyzed. Defaults to None.
+        excluded_animals (list, optional): A list of animal IDs to exclude from analysis. If None, no animals will be excluded. Defaults to None.
+        **block_kwargs: Additional keyword arguments to filter the blocks to analyze.
+
+    Attributes:
+        animal_ids (list): A list of animal IDs to analyze.
+        day (date): The day of the experiment to analyze.
+        start_date (date): The start date of the experiment to analyze.
+        cam_name (str): The camera name to use for analysis.
+        bodypart (str): The body part to analyze.
+        split_by (list): A list of columns to split the data by.
+        orm (ORM): The ORM object to use for database access.
+        is_use_db (bool): Whether to use the database for loading data.
+        cache_dir (str): The directory to use for caching data.
+        arena_name (str): The name of the arena to analyze.
+        excluded_animals (list): A list of animal IDs to exclude from analysis.
+        block_kwargs (dict): Additional keyword arguments to filter the blocks to analyze.
+        pose_dict (dict): A dictionary of pandas dataframes, where the keys are the group names and the values are the pose data for the animals in the group.
+    """
     splits_table = {
         'animal_id': 'experiment',
         'arena': 'experiment',
@@ -390,14 +515,6 @@ class SpatialAnalyzer:
 
     def __init__(self, animal_ids=None, day=None, start_date=None, cam_name='front', bodypart='mid_ears', split_by=None,
                  orm=None, is_use_db=False, cache_dir=None, arena_name=None, excluded_animals=None, **block_kwargs):
-        """
-        Spatial analysis and visualization
-        @param animal_id:
-        @param day: limit results to a certain day
-        @param movement_type:
-        @param cam_name:
-        @param bodypart: The body part from which the pose coordinates will be taken
-        """
         if animal_ids and not isinstance(animal_ids, list):
             animal_ids = [animal_ids]
         self.animal_ids = animal_ids
@@ -422,6 +539,13 @@ class SpatialAnalyzer:
         self.pose_dict = self.get_pose()
 
     def get_pose(self) -> dict:
+        """
+        Load the pose data for the animals.
+
+        Returns:
+            dict: A dictionary of pandas dataframes, where the keys are the group names and the values are the pose data for the animals in the group.
+
+        """
         cache_path = f'{self.cache_dir}/spatial_{"_".join(self.animal_ids) if self.animal_ids else "all"}.pkl'
         if self.cache_dir:
             cache_path = Path(cache_path)
@@ -446,7 +570,9 @@ class SpatialAnalyzer:
             res[group_name] = pd.concat(res[group_name])
 
         # sort results by first split value
-        if len(self.split_by) == 2:
+        if not self.split_by:
+            pass
+        elif len(self.split_by) == 2:
             res = dict(sorted(res.items(), key=lambda x: (x[0].split(',')[0].split('=')[1], x[0].split(',')[1].split('=')[1])))
         elif len(self.split_by) == 1:
             res = dict(sorted(res.items(), key=lambda x: x[0].split(',')[0].split('=')[1]))
@@ -465,12 +591,13 @@ class SpatialAnalyzer:
             for c in ['x', 'y']:
                 pose_df[('mid_ears', c)] = pose_df[[('right_ear', c), ('left_ear', c)]].mean(axis=1)
             pose_df[('mid_ears', 'prob')] = pose_df[[('right_ear', 'prob'), ('left_ear', 'prob')]].min(axis=1)
-        return pd.concat([
+        l = [
             pd.to_datetime(pose_df['time'], unit='s'),
-            pose_df[self.bodypart],
-            pose_df['block_id'],
-            pose_df['animal_id']
-        ], axis=1)
+            pose_df[self.bodypart]
+        ]
+        if self.is_use_db:
+            l.extend([pose_df['block_id'], pose_df['animal_id']])
+        return pd.concat(l, axis=1)
 
     def get_videos_to_load(self, is_add_block_video_id=False) -> dict:
         """return list of lists of groups of video paths that are split using 'split_by'"""
@@ -538,6 +665,8 @@ class SpatialAnalyzer:
 
                 for p in tracking_dir.rglob('*.csv'):
                     df = pd.read_csv(p, index_col=0)
+                    if df.empty:
+                        continue
                     df = df[~df.x.isna()]
                     pose_.extend(df[['x', 'y']].to_records(index=False).tolist())
             groups_pose[group_name] = pose_
@@ -549,7 +678,7 @@ class SpatialAnalyzer:
         for i, (group_name, pose_list) in enumerate(groups_pose.items()):
             df = pd.DataFrame(pose_list, columns=['x', 'y'])
             sns.histplot(data=df, x='x', y='y', ax=axes[i], bins=(30, 30), cmap='Greens', stat='probability')
-            axes[i].set_xlim([0, 50])
+            # axes[i].set_xlim([0, 50])
         plt.show()
 
     def plot_spatial_hist(self, single_animal, pose_dict=None, cols=4, axes=None, is_title=True, animal_colors=None):
@@ -559,7 +688,7 @@ class SpatialAnalyzer:
         axes_ = self.get_axes(cols, len(pose_dict), axes=axes)
         for i, (group_name, pose_df) in enumerate(pose_dict.items()):
             cbar_ax = None
-            if i == len(pose_dict) - 1:
+            if i == len(pose_dict) - 1 and len(pose_dict) > 1:
                 # cbar_ax = axes_[i].inset_axes([1.05, 0.1, 0.03, 0.8])
                 cbar_ax = axes_[i].inset_axes([0.2, -0.3, 0.6, 0.05])
             df_ = pose_df.query('0 <= x <= 40 and y<20')
@@ -740,6 +869,22 @@ class SpatialAnalyzer:
 
     def cluster_trajectories(self, pose: pd.DataFrame, cross_y_val=20, frames_around_cross=300, window_length=31,
                              min_traj_len=2, only_to_screen=False, is_plot=False):
+        """
+        This function clusters animal trajectories based on the spatial proximity of crossing points.
+
+        Args:
+            pose (pd.DataFrame): A pandas dataframe containing the animal poses.
+            cross_y_val (float, optional): The y-value at which to consider a crossing point. Defaults to 20.
+            frames_around_cross (int, optional): The number of frames to consider around a crossing point. Defaults to 300.
+            window_length (int, optional): The window length for the Savitzky-Golay filter. Defaults to 31.
+            min_traj_len (int, optional): The minimum trajectory length. Defaults to 2.
+            only_to_screen (bool, optional): Whether to only consider trajectories that end up on the screen. Defaults to False.
+            is_plot (bool, optional): Whether to plot the trajectories. Defaults to False.
+
+        Returns:
+            dict: A dictionary of trajectories, where the key is a tuple of (block_id, frame_id, animal_id) and the value is a pandas dataframe containing the trajectory.
+
+        """
         trajs = {}
         dist_df = pose[['time', 'x', 'y', 'prob', 'block_id', 'animal_id'
                         ]].reset_index().copy().rename(columns={'index': 'frame_id'})
@@ -783,41 +928,6 @@ class SpatialAnalyzer:
 
         if is_plot:
             fig.tight_layout()
-        #     axes[i].scatter(x=crosses, y=xf.loc[crosses, 'y'], c='red')
-        #     axes[i].set_title(f'#Crosses={len(crosses)}')
-        # fig.tight_layout()
-        # plt.show()
-
-        # dists = np.sqrt(pose.x.diff() ** 2 + pose.y.diff() ** 2).dropna()
-        # indices = dists.index.tolist()
-        # vs = savgol_filter(dists.values, window_length=31, polyorder=0, mode='interp')
-        # current_group = None
-        # nan_counter = 0
-        # t = (pose.time - pose.time.iloc[0]).dt.total_seconds()
-        # for i, pose_i in enumerate(indices):
-        #     pos = (pose.x.loc[pose_i], pose.y.loc[pose_i])
-        #     if vs[i] > 4:
-        #         if not current_group:
-        #             current_group = pose_i
-        #         trajs.setdefault(current_group, []).append(pos)
-        #         nan_counter = 0
-        #     elif np.isnan(vs[i]) and nan_counter <= max_nan_seq:
-        #         nan_counter += 1
-        #         continue
-        #     else:
-        #         if current_group:
-        #             if self.calc_traj_distance(trajs[current_group]) < 3:
-        #                 del trajs[current_group]
-        #         current_group = None
-        #         nan_counter = 0
-        #
-        # ax = plt.subplot()
-        # ax.plot(t[1:], vs)
-        # for start_frame, traj in trajs.items():
-        #     traj = np.array(traj)
-        #     rect = patches.Rectangle((t[start_frame], 0), t[start_frame+len(traj)] - t[start_frame], 5, linewidth=1, facecolor='g', alpha=0.4)
-        #     ax.add_patch(rect)
-        # plt.show()
 
         return trajs
 
@@ -975,14 +1085,17 @@ def fix_calibrations(animal_id=None, model_path=None):
     ap = DLCArenaPose('front', is_use_db=False, model_path=model_path)
     is_initialized = False
     for i, video_path in enumerate(videos):
+        if i < 115:
+            continue
         ap.start_new_session(60)
         if not is_initialized:
             ap.init_from_video(video_path, caliber_only=True)
             is_initialized = True
         try:
+            ap.caliber.set_image_date_and_load(video_path.stem.split('_')[1])
             cache_path = ap.get_predicted_cache_path(video_path)
             zf = pd.read_parquet(cache_path)
-            for i in tqdm(zf.index, desc=video_path.stem):
+            for i in tqdm(zf.index, desc=f'({i+1}/{len(videos)}) {video_path.stem}'):
                 row = zf.loc[i:i].copy()
                 new_row = ap.analyze_frame(row['time'].iloc[0], row.copy())
                 zf.loc[i] = new_row.iloc[0]
@@ -994,18 +1107,20 @@ def fix_calibrations(animal_id=None, model_path=None):
             print(f'\n\n{traceback.format_exc()}\n')
 
 
-def predict_all_videos(animal_id=None, max_videos=None, experiments_dir=None, model_path=None, errors_cache=None):
+def predict_all_videos(animal_id=None, max_videos=None, experiments_dir=None, model_path=None, errors_cache=None,
+                       is_tqdm=True):
     videos = get_videos_to_predict(animal_id, experiments_dir, model_path)
     if not videos:
         return
     print(f'found {len(videos)}/{len(videos)} to predict')
     success_count = 0
-    ap = DLCArenaPose('front', is_use_db=False, model_path=model_path)
+    ap = DLCArenaPose('front', is_use_db=True, model_path=model_path)
     for i, video_path in enumerate(videos):
         try:
             if ap.get_predicted_cache_path(video_path).exists():
                 continue
-            ap.predict_video(video_path=video_path, is_create_example_video=False, prefix=f'({i+1}/{len(videos)}) ')
+            ap.predict_video(video_path=video_path, is_create_example_video=False, 
+                             prefix=f'({i+1}/{len(videos)}) ', is_tqdm=is_tqdm)
             success_count += 1
             if max_videos and success_count >= max_videos:
                 return
@@ -1054,14 +1169,19 @@ def commit_pose_estimation_to_db(animal_id=None, cam_name='front', min_dist=0.1,
             print(f'Error: {exc}; {video_path}')
 
 
-def commit_video_pred_to_db(animal_id=None, cam_name='front'):
+def commit_video_pred_to_db(animal_ids=None, cam_name='front'):
     orm = ORM()
-    sa = SpatialAnalyzer(animal_id=animal_id, bodypart='nose', orm=orm, cam_name=cam_name)
+    sa = SpatialAnalyzer(animal_ids=animal_ids, bodypart='nose', orm=orm, cam_name=cam_name)
     vids = sa.get_videos_to_load(is_add_block_video_id=True)
     print(f'Start commit pose of model: {sa.dlc.predictor.model_name}')
     for video_path, block_id, video_id in tqdm(vids['']):
         try:
             animal_id = Path(video_path).parts[-5]
+            # delete previous predictions
+            with orm.session() as s:
+                s.query(VideoPrediction).filter_by(animal_id=animal_id, video_id=video_id).delete()
+                s.commit()
+
             pose_df = sa.dlc.load(video_path=video_path, only_load=True).dropna(subset=[('nose', 'x')])
             start_time = datetime.datetime.fromtimestamp(pose_df.iloc[0][('time', '')])
             orm.commit_video_predictions(sa.dlc.predictor.model_name, pose_df, video_id, start_time, animal_id)
@@ -1073,19 +1193,19 @@ if __name__ == '__main__':
     matplotlib.use('TkAgg')
     # DLCArenaPose('front').test_loaders(19)
     # print(get_videos_to_predict('PV148'))
-    # commit_video_pred_to_db()
+    commit_video_pred_to_db(animal_ids="PV95")
     # predict_all_videos()
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
     # plt.imshow(img)
     # plt.show()
     # load_pose_from_videos('PV80', 'front', is_exit_agg=True) #, day='20221211')h
-    # SpatialAnalyzer(movement_type='low_horizontal', split_by=['exit_hole'], bodypart='nose', is_use_db=True).plot_spatial()
+    # SpatialAnalyzer(animal_ids=['PV91'], bodypart='nose', is_use_db=True).plot_spatial_hist('PV91')
     # SpatialAnalyzer(movement_type='low_horizontal', split_by=['exit_hole'], bodypart='nose').find_crosses(y_value=5)
     # SpatialAnalyzer(animal_ids=['PV42', 'PV91'], movement_type='low_horizontal',
     #                 split_by=['animal_id', 'exit_hole'], bodypart='nose',
     #                 is_use_db=True).plot_trajectories(only_to_screen=True)
-    # SpatialAnalyzer(animal_id='PV91', movement_type='low_horizontal', split_by=['exit_hole'], bodypart='nose').plot_out_of_experiment_pose()
-    # fix_calibrations()
+    # SpatialAnalyzer(animal_ids=['PV91'], split_by=['exit_hole'], bodypart='nose').plot_out_of_experiment_pose()
+    # fix_calibrations('PV95')
     # for vid in sa.get_videos_paths()['exit_hole=bottomLeft']:
     #     sa.play_trajectories(vid, only_to_screen=True)
     # compare_sides(animal_id='PV80')
