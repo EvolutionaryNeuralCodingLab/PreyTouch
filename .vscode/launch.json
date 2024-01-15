@@ -17,6 +17,24 @@
             }
         },
         {
+            "name": "Python: Flask",
+            "type": "python",
+            "request": "launch",
+            "module": "flask",
+            "env": {
+                "FLASK_APP": "api.py",
+                "FLASK_DEBUG": "1"
+            },
+            "args": [
+                "run",
+                "--no-debugger",
+                "--no-reload"
+            ],
+            "jinja": true,
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}/Arena"
+        },
+        {
             "type": "node-terminal",
             "request": "launch",
             "command": "docker-compose up -d --build --no-deps app && rm -rf ~/.cache/google-chrome",

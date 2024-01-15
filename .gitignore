@@ -28,6 +28,7 @@ stats/
 *.jpeg
 *.png
 *.pkl
+*.deb
 std*.txt
 .config
 
