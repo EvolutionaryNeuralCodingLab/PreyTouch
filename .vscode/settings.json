@@ -10,6 +10,10 @@
     "python.autoComplete.extraPaths": [
         "Arena"
     ],
+    "terminal.integrated.env.linux": {
+        "PYTHONPATH": "${workspaceFolder}/Arena"
+    },
+    "terminal.integrated.cwd": "${workspaceFolder}/Arena",
     "editor.tokenColorCustomizations": {
         "textMateRules": [
             {
@@ -24,6 +28,15 @@
                 }
             }
         ]
+    },
+    "files.exclude": {
+        "**/.git": true,
+        "**/.DS_Store": true,
+        "**/node_modules": true, // this excludes all folders 
+                                // named "node_modules" from 
+                                // the explore tree
+        "**/.idea": true,
+        "pose_analysis": true
     },
     "git.untrackedChanges": "separate",
     "sqltools.connections": [

@@ -74,7 +74,7 @@ class ArenaPose:
 
     """
 
-    def __init__(self, cam_name, predictor, is_use_db=True, orm=None, model_path=None):
+    def __init__(self, cam_name, predictor, is_use_db=True, orm=None, model_path=None, commit_bodypart='head'):
         self.cam_name = cam_name
         self.predictor = predictor
         self.model_path = model_path
@@ -83,7 +83,7 @@ class ArenaPose:
         self.last_commit = None
         self.caliber = None
         self.orm = orm if orm is not None else ORM()
-        self.commit_bodypart = 'head'
+        self.commit_bodypart = commit_bodypart
         self.kinematic_cols = ['x', 'y', 'vx', 'vy', 'ax', 'ay']
         self.time_col = ('time', '')
         self.kalman = None
@@ -255,12 +255,12 @@ class ArenaPose:
             return
         fps = cap.get(cv2.CAP_PROP_FPS)
         self.start_new_session(fps)
-        self.change_aruco_markers(video_path)
         iters = range(n_frames)
         for frame_id in (tqdm(iters, desc=f'{prefix}{Path(video_path).stem}') if is_tqdm else iters):
             ret, frame = cap.read()
             if not self.is_initialized:
                 self.init(frame)
+                self.change_aruco_markers(video_path)
 
             timestamp = frames_times.loc[frame_id, 'time'].timestamp()
             pred_row = self.predictor.predict(frame, frame_id)
@@ -436,9 +436,8 @@ class ArenaPose:
 
 
 class DLCArenaPose(ArenaPose):
-    def __init__(self, cam_name, is_use_db=True, orm=None, **kwargs):
-        super().__init__(cam_name, 'deeplabcut', is_use_db, orm, **kwargs)
-        self.commit_bodypart = 'mid_ears'
+    def __init__(self, cam_name, is_use_db=True, orm=None, commit_bodypart='mid_ears', **kwargs):
+        super().__init__(cam_name, 'deeplabcut', is_use_db, orm, commit_bodypart=commit_bodypart, **kwargs)
         self.pose_df = pd.DataFrame()
         self.angle_col = ('angle', '')
 
@@ -1111,10 +1110,11 @@ def predict_all_videos(animal_id=None, max_videos=None, experiments_dir=None, mo
                        is_tqdm=True):
     videos = get_videos_to_predict(animal_id, experiments_dir, model_path)
     if not videos:
+        print('No videos found')
         return
     print(f'found {len(videos)}/{len(videos)} to predict')
     success_count = 0
-    ap = DLCArenaPose('front', is_use_db=True, model_path=model_path)
+    ap = DLCArenaPose('front', is_use_db=True, model_path=model_path, commit_bodypart=None)
     for i, video_path in enumerate(videos):
         try:
             if ap.get_predicted_cache_path(video_path).exists():
@@ -1193,8 +1193,8 @@ if __name__ == '__main__':
     matplotlib.use('TkAgg')
     # DLCArenaPose('front').test_loaders(19)
     # print(get_videos_to_predict('PV148'))
-    commit_video_pred_to_db(animal_ids="PV95")
-    # predict_all_videos()
+    # commit_video_pred_to_db(animal_ids="PV95")
+    predict_all_videos()
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
     # plt.imshow(img)
     # plt.show()
