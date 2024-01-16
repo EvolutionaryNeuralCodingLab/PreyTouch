@@ -1,12 +1,13 @@
 import json
 import sys
 import time
+
 import pandas as pd
 from tqdm.auto import tqdm
 from functools import wraps
 import numpy as np
 from datetime import datetime, timedelta, date
-from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, Boolean, create_engine, cast, Date, and_, desc
+from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, Boolean, create_engine, cast, Date, and_, desc, func, alias
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from sqlalchemy_utils import database_exists, create_database
 from sqlalchemy.dialects.postgresql import JSON
@@ -675,7 +676,35 @@ def get_engine():
     return create_engine(config.sqlalchemy_url, pool_size=10, max_overflow=20)
 
 
+def delete_duplicates(model, col):
+    """
+    Delete duplicates from a given model based on a given column.
+
+    Args:
+        model (SQLAlchemy model): The model to delete duplicates from.
+        col (str): The name of the column used to determine duplicates.
+
+    Returns:
+        None
+    """
+    engine = get_engine()
+    session = sessionmaker(bind=engine)
+    with session() as session:
+        inner_q = session.query(func.min(model.id)).group_by(getattr(model, col))
+        aliased = alias(inner_q)
+        q = session.query(model).filter(~model.id.in_(aliased))
+        num_deleted = 0
+        for domain in q:
+            session.delete(domain)
+            num_deleted += 1
+        session.commit()
+        print(f'Deleted {num_deleted} duplicates for {model.__name__}')
+
+
+
 if __name__ == '__main__':
+    # delete_duplicates(VideoPrediction, 'video_id')
+    # DWH().commit()
     # DWH().update_model(Strike, ['prediction_distance', 'calc_speed', 'projected_strike_coords', 'projected_leap_coords'])
     DWH().update_model(VideoPrediction, ['data'], animal_id='PV91', model='front_head_only_resnet_152')
     DWH().commit()
@@ -697,4 +726,3 @@ if __name__ == '__main__':
     #
     # and then to upgrade (make sure there are no open sessions before):
     # alembic upgrade head
-# 
