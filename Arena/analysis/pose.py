@@ -28,8 +28,8 @@ from calibration import CharucoEstimator
 from loggers import get_logger
 from utils import run_in_thread, Kalman
 from sqlalchemy import cast, Date
-from db_models import ORM, Experiment, Block, Video, VideoPrediction, Strike, PoseEstimation
-from image_handlers.video_writers import OpenCVWriter
+from db_models import ORM, Experiment, Block, Video, VideoPrediction, Strike, PoseEstimation, Trial
+from image_handlers.video_writers import OpenCVWriter, ImageIOWriter
 from analysis.pose_utils import put_text, flatten
 
 
@@ -403,12 +403,15 @@ class ArenaPose:
         cache_path = self.get_predicted_cache_path(video_path)
         pose_df.to_parquet(cache_path)
 
-    def write_to_example_video(self, frame, frame_id, pred_row, fps, video_path):
+    def write_to_example_video(self, frame, frame_id, pred_row, fps, video_path=None, example_path=None,
+                               is_plot_preds=True):
         if self.example_writer is None:
-            example_path = self.get_predicted_cache_path(video_path).with_suffix('.avi').as_posix()
-            self.example_writer = OpenCVWriter(frame, fps, is_color=True, full_path=example_path)
+            example_path = example_path or self.get_predicted_cache_path(video_path).with_suffix('.example.mp4').as_posix()
+            # self.example_writer = OpenCVWriter(frame, fps, is_color=True, full_path=example_path)
+            self.example_writer = ImageIOWriter(frame, fps, is_color=True, full_path=example_path)
 
-        frame = self.predictor.plot_predictions(frame, frame_id, pred_row)
+        if is_plot_preds:
+            frame = self.predictor.plot_predictions(frame, frame_id, pred_row)
         x, y = 40, 200
         for col in self.kinematic_cols:
             frame = put_text(f'{col}={pred_row[col].iloc[0]:.1f}', frame, x, y)
@@ -1112,7 +1115,7 @@ def predict_all_videos(animal_id=None, max_videos=None, experiments_dir=None, mo
     if not videos:
         print('No videos found')
         return
-    print(f'found {len(videos)}/{len(videos)} to predict')
+    print(f'found {len(videos)} to predict')
     success_count = 0
     ap = DLCArenaPose('front', is_use_db=True, model_path=model_path, commit_bodypart=None)
     for i, video_path in enumerate(videos):
@@ -1189,12 +1192,111 @@ def commit_video_pred_to_db(animal_ids=None, cam_name='front'):
             print(f'Error: {exc}; {video_path}')
 
 
+def play_trial(trial_id, cam_name='back', is_save_video=False):
+    orm = ORM()
+    ap = DLCArenaPose(cam_name, is_use_db=True, orm=orm, commit_bodypart=None)
+    frames_df, pose_df = [], []
+    with orm.session() as s:
+        tr = s.query(Trial).filter_by(id=trial_id).first()
+        blk = s.query(Block).filter_by(id=tr.block_id).first()
+        exp = s.query(Experiment).filter_by(id=blk.experiment_id).first()
+        animal_id = exp.animal_id
+        for vid in blk.videos:
+            if vid.cam_name == cam_name:
+                frames_ = pd.DataFrame(pd.Series(vid.frames, name='time'))
+                frames_['video_path'] = '/'.join(Path(vid.path).parts[-5:])
+                frames_df.append(frames_)
+            try:
+                pdf_ = ap.load(video_db_id=vid.id)
+                pose_df.append(pdf_)
+            except Exception:
+                pass
+    if not frames_df:
+        print('No frames data was loaded')
+        return
+    elif not pose_df:
+        print('No pose data was loaded')
+        return
+    elif tr.bug_trajectory is None:
+        print(f'Trial {trial_id} has no bug trajectory')
+        return
+    else:
+        print(f'Found {len(frames_df)} pose videos data')
+    
+    pose_df = pd.concat(pose_df)
+    frames_df = pd.concat(frames_df)
+    pose_df.columns = ['_'.join(c) if c[1] else c[0] for c in pose_df.columns]
+    pose_df['time'] = pd.to_datetime(pose_df['time'], unit='s')
+    frames_df['time'] = pd.to_datetime(frames_df.time, unit='s', utc=True).dt.tz_convert(
+            'Asia/Jerusalem').dt.tz_localize(None)
+
+    pose_df = pd.merge_asof(left=frames_df, right=pose_df, left_on='time', right_on='time', 
+                             direction='nearest', tolerance=pd.Timedelta('100 ms'))
+    
+    bug_trajs = pd.DataFrame(tr.bug_trajectory)
+    bug_trajs = bug_trajs.rename(columns={'x': 'bug_x', 'y': 'bug_y'})
+    bug_trajs['time'] = pd.to_datetime(bug_trajs['time']).dt.tz_localize(None)
+    bug_trajs = bug_trajs.sort_values(by='time')
+
+    pose_df_ = pd.merge_asof(left=pose_df, right=bug_trajs, left_on='time', right_on='time', 
+                             direction='nearest', tolerance=pd.Timedelta('100 ms'))
+    pose_df_ = pose_df_.dropna(subset='bug_x')
+    for video_path in pose_df_['video_path'].unique():
+        pf_ = pose_df_[pose_df_['video_path'] == video_path].copy()
+        video_path = f'{config.EXPERIMENTS_DIR}/{video_path}'
+        if not Path(video_path).exists():
+            print(f'{video_path} does not exist')
+            continue
+        cap = cv2.VideoCapture(video_path)
+        start_frame, end_frame = pf_.index[0], pf_.index[-1]
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        for i in range(start_frame, end_frame + 1):
+            ret, frame = cap.read()
+            put_text(f'Angle={np.math.degrees(pf_.loc[i].angle):.0f}', frame, frame.shape[1]-250, 30)
+            if is_save_video:
+                example_path = f'{config.OUTPUT_DIR}/trial_videos/{animal_id}_trial_{trial_id}_{cam_name}.mp4'
+                Path(example_path).parent.mkdir(parents=True, exist_ok=True)
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                ap.write_to_example_video(frame, i, pd.DataFrame(pf_.loc[i]).transpose(), fps, example_path=example_path, is_plot_preds=False)
+            else:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                frame = cv2.resize(frame, None, None, fx=0.5, fy=0.5)
+                cv2.imshow(f'Trial {trial_id}', frame)
+                if cv2.waitKey(25) & 0xFF == ord('q'):
+                    break
+        ap.close_example_writer()
+        cv2.destroyAllWindows()
+        cap.release()
+
+
+def get_trials_ids(animal_id, movement_type=None):
+    orm = ORM()
+    with orm.session() as s:
+        filters = [Experiment.animal_id == animal_id]
+        if movement_type is not None:
+            filters.append(Block.movement_type == movement_type)
+        trs = s.query(Trial, Block, Experiment).join(
+            Block, Block.id == Trial.block_id).join(
+            Experiment, Experiment.id == Block.experiment_id).filter(*filters).all()
+        return [tr.id for tr, blk, exp in trs]
+
+
 if __name__ == '__main__':
     matplotlib.use('TkAgg')
     # DLCArenaPose('front').test_loaders(19)
     # print(get_videos_to_predict('PV148'))
     # commit_video_pred_to_db(animal_ids="PV95")
-    predict_all_videos()
+    # play_trial(2050, cam_name='back', is_save_video=False)
+    # for tid in [2050, 2052, 2195, 2198, 2423, 2453, 2488]:
+        # play_trial(tid, is_save_video=True)
+    
+    for tid in get_trials_ids('PV163', movement_type='jump_up'):
+        try:
+            play_trial(tid, is_save_video=True)
+        except Exception as exc:
+            print(f'Error: {exc}; {tid}')
+    # predict_all_videos()
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
     # plt.imshow(img)
     # plt.show()
