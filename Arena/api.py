@@ -64,7 +64,7 @@ def check():
     res['experiment_name'] = cache.get_current_experiment()
     res['block_id'] = cache.get(cc.EXPERIMENT_BLOCK_ID)
     res['open_app_host'] = cache.get(cc.OPEN_APP_HOST)
-    if not config.DISABLE_DB:
+    if not config.DISABLE_DB and not config.IS_ANALYSIS_ONLY:
         res['temperature'] = arena_mgr.orm.get_temperature()
         res['n_strikes'] = sum(arena_mgr.orm.get_today_strikes().values())
         rewards_dict = arena_mgr.orm.get_today_rewards()
