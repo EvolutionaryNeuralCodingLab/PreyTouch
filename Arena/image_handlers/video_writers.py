@@ -42,8 +42,8 @@ class OpenCVWriter(Writer):
 class ImageIOWriter(Writer):
     video_suffix = '.mp4'
 
-    def __init__(self, frame, *args):
-        super().__init__(*args)
+    def __init__(self, frame, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         import imageio.v2 as iio
         self.writer = iio.get_writer(self.video_path, format="FFMPEG", mode="I",
                                      fps=self.fps, codec="libx264", quality=5,
