@@ -14,7 +14,8 @@ export default {
   data() {
     return {
       edgesPolicy: 'inside',
-      framesUntilExitFromEntranceHole: 100
+      framesUntilExitFromEntranceHole: 100,
+      accelerateMultiplier: 4
     }
   },
   props: {
@@ -66,6 +67,9 @@ export default {
     isJumpUpMovement: function () {
       return this.bugsSettings.movementType === 'jump_up'
     },
+    isAccelerateMovement: function () {
+      return this.bugsSettings.movementType === 'accelerate'
+    },
     isNoisyLowHorizontalMovement: function () {
       return this.bugsSettings.movementType === 'low_horizontal_noise'
     },
@@ -78,7 +82,7 @@ export default {
   },
   methods: {
     move() {
-      if (this.isDead || this.isRetreated || this.isJumped) {
+      if (this.isDead || this.isRetreated || (this.isJumped && this.isJumpUpMovement)) {
         this.draw()
         return
       }
@@ -100,7 +104,7 @@ export default {
       } else if (this.isLowHorizontalMovement) {
         this.straightMove(0)
       // jump up
-      } else if (this.isJumpUpMovement) {
+      } else if (this.isJumpUpMovement || this.isAccelerateMovement) {
         this.straightMove(0)
       // random
       } else {
@@ -174,6 +178,7 @@ export default {
           this.r0 = [(this.x + this.xTarget) / 2, this.y + (this.r / 2.3)]
           break
         case 'low_horizontal':
+        case 'accelerate':
         case 'jump_up':
           this.directionAngle = this.isRightExit ? 2 * Math.PI : Math.PI
           this.startRetreat()
@@ -205,15 +210,20 @@ export default {
       this.y += this.dy
     },
     jump() {
-      if (!this.isJumpUpMovement || this.isDead) {
+      if (!(this.isJumpUpMovement || this.isAccelerateMovement) || this.isDead || this.isJumped) {
         return
       }
-      let newY = this.y - this.jump_distance
-      if (newY < this.upper_edge) {
-        newY = this.upper_edge + 1
-      }
-      this.y = newY
       this.isJumped = true
+      if (this.isJumpUpMovement) {
+        let newY = this.y - this.jump_distance
+        if (newY < this.upper_edge) {
+          newY = this.upper_edge + 1
+        }
+        this.y = newY
+      } else if (this.isAccelerateMovement) {
+        this.vx = this.vx * this.accelerateMultiplier
+      }
+      console.log('jump')
       this.jumpTimeout()
     },
     isInsideHoleBoundaries() {
@@ -265,8 +275,13 @@ export default {
       this.isJumped = true
       let t = setTimeout(() => {
         this.isJumped = false
-        this.y = this.exitHolePos[1] + (this.currentBugSize / 2)
+        if (this.isJumpUpMovement) {
+          this.y = this.exitHolePos[1] + (this.currentBugSize / 2)
+        } else if (this.isAccelerateMovement) {
+          this.vx = this.vx / this.accelerateMultiplier
+        }
         this.setNextAngle(this.directionAngle)
+        console.log(this.vx, this.dx, this.currentSpeed)
         clearTimeout(t)
       }, 300)
     }

@@ -105,10 +105,11 @@
     "low_horizontal": "low horizontal",
     "low_horizontal_noise": "low horizontal + noise",
     "jump_up": "jump up",
+    "accelerate": "accelerate",
     "rect_tunnel": "rect tunnel"
   },
   "boards": {
-    "holes": ["random", "random_speeds", "circle", "low_horizontal", "low_horizontal_noise", "jump_up", "random_low_horizontal"],
+    "holes": ["random", "random_speeds", "circle", "low_horizontal", "low_horizontal_noise", "jump_up", "accelerate", "random_low_horizontal"],
     "tunnel": ["rect_tunnel"]
   },
   "targetDrifts": {
