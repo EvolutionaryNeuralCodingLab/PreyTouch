@@ -3,8 +3,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import cv2
-import config
 import math
+if Path('.').resolve().name != 'Arena':
+    import os
+    os.chdir('../..')
+import config
 from analysis.pose import ArenaPose
 from analysis.pose_utils import put_text
 from db_models import ORM, Block, Strike, Trial, Temperature
@@ -161,24 +164,47 @@ class Loader:
         for _, frame in self.gen_frames_around_strike(0, 1):
             return frame
 
-    def gen_frames(self, frame_ids):
-        cap = cv2.VideoCapture(self.video_path.as_posix())
+    def gen_frames(self, frame_ids, video_path=None, cam_name=None):
+        cap = cv2.VideoCapture(video_path or self.video_path.as_posix())
         start_frame, end_frame = frame_ids[0], frame_ids[-1]
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
         for i in range(start_frame, end_frame + 1):
             ret, frame = cap.read()
             if i not in frame_ids:
                 continue
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            if cam_name != 'back':
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             yield i, frame
         cap.release()
 
-    def gen_frames_around_strike(self, n_frames_back=None, n_frames_forward=None, center_frame=None, step=1):
+    def gen_frames_around_strike(self, cam_name=None, n_frames_back=None, n_frames_forward=None, center_frame=None, step=1):
         n_frames_back, n_frames_forward = n_frames_back or self.n_frames_back, n_frames_forward or self.n_frames_forward
         center_frame = center_frame or self.strike_frame_id
         start_frame = center_frame - (n_frames_back * step)
         frame_ids = [i for i in range(start_frame, start_frame + step * (n_frames_back + n_frames_forward), step)]
-        return self.gen_frames(frame_ids)
+    
+        video_path = self.video_path.as_posix()
+        if cam_name is not None and cam_name != 'front':
+            video_path, frame_ids = self.align_frames_to_other_cam(cam_name, video_path, frame_ids)
+
+        return self.gen_frames(frame_ids, video_path=video_path, cam_name=cam_name)
+
+    def align_frames_to_other_cam(self, cam_name: str, video_path: str, frame_ids: list):
+        vids = list(Path(video_path).parent.glob(f'{cam_name}*.mp4'))
+        if not vids:
+            raise Exception(f'No videos found for {cam_name} camera in {Path(video_path).parent}')
+        
+        frames_times_path = vids[0].parent / 'frames_timestamps' / vids[0].with_suffix('.csv').name
+        assert frames_times_path.exists(), f'File {frames_times_path} does not exist'
+        frames_times = pd.read_csv(frames_times_path, index_col=0).reset_index().rename(columns={'index': 'frame_id'})
+        frames_times['time'] = pd.to_datetime(frames_times['0'], unit='s', utc=True).dt.tz_convert(
+            'Asia/Jerusalem').dt.tz_localize(None)
+        orig_frames = self.frames_df.loc[frame_ids].time
+
+        merged = pd.merge_asof(left=orig_frames, right=frames_times, left_on='time', right_on='time', 
+                                 direction='nearest', tolerance=pd.Timedelta('100 ms'))
+        new_frames_ids = sorted(merged.frame_id.unique().tolist())
+        return vids[0].as_posix(), new_frames_ids
 
     def get_bodypart_pose(self, bodypart):
         return pd.concat([pd.to_datetime(self.frames_df['time'], unit='s'), self.frames_df[bodypart]], axis=1)
@@ -216,28 +242,28 @@ class Loader:
     #     plt.title(str(self))
     #     plt.show()
 
-    def play_strike(self, n_frames_back=None, n_frames_forward=None, annotations=None):
+    def play_strike(self, cam_name=None, n_frames_back=None, n_frames_forward=None, annotations=None):
         n_frames_back = n_frames_back or self.n_frames_back
         n_frames_forward = n_frames_forward or self.n_frames_forward
         if self.is_load_pose:
             nose_df = self.frames_df['nose']
-        for i, frame in self.gen_frames_around_strike(n_frames_back, n_frames_forward):
-            frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
+        for i, frame in self.gen_frames_around_strike(cam_name, n_frames_back, n_frames_forward):
+            if cam_name != 'back':
+                frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
+
             if i == self.strike_frame_id:
                 put_text('Strike Frame', frame, 30, 20)
             if annotations and i in annotations:
                 put_text(annotations[i], frame, 30, frame.shape[0]-30)
             if self.is_load_pose:
                 self.dlc_pose.predictor.plot_predictions(frame, i, self.frames_df)
-
                 if i in nose_df.index and not np.isnan(nose_df['cam_x'][i]):
-                    # put_text(f'({nose_df["cam_x"][i]:.0f}, {nose_df["cam_y"][i]:.0f})', frame, 1000, 30)
-                    # put_text(f'({nose_df["x"][i]:.0f}, {nose_df["y"][i]:.0f})', frame, 1000, 70)
                     angle = self.frames_df.loc[i, [("angle", "")]]
                     put_text(f'Angle={math.degrees(angle):.0f}', frame, 1000, 30)
 
             frame = cv2.resize(frame, None, None, fx=0.5, fy=0.5)
             cv2.imshow(str(self), frame)
+            time.sleep(0.5)
             if cv2.waitKey(25) & 0xFF == ord('q'):
                 break
         cv2.destroyAllWindows()
@@ -247,3 +273,8 @@ class Loader:
             strk = s.query(Strike).filter_by(id=self.strike_db_id).first()
             blk = s.query(Block).filter_by(id=strk.block_id).first()
             return blk.__dict__
+
+
+if __name__ == "__main__":
+    ld = Loader(3547, 'front', is_use_db=False, sec_before=0.5, sec_after=0)
+    ld.play_strike(cam_name='back')
