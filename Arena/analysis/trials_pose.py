@@ -28,8 +28,9 @@ from analysis.pose import DLCArenaPose
 
 
 class TrialPose:
-    def __init__(self, trial_id, orm=None):
+    def __init__(self, trial_id, orm=None, is_dwh=False):
         self.trial_id = trial_id
+        self.is_dwh = is_dwh
         self.orm = orm if orm is not None else ORM()
         self.animal_id = None  # extracted from DB
     
@@ -69,7 +70,8 @@ class TrialPose:
     def load_from_db(self, ap: DLCArenaPose, cam_name: str):
         frames_df, pose_df = [], []
         with self.orm.session() as s:
-            tr = s.query(Trial).filter_by(id=self.trial_id).first()
+            tr_filter = {'id' if not self.is_dwh else 'dwh_key': self.trial_id}
+            tr = s.query(Trial).filter_by(**tr_filter).first()
             blk = s.query(Block).filter_by(id=tr.block_id).first()
             exp = s.query(Experiment).filter_by(id=blk.experiment_id).first()
             self.animal_id = exp.animal_id
@@ -136,19 +138,22 @@ class TrialPose:
     def plot_on_frame(self, frame, frame_id, df):
         df_ = df.loc[:frame_id]
         fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(8, 4))
-        axes[0].plot(df_.nose_y, linewidth=3)
+        axes[0].plot(df_.nose_y, linewidth=4)
         axes[0].set_xlim([df.index[0], df.index[-1]])
+        axes[0].set_ylim([-3, 20])
+        axes[0].set_title('Y-Nose', fontsize=16)
 
-        axes[1].plot(df_.bug_x, df_.bug_y, linewidth=3)
+        axes[1].plot(df_.bug_x, df_.bug_y, linewidth=4)
         for i, row in df_[~df_.strikes.isna()].iterrows():
             d = json.loads(row.strikes)
-            axes[1].scatter(d['strike_x'], d['strike_y'], marker='*', color='r', s=20)
+            axes[1].scatter(d['strike_x'], d['strike_y'], marker='*', color='r', s=90)
         axes[1].set_ylim([0, 1080])
         axes[1].set_xlim([0, 1920])
         axes[1].invert_yaxis()
+        axes[1].set_title('Angle', fontsize=16)
         fig.tight_layout()
 
-        frame = self.insert_figure_to_frame(fig, frame, fig_size=(400, 200))
+        frame = self.insert_figure_to_frame(fig, frame, fig_size=(400, 200), top_left=(1000, 100))
         plt.close(fig)
         return frame
 
@@ -184,10 +189,11 @@ def get_trials_ids(animal_id, movement_type=None, orm=None):
 
 if __name__ == '__main__':
     # print(get_trials_ids('PV91', movement_type='jump_up_old'))
-    # TrialPose(2010).play_trial(cam_name='back', is_save_video=False)
-    orm = ORM()
-    for tid in get_trials_ids('PV163', movement_type='accelerate', orm=orm):
-        try:
-            TrialPose(tid, orm=orm).play_trial(cam_name='back', is_save_video=True)
-        except Exception as exc:
-            print(f'Error: {exc}; {tid}')
+    TrialPose(26269, is_dwh=True).play_trial(cam_name='back', is_save_video=True)
+
+    # orm = ORM()
+    # for tid in get_trials_ids('PV163', movement_type='accelerate', orm=orm):
+    #     try:
+    #         TrialPose(tid, orm=orm).play_trial(cam_name='back', is_save_video=True)
+    #     except Exception as exc:
+    #         print(f'Error: {exc}; {tid}')
