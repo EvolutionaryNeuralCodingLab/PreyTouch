@@ -499,7 +499,8 @@ def delete_duplicate_strikes(animal_id):
         s.commit()
 
 
-def play_strikes(strikes_ids, cam_name='front', is_load_pose=True, sec_before=2, sec_after=2, is_dwh=False):
+def play_strikes(strikes_ids, cam_name='front', is_load_pose=True, sec_before=2, sec_after=2, is_dwh=False,
+                 between_frames_delay=None):
     if not isinstance(strikes_ids, (list, tuple, np.ndarray)):
         strikes_ids = [strikes_ids]
     orm = ORM()
@@ -514,7 +515,7 @@ def play_strikes(strikes_ids, cam_name='front', is_load_pose=True, sec_before=2,
     for sid in strikes_ids:
         try:
             ld = Loader(sid, cam_name, is_load_pose=is_load_pose, sec_after=sec_after, sec_before=sec_before, orm=orm, is_use_db=False)
-            ld.play_strike()
+            ld.play_strike(between_frames_delay=between_frames_delay)
         except Exception as exc:
             print(f'ERROR strike_id={sid}: {exc}')
 
@@ -663,7 +664,7 @@ if __name__ == '__main__':
     # sa = StrikeAnalyzer(ld)
     # sa.plot_strike_analysis()
     # delete_duplicate_strikes('PV80')
-    play_strikes(2565, is_dwh=True)
+    play_strikes(2565, is_dwh=True, sec_after=0, between_frames_delay=0.1)
     # play_strikes('PV80', start_time='2022-12-01', cam_name='front', is_load_pose=False, strikes_ids=[6365])
     # StrikeScanner(animal_id='PV95', is_skip_committed=False).scan()
     # time2feeder(),
