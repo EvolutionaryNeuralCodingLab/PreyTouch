@@ -242,7 +242,8 @@ class Loader:
     #     plt.title(str(self))
     #     plt.show()
 
-    def play_strike(self, cam_name=None, n_frames_back=None, n_frames_forward=None, annotations=None):
+    def play_strike(self, cam_name=None, n_frames_back=None, n_frames_forward=None, annotations=None,
+                    between_frames_delay=None):
         n_frames_back = n_frames_back or self.n_frames_back
         n_frames_forward = n_frames_forward or self.n_frames_forward
         if self.is_load_pose:
@@ -263,7 +264,8 @@ class Loader:
 
             frame = cv2.resize(frame, None, None, fx=0.5, fy=0.5)
             cv2.imshow(str(self), frame)
-            time.sleep(0.5)
+            if between_frames_delay:
+                time.sleep(between_frames_delay)
             if cv2.waitKey(25) & 0xFF == ord('q'):
                 break
         cv2.destroyAllWindows()
