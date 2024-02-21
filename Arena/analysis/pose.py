@@ -602,7 +602,6 @@ class SpatialAnalyzer:
         return pd.concat(l, axis=1)
 
     def get_videos_to_load(self, is_add_block_video_id=False) -> dict:
-        """return list of lists of groups of video paths that are split using 'split_by'"""
         video_paths = {}
         with self.orm.session() as s:
             exps = s.query(Experiment).filter(Experiment.animal_id.not_in(['test', '']))
@@ -1172,31 +1171,38 @@ def commit_pose_estimation_to_db(animal_id=None, cam_name='front', min_dist=0.1,
             print(f'Error: {exc}; {video_path}')
 
 
-def commit_video_pred_to_db(animal_ids=None, cam_name='front'):
+def commit_video_pred_to_db(animal_ids=None, cam_name='front', is_delete_prev=False):
     orm = ORM()
     sa = SpatialAnalyzer(animal_ids=animal_ids, bodypart='nose', orm=orm, cam_name=cam_name)
     vids = sa.get_videos_to_load(is_add_block_video_id=True)
-    print(f'Start commit pose of model: {sa.dlc.predictor.model_name}')
+    print(f'Start commit video predictions of model: {sa.dlc.predictor.model_name}')
+    commit_count = 0
     for video_path, block_id, video_id in tqdm(vids['']):
         try:
             animal_id = Path(video_path).parts[-5]
-            # delete previous predictions
             with orm.session() as s:
-                s.query(VideoPrediction).filter_by(animal_id=animal_id, video_id=video_id).delete()
-                s.commit()
-
+                vp = s.query(VideoPrediction).filter_by(animal_id=animal_id, video_id=video_id)
+                if is_delete_prev:  # delete previous predictions
+                    vp.delete()
+                    s.commit()
+                else:
+                    vp = vp.first()
+                    if vp is not None and vp.data is not None and vp.model == sa.dlc.predictor.model_name:
+                        continue
             pose_df = sa.dlc.load(video_path=video_path, only_load=True).dropna(subset=[('nose', 'x')])
             start_time = datetime.datetime.fromtimestamp(pose_df.iloc[0][('time', '')])
             orm.commit_video_predictions(sa.dlc.predictor.model_name, pose_df, video_id, start_time, animal_id)
+            commit_count += 1
         except Exception as exc:
             print(f'Error: {exc}; {video_path}')
+    print(f'Commited {commit_count}/{len(vids[""])} video predictions')
 
 
 if __name__ == '__main__':
     matplotlib.use('TkAgg')
     # DLCArenaPose('front').test_loaders(19)
     # print(get_videos_to_predict('PV148'))
-    # commit_video_pred_to_db(animal_ids="PV163")
+    commit_video_pred_to_db(animal_ids="PV163")
     # predict_all_videos()
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
     # plt.imshow(img)
