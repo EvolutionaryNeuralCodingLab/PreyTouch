@@ -10,7 +10,7 @@ import config
 from cache import RedisCache, CacheColumns as cc
 from compress_videos import get_videos_ids_for_compression, compress
 from periphery_integration import PeripheryIntegrator
-from analysis.pose import predict_all_videos
+from analysis.pose import VideoPoseScanner
 from analysis.strikes.strikes import StrikeScanner
 from db_models import DWH
 from agent import Agent
@@ -273,7 +273,7 @@ class Scheduler(threading.Thread):
 
 def _run_pose_callback(dlc_on, errors_cache):
     try:
-        predict_all_videos(max_videos=20, errors_cache=errors_cache, is_tqdm=False)
+        VideoPoseScanner().predict_all(max_videos=20, errors_cache=errors_cache, is_tqdm=False)
     finally:
         dlc_on.clear()
 

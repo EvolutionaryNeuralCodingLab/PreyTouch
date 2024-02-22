@@ -437,6 +437,28 @@ class ORM:
             s.add(vid_pred)
             s.commit()
 
+    def update_video_prediction(self, video_stem: str, model: str, data: pd.DataFrame):
+        with self.session() as s:
+            vid = s.query(Video).filter(Video.path.contains(video_stem)).first()
+            if not vid:
+                self.logger.warning(f'No video model found for update: {video_stem}')
+                return
+            elif not vid.predictions:
+                self.logger.warning(f'No video predictions found for update: {video_stem}')
+                return
+            
+            vps = [vp for vp in vid.predictions if vp.model == model]
+            if not vps:
+                self.logger.warning(f'No video predictions found for update: {video_stem}, model: {model}')
+                return
+            elif len(vps) > 1:
+                self.logger.warning(f'Multiple video predictions found for update: {video_stem}, model: {model}')
+                return
+
+            vp = vps[0]
+            vp.data = data.to_json()
+            s.commit()
+
     @commit_func
     def commit_pose_estimation(self, cam_name, start_time, x, y, angle, engagement, video_id, model,
                                bodypart, prob, frame_id, animal_id=None, block_id=None):
