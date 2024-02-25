@@ -77,7 +77,7 @@ class TrialPose:
             cv2.destroyAllWindows()
             cap.release()
 
-    def extract_all_movement_type_strikes(self, animal_id, movement_type, sec_before=2, sec_after=2):
+    def extract_all_movement_type_strikes(self, animal_id, movement_type, sec_before=2, sec_after=2, skip_created=False):
         assert not self.is_dwh, 'please drop is_dwh flag'
         strike_ids = []
         with self.orm.session() as s:
@@ -91,6 +91,8 @@ class TrialPose:
         print(f'Found {len(strike_ids)} strikes for {animal_id} {movement_type}')
         self.folder_name = f'{animal_id}_{movement_type}'
         for strike_id in tqdm(strike_ids):
+            if skip_created and Path(self.get_save_path(None, strike_id)).exists():
+                continue
             self.play_strike(strike_id, is_save_video=True, sec_before=sec_before, sec_after=sec_after)
 
     def load_from_db(self, trial_id=None, strike_id=None):
@@ -229,7 +231,7 @@ class TrialPose:
             frame[-fig_size[1]:, -fig_size[0]:, :] = fig_img
         return frame
 
-    def get_save_path(self, trial_id=None, strike_id=None):
+    def get_save_path(self, trial_id=None, strike_id=None) -> str:
         output_dir = self.output_dir
         if self.folder_name:
             output_dir = f'{output_dir}/{self.folder_name}'
