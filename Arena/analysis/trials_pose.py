@@ -93,7 +93,10 @@ class TrialPose:
         for strike_id in tqdm(strike_ids):
             if skip_created and Path(self.get_save_path(None, strike_id)).exists():
                 continue
-            self.play_strike(strike_id, is_save_video=True, sec_before=sec_before, sec_after=sec_after)
+            try:
+                self.play_strike(strike_id, is_save_video=True, sec_before=sec_before, sec_after=sec_after)
+            except Exception as e:
+                print(f'Error for {strike_id}: {e}')
 
     def load_from_db(self, trial_id=None, strike_id=None):
         frames_df, pose_df = [], []
