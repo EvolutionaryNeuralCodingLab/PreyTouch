@@ -23,8 +23,8 @@ except Exception:
 env = config.env
 TIME_TABLE = {
     'cameras_on': (env('CAMERAS_ON_TIME', '07:00'), env('CAMERAS_OFF_TIME', '19:00')),
-    'run_pose': (env('POSE_ON_TIME', '19:30'), env('POSE_OFF_TIME', '06:00')),
-    'tracking_pose': (env('TRACKING_POSE_ON_TIME', '09:00'), env('TRACKING_POSE_OFF_TIME', '18:30')),
+    'run_pose': (env('POSE_ON_TIME', '19:30'), env('POSE_OFF_TIME', '03:00')),
+    'tracking_pose': (env('TRACKING_POSE_ON_TIME', '03:00'), env('TRACKING_POSE_OFF_TIME', '06:00')),
     'lights_sunrise': env('LIGHTS_SUNRISE', '07:00'),
     'lights_sunset': env('LIGHTS_SUNSET', '19:00'),
     'dwh_commit_time': env('DWH_COMMIT_TIME', '07:00'),
@@ -279,6 +279,6 @@ def _run_pose_callback(dlc_on, errors_cache):
 
 def _run_tracking_pose(tracking_pose_on):
     try:
-        predict_tracking(max_videos=120)
+        predict_tracking(max_videos=30, is_tqdm=False)
     finally:
         tracking_pose_on.clear()

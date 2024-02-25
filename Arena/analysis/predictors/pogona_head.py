@@ -15,6 +15,7 @@ from analysis.predictors.yolov5.models.common import DetectMultiBackend
 from analysis.predictors.yolov5.utils.torch_utils import select_device
 from analysis.predictors.yolov5.utils.augmentations import letterbox
 from analysis.predictors.yolov5.utils.general import check_img_size, non_max_suppression
+from loggers import get_logger
 
 THRESHOLD = 0.5
 GRACE_PERIOD = 2  # seconds
@@ -115,7 +116,8 @@ class YOLOv5Detector:
         return pred.cpu().numpy().flatten()[:5], image
 
 
-def predict_tracking(max_videos=None, cam_name='top', is_override=False, days=None):
+def predict_tracking(max_videos=None, cam_name='top', is_override=False, days=None, is_tqdm=True):
+    logger = get_logger('tracking-predict')
     ph = PogonaHead(cam_name)
     caliber = CharucoEstimator(cam_name, is_debug=False)
     is_calib_initialized = False
@@ -133,12 +135,13 @@ def predict_tracking(max_videos=None, cam_name='top', is_override=False, days=No
         vids.append((p, out_path))
         if max_videos and len(vids) >= max_videos:
             break
-
+    
+    logger.info(f'start tracking prediction of {len(vids)} videos')
     for i, (p, out_path) in enumerate(vids):
         cap = cv2.VideoCapture(p.as_posix())
         n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         res = []
-        for frame_id in tqdm(range(n_frames), desc=f'({i+1}/{len(vids)}) {p.name}'):
+        for frame_id in (tqdm(range(n_frames), desc=f'({i+1}/{len(vids)}) {p.name}') if is_tqdm else range(n_frames)):
             ret, frame = cap.read()
             if not is_calib_initialized:
                 caliber.init(frame)

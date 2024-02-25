@@ -1074,9 +1074,8 @@ class VideoPoseScanner:
     def predict_all(self, is_tqdm=True, max_videos=None, errors_cache=None):
         videos = self.get_videos_to_predict()
         if not videos:
-            self.logger.info('No videos found; aborting')
             return
-        self.logger.info(f'found {len(videos)} to predict')
+        self.logger.info(f'found {len(videos)} to predict for pose')
         success_count = 0
         for i, video_path in enumerate(videos):
             try:
