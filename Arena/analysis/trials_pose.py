@@ -259,7 +259,7 @@ def get_trials_ids(animal_id, movement_type=None, orm=None):
 
 if __name__ == '__main__':
     # TrialPose(cam_name='back', is_dwh=True).play_strike(8615, is_save_video=True)
-    TrialPose(cam_name='back').extract_all_movement_type_strikes('PV91', 'accelerate')
+    TrialPose(cam_name='back').extract_all_movement_type_strikes('PV91', 'accelerate', skip_created=True)
     # orm = ORM()
     # for tid in get_trials_ids('PV163', movement_type='accelerate', orm=orm):
     #     try:
