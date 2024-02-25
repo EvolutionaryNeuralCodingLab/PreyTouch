@@ -1,5 +1,6 @@
 import json
 import cv2
+from datetime import timedelta
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
@@ -28,15 +29,24 @@ from analysis.pose import DLCArenaPose
 
 
 class TrialPose:
-    def __init__(self, trial_id, orm=None, is_dwh=False):
-        self.trial_id = trial_id
+    def __init__(self, cam_name='back', orm=None, is_dwh=False, folder_name=None, output_dir=None):
         self.is_dwh = is_dwh
+        self.cam_name = cam_name
+        self.folder_name = folder_name
+        self.output_dir = output_dir or f'{config.OUTPUT_DIR}/extracted_videos'
         self.orm = orm if orm is not None else ORM()
         self.animal_id = None  # extracted from DB
+        self.dlc = DLCArenaPose('front', is_use_db=True, orm=self.orm, commit_bodypart=None)
     
-    def play_trial(self, cam_name='back', is_save_video=False):
-        ap = DLCArenaPose(cam_name, is_use_db=True, orm=self.orm, commit_bodypart=None)
-        df = self.load_from_db(ap, cam_name)
+    def play_trial(self, trial_id, is_save_video=False):
+        self._play(trial_id=trial_id, is_save_video=is_save_video)
+
+    def play_strike(self, strike_id, is_save_video=False, sec_before=2, sec_after=2):
+        self._play(strike_id=strike_id, is_save_video=is_save_video, sec_before=sec_before, sec_after=sec_after)
+    
+    def _play(self, trial_id=None, strike_id=None, is_save_video=False, sec_before=None, sec_after=None):
+        assert (trial_id is not None) ^ (strike_id is not None)
+        df = self.load_from_db(trial_id, strike_id)
         for video_path in df['video_path'].unique():
             pf_ = df[df['video_path'] == video_path].copy()
             video_path = f'{config.EXPERIMENTS_DIR}/{video_path}'
@@ -45,7 +55,7 @@ class TrialPose:
                 continue
 
             cap = cv2.VideoCapture(video_path)
-            start_frame, end_frame = pf_.index[0], pf_.index[-1]
+            start_frame, end_frame = self.get_start_end_frame(pf_, strike_id, sec_before, sec_after)
             cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
             fps = cap.get(cv2.CAP_PROP_FPS)
             for i in range(start_frame, end_frame + 1):
@@ -53,58 +63,104 @@ class TrialPose:
                 put_text(f'Angle={np.math.degrees(pf_.loc[i].angle):.0f}', frame, frame.shape[1]-250, 30)
                 frame = self.plot_on_frame(frame, i, pf_)
                 if is_save_video:
-                    example_path = f'{config.OUTPUT_DIR}/trial_videos/{self.animal_id}_trial_{self.trial_id}_{cam_name}.mp4'
+                    example_path = self.get_save_path(trial_id, strike_id)
                     Path(example_path).parent.mkdir(parents=True, exist_ok=True)
                     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    ap.write_to_example_video(frame, i, pd.DataFrame(pf_.loc[i]).transpose(), fps, example_path=example_path, is_plot_preds=False)
+                    self.dlc.write_to_example_video(frame, i, pd.DataFrame(pf_.loc[i]).transpose(), fps, example_path=example_path, is_plot_preds=False)
                 else:
                     frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
                     frame = cv2.resize(frame, None, None, fx=0.5, fy=0.5)
-                    cv2.imshow(f'Trial {self.trial_id}', frame)
+                    cv2.imshow(f'Trial {trial_id}', frame)
                     if cv2.waitKey(25) & 0xFF == ord('q'):
                         break
-            ap.close_example_writer()
+            self.dlc.close_example_writer()
             cv2.destroyAllWindows()
             cap.release()
 
-    def load_from_db(self, ap: DLCArenaPose, cam_name: str):
+    def extract_all_movement_type_strikes(self, animal_id, movement_type, sec_before=2, sec_after=2):
+        assert not self.is_dwh, 'please drop is_dwh flag'
+        strike_ids = []
+        with self.orm.session() as s:
+            for exp in s.query(Experiment).filter_by(animal_id=animal_id).all():
+                for blk in exp.blocks:
+                    if blk.movement_type != movement_type:
+                        continue
+                    for strk in blk.strikes:
+                        strike_ids.append(strk.id)
+        
+        print(f'Found {len(strike_ids)} strikes for {animal_id} {movement_type}')
+        self.folder_name = f'{animal_id}_{movement_type}'
+        for strike_id in tqdm(strike_ids):
+            self.play_strike(strike_id, is_save_video=True, sec_before=sec_before, sec_after=sec_after)
+
+    def load_from_db(self, trial_id=None, strike_id=None):
         frames_df, pose_df = [], []
         with self.orm.session() as s:
-            tr_filter = {'id' if not self.is_dwh else 'dwh_key': self.trial_id}
-            tr = s.query(Trial).filter_by(**tr_filter).first()
+            tr = self.load_trial_model(s, trial_id, strike_id)
             blk = s.query(Block).filter_by(id=tr.block_id).first()
             exp = s.query(Experiment).filter_by(id=blk.experiment_id).first()
             self.animal_id = exp.animal_id
             for vid in blk.videos:
-                if vid.cam_name == cam_name:
+                if vid.cam_name == self.cam_name:
                     frames_ = pd.DataFrame(pd.Series(vid.frames, name='time'))
                     frames_['video_path'] = '/'.join(Path(vid.path).parts[-5:])
                     frames_df.append(frames_)
                 try:
-                    pdf_ = ap.load(video_db_id=vid.id)
+                    pdf_ = self.dlc.load(video_db_id=vid.id)
                     pose_df.append(pdf_)
                 except Exception:
                     pass
-            strikes_df = self.load_strikes(tr)
+            strikes_df = self.load_trial_strikes(tr, strike_id)
+
         if not frames_df:
             raise Exception('No frames data was loaded')
         elif not pose_df:
             raise Exception('No pose data was loaded')
         elif tr.bug_trajectory is None:
-            raise Exception(f'Trial {self.trial_id} has no bug trajectory')
-        else:
-            print(f'Found {len(frames_df)} pose videos data')
+            raise Exception(f'Trial {trial_id} has no bug trajectory')
+        # else:
+        #     print(f'Found {len(frames_df)} pose videos data')
+
         bug_trajs = pd.DataFrame(tr.bug_trajectory)
         pose_df = self.align_pose(pose_df, frames_df)
         df = self.merge_all(pose_df, bug_trajs, strikes_df)
         return df
 
-    def load_strikes(self, tr):
+    def load_trial_strikes(self, tr=None, strike_id=None):
+        if not strike_id:
+            strks = tr.strikes
+        else:
+            strks = [strk for strk in tr.strikes if (not self.is_dwh and strk.id == strike_id) or (self.is_dwh and strk.dwh_key == strike_id)]
+
         strikes_list = []
-        for strk in tr.strikes:
+        for strk in strks:
             strikes_list.append({'strike_id': strk.id, 'time': strk.time, 'is_hit': strk.is_hit, 'strike_x': strk.x, 'strike_y': strk.y, 
                                'bug_strike_x': strk.bug_x, 'bug_strike_y': strk.bug_y})
         return strikes_list
+
+    def get_start_end_frame(self, pf_, strike_id=None, sec_before=None, sec_after=None):
+        if not strike_id:  # case of play trial
+            start_frame, end_frame = pf_.index[0], pf_.index[-1]
+        else:
+            assert sec_after is not None and sec_before is not None
+            pf_ = pf_.copy()
+            before = pf_[~pf_.strikes.isna()].time.iloc[0] - timedelta(seconds=sec_before)
+            after = pf_[~pf_.strikes.isna()].time.iloc[0] + timedelta(seconds=sec_after)
+            pf_ = pf_.query(f'"{before}"<=time<="{after}"').sort_values(by='time')
+            start_frame, end_frame = pf_.index[0], pf_.index[-1]
+
+        return start_frame, end_frame
+
+
+    def load_trial_model(self, session, trial_id=None, strike_id=None):
+        if strike_id:
+            filters = {'id' if not self.is_dwh else 'dwh_key': strike_id}
+            strk = session.query(Strike).filter_by(**filters).first()
+            tr = session.query(Trial).filter_by(id=strk.trial_id).first()
+        else:
+            filters = {'id' if not self.is_dwh else 'dwh_key': trial_id}
+            tr = session.query(Trial).filter_by(**filters).first()
+        return tr
 
     def align_pose(self, pose_df, frames_df):
         pose_df = pd.concat(pose_df)
@@ -157,7 +213,6 @@ class TrialPose:
         plt.close(fig)
         return frame
 
-
     @staticmethod
     def insert_figure_to_frame(fig, frame, fig_size=None, top_left=None):
         fig.canvas.draw()
@@ -174,6 +229,19 @@ class TrialPose:
             frame[-fig_size[1]:, -fig_size[0]:, :] = fig_img
         return frame
 
+    def get_save_path(self, trial_id=None, strike_id=None):
+        output_dir = self.output_dir
+        if self.folder_name:
+            output_dir = f'{output_dir}/{self.folder_name}'
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
+        if strike_id:
+            keyword = f'strike_{strike_id}'
+        else:
+            keyword = f'trial_{trial_id}'
+        if self.is_dwh:
+            keyword += '_dwh'
+        return f'{output_dir}/{self.animal_id}_{keyword}_{self.cam_name}.mp4'
+    
 
 def get_trials_ids(animal_id, movement_type=None, orm=None):
     orm = orm if orm is not None else ORM()
@@ -189,8 +257,8 @@ def get_trials_ids(animal_id, movement_type=None, orm=None):
 
 if __name__ == '__main__':
     # print(get_trials_ids('PV91', movement_type='jump_up_old'))
-    TrialPose(26269, is_dwh=True).play_trial(cam_name='back', is_save_video=True)
-
+    # TrialPose(cam_name='back', is_dwh=True).play_strike(8615, is_save_video=True)
+    TrialPose(cam_name='back').extract_all_movement_type_strikes('PV91', 'accelerate')
     # orm = ORM()
     # for tid in get_trials_ids('PV163', movement_type='accelerate', orm=orm):
     #     try:
