@@ -246,6 +246,7 @@ class ArenaPose:
         """
         db_video_id, video_path = self.check_video_inputs(db_video_id, video_path)
         frames_times = self.load_frames_times(db_video_id, video_path)
+        bug_traj = self.load_bug_trajectory(db_video_id, video_path)
 
         pose_df = []
         cap = cv2.VideoCapture(video_path)
@@ -265,6 +266,7 @@ class ArenaPose:
             timestamp = frames_times.loc[frame_id, 'time'].timestamp()
             pred_row = self.predictor.predict(frame, frame_id)
             pred_row = self.analyze_frame(timestamp, pred_row, db_video_id)
+            pred_row = self.add_bug_traj_and_dev_angle(pred_row, bug_traj, timestamp)
             if is_create_example_video:
                 self.write_to_example_video(frame, frame_id, pred_row, fps, video_path)
             pose_df.append(pred_row)
@@ -366,6 +368,39 @@ class ArenaPose:
             'Asia/Jerusalem').dt.tz_localize(None)
         frames_ts.index = frames_ts.index.astype(int)
         return frames_ts
+    
+    def load_bug_trajectory(self, pose_df, db_video_id: int, video_path: str):
+        if self.is_use_db:
+            bug_trajs = []
+            with self.orm.session() as s:
+                vid = s.query(Video).filter_by(id=db_video_id).first()
+                blk = s.query(Block).filter_by(id=vid.block_id).first()
+                for tr in blk.trials:
+                    if tr.bug_trajectory is not None:
+                        bug_trajs.append(pd.DataFrame(tr.bug_trajectory))
+            bug_trajs = pd.concat(bug_trajs)
+        else:
+            assert video_path, 'must provide video_path for loading bug trajectory'
+            frames_output_dir = Path(video_path).parent.parent / 'bug_trajectory.csv'
+            csv_path = frames_output_dir / Path(video_path).with_suffix('.csv').name
+            if not csv_path.exists():
+                raise MissingFile(f'unable to find frames_timestamps in {csv_path}')
+            bug_trajs = pd.read_csv(csv_path, index_col=0)
+        
+        bug_trajs = bug_trajs.rename(columns={'x': 'bug_x', 'y': 'bug_y'})
+        bug_trajs['datetime'] = pd.to_datetime(bug_trajs['time']).dt.tz_localize(None)
+        bug_trajs = bug_trajs.sort_values(by='datetime')
+
+        start_time = bug_trajs.iloc[0].datetime - datetime.timedelta(seconds=3)
+        end_time = bug_trajs.iloc[-1].datetime + datetime.timedelta(seconds=3)
+        pose_df = pose_df[(pose_df.datetime > start_time) & (pose_df.datetime <= end_time)].copy()
+
+        pose_df = pd.merge_asof(left=pose_df, right=bug_trajs, right_on='datetime', left_on='datetime', 
+                                direction='nearest', tolerance=pd.Timedelta('20 ms'))
+        return pose_df
+
+    def add_bug_traj_and_dev_angle(self, pred_row, bug_traj, timestamp):
+        pass
 
     def get_video_path(self, db_video_id: int) -> str:
         with self.orm.session() as s:
@@ -1210,7 +1245,8 @@ if __name__ == '__main__':
     # DLCArenaPose('front').test_loaders(19)
     # print(get_videos_to_predict('PV148'))
     # commit_video_pred_to_db(animal_ids="PV163")
-    VideoPoseScanner(is_use_db=True).predict_all()
+    # VideoPoseScanner(is_use_db=True).predict_all()
+    DLCArenaPose('front', is_use_db=True).predict_video()
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
     # plt.imshow(img)
     # plt.show()
