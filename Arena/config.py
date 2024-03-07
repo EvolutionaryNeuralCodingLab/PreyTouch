@@ -144,7 +144,7 @@ VIDEO_WRITER_FORMAT = env('VIDEO_WRITER_FORMAT', 'MJPG')
 DEFAULT_EXPOSURE = env.int('DEFAULT_EXPOSURE', 5000)
 ARENA_DISPLAY = env('ARENA_DISPLAY', ':0')
 output_dir_key = 'output_dir'  # used for cam_config
-pixels2cm = 0.01833304668870419
+SCREEN_PIX_CM = env.float('SCREEN_PIX_CM', 53/1440)
 temperature_logging_delay_sec = env.int('temperature_logging_delay_sec', 5)
 MAX_VIDEO_TIME_SEC = env.int('MAX_VIDEO_TIME_SEC', 60 * 10)
 # the following is used by the scheduler and set the duration (seconds) in which 'manual' mode cameras would stay on.

@@ -266,7 +266,7 @@ class ArenaPose:
             timestamp = frames_times.loc[frame_id, 'time'].timestamp()
             pred_row = self.predictor.predict(frame, frame_id)
             pred_row = self.analyze_frame(timestamp, pred_row, db_video_id)
-            pred_row = self.add_bug_traj_and_dev_angle(pred_row, bug_traj, timestamp)
+            pred_row = self.add_bug_traj(pred_row, bug_traj, timestamp)
             if is_create_example_video:
                 self.write_to_example_video(frame, frame_id, pred_row, fps, video_path)
             pose_df.append(pred_row)
@@ -369,11 +369,13 @@ class ArenaPose:
         frames_ts.index = frames_ts.index.astype(int)
         return frames_ts
     
-    def load_bug_trajectory(self, pose_df, db_video_id: int, video_path: str):
+    def load_bug_trajectory(self, db_video_id: int, video_path: str):
         if self.is_use_db:
             bug_trajs = []
             with self.orm.session() as s:
                 vid = s.query(Video).filter_by(id=db_video_id).first()
+                if vid.block_id is None:
+                    raise MissingFile(f'unable to find block_id in DB for video_id: {db_video_id}')
                 blk = s.query(Block).filter_by(id=vid.block_id).first()
                 for tr in blk.trials:
                     if tr.bug_trajectory is not None:
@@ -389,18 +391,18 @@ class ArenaPose:
         
         bug_trajs = bug_trajs.rename(columns={'x': 'bug_x', 'y': 'bug_y'})
         bug_trajs['datetime'] = pd.to_datetime(bug_trajs['time']).dt.tz_localize(None)
+        bug_trajs['timestamp'] = bug_trajs.datetime.astype(int).div(10**9)
         bug_trajs = bug_trajs.sort_values(by='datetime')
+        return bug_trajs
 
-        start_time = bug_trajs.iloc[0].datetime - datetime.timedelta(seconds=3)
-        end_time = bug_trajs.iloc[-1].datetime + datetime.timedelta(seconds=3)
-        pose_df = pose_df[(pose_df.datetime > start_time) & (pose_df.datetime <= end_time)].copy()
-
-        pose_df = pd.merge_asof(left=pose_df, right=bug_trajs, right_on='datetime', left_on='datetime', 
-                                direction='nearest', tolerance=pd.Timedelta('20 ms'))
-        return pose_df
-
-    def add_bug_traj_and_dev_angle(self, pred_row, bug_traj, timestamp):
-        pass
+    def add_bug_traj(self, pred_row, bug_traj, timestamp):
+        dt = (bug_traj.timestamp - timestamp).abs()
+        for col in ['bug_x', 'bug_y']:
+            if dt.min() < 0.05:  # in case the diff is bigger than 50 msec, it means that this frame is not with bug.
+                pred_row[(col, '')] = bug_traj.loc[dt.idxmin(), col] * config.SCREEN_PIX_CM
+            else:
+                pred_row[(col, '')] = None
+        return pred_row
 
     def get_video_path(self, db_video_id: int) -> str:
         with self.orm.session() as s:
@@ -502,6 +504,54 @@ class DLCArenaPose(ArenaPose):
         if theta < 0:
             theta = 2 * np.pi + theta
         return theta
+
+    def add_bug_traj(self, pred_row, bug_traj, timestamp):
+        pred_row = super().add_bug_traj(pred_row, bug_traj, timestamp)
+        p = pred_row.iloc[0]
+        if all(p[(bp, 'prob')] >= 0.8 for bp in ['nose', 'right_ear', 'left_ear']) and not np.isnan(p[('bug_x', '')]):
+            pred_row[('dev_angle', '')] = self.calc_gaze_deviation_angle(ang=p[('angle', '')], bug_y=p[('bug_y', '')], bug_x=p[('bug_x', '')], 
+                                                                        x=p[('nose', 'x')], y=p[('nose', 'y')])
+        else:
+            pred_row[('dev_angle', '')] = None
+        return pred_row
+
+    def calc_gaze_deviation_angle(self, ang: float, bug_y: float, bug_x: float, x: float, y: float):
+        """
+        Calculates the gaze deviation angle between an animal and a moving object.
+
+        Args:
+            ang (float): The angle between the animal's nose and the object [radians].
+            bug_y (float): The y-coordinate of the object [cm].
+            bug_x (float): The x-coordinate of the object [cm].
+            x (float): The x-coordinate of the animal's nose [cm].
+            y (float): The y-coordinate of the animal's nose [cm].
+
+        Returns:
+            tuple[float, float]: A tuple containing the gaze deviation angle and the x-coordinate of the object.
+
+        """
+        m_exp = (y - bug_y) / (x - bug_x)
+        if ang == np.pi / 2:
+            x_obs = x
+            dev_ang = np.math.degrees(self.calc_angle_between_lines(1, 0, m_exp, -1))
+        else:
+            m_obs = np.tan(np.pi - ang)
+            n_obs = y - m_obs * x
+            x_obs = (bug_y - n_obs) / m_obs
+            a = distance.euclidean((bug_x, bug_y), (x, y))
+            b = distance.euclidean((x_obs, bug_y), (x, y))
+            c = np.abs(x_obs - bug_x)
+            dev_ang = np.arccos((a ** 2 + b ** 2 - c ** 2) / (2 * a * b))
+            if ang > np.pi:
+                dev_ang = np.pi - dev_ang
+            dev_ang = np.math.degrees(dev_ang)
+
+        sgn = np.sign(x_obs - bug_x) if ang < np.pi else -np.sign(x_obs - bug_x)
+        return sgn * dev_ang, x_obs
+
+    @staticmethod
+    def calc_angle_between_lines(a1, b1, a2, b2):
+        return np.arccos((a1*a2 + b1*b2) / (np.sqrt(a1**2 + b1**2) * np.sqrt(a2**2 + b2**2)))
 
     @property
     def body_parts(self):
@@ -1136,15 +1186,15 @@ class VideoPoseScanner:
         start_time = datetime.datetime.fromtimestamp(pose_df.iloc[0][('time', '')])
         self.orm.commit_video_predictions(self.dlc.predictor.model_name, pose_df, video_id, start_time, animal_id_)
 
-    def get_videos_to_predict(self):
+    def get_videos_to_predict(self, skip_committed=True):
         if self.is_use_db:
-            videos = self._get_videos_to_predict_from_db()
+            videos = self._get_videos_to_predict_from_db(skip_committed)
         else:
-            videos = self._get_videos_to_predict_from_files()
+            videos = self._get_videos_to_predict_from_files(is_skip_predicted=skip_committed)
         videos = sorted(videos, key=lambda x: x.name, reverse=True)
         return videos
 
-    def _get_videos_to_predict_from_db(self):
+    def _get_videos_to_predict_from_db(self, skip_committed=True):
         """Get from the DB all the videos that have not been predicted yet"""
         self.logger.info('Start scan of video predictions in the database')
         with self.orm.session() as s:
@@ -1245,8 +1295,7 @@ if __name__ == '__main__':
     # DLCArenaPose('front').test_loaders(19)
     # print(get_videos_to_predict('PV148'))
     # commit_video_pred_to_db(animal_ids="PV163")
-    # VideoPoseScanner(is_use_db=True).predict_all()
-    DLCArenaPose('front', is_use_db=True).predict_video()
+    DLCArenaPose('front', is_use_db=True).predict_video(db_video_id=1071)
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
     # plt.imshow(img)
     # plt.show()
