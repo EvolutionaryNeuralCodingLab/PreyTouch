@@ -171,7 +171,7 @@ class ArenaPose:
     def _load_from_db(self, video_db_id):
         with self.orm.session() as s:
             vp = s.query(VideoPrediction).filter_by(video_id=video_db_id,
-                                                    model=self.predictor.model_name).first()
+                                                    model=self.predictor.model_name).order_by(VideoPrediction.id.desc()).first()
             vid = s.query(Video).filter_by(id=video_db_id).first()
             block_id = vid.block_id
 
