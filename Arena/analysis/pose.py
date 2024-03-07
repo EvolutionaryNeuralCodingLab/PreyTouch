@@ -383,16 +383,16 @@ class ArenaPose:
             bug_trajs = pd.concat(bug_trajs)
         else:
             assert video_path, 'must provide video_path for loading bug trajectory'
-            frames_output_dir = Path(video_path).parent.parent / 'bug_trajectory.csv'
-            csv_path = frames_output_dir / Path(video_path).with_suffix('.csv').name
+            frames_output_dir = Path(video_path).parent.parent
+            csv_path = frames_output_dir / 'bug_trajectory.csv'
             if not csv_path.exists():
-                raise MissingFile(f'unable to find frames_timestamps in {csv_path}')
+                raise MissingFile(f'unable to find bug_trajectory in {csv_path}')
             bug_trajs = pd.read_csv(csv_path, index_col=0)
         
         bug_trajs = bug_trajs.rename(columns={'x': 'bug_x', 'y': 'bug_y'})
         bug_trajs['datetime'] = pd.to_datetime(bug_trajs['time']).dt.tz_localize(None)
         bug_trajs['timestamp'] = bug_trajs.datetime.astype(int).div(10**9)
-        bug_trajs = bug_trajs.sort_values(by='datetime')
+        bug_trajs = bug_trajs.sort_values(by='datetime').reset_index(drop=True)
         return bug_trajs
 
     def add_bug_traj(self, pred_row, bug_traj, timestamp):
@@ -401,7 +401,7 @@ class ArenaPose:
             if dt.min() < 0.05:  # in case the diff is bigger than 50 msec, it means that this frame is not with bug.
                 pred_row[(col, '')] = bug_traj.loc[dt.idxmin(), col] * config.SCREEN_PIX_CM
             else:
-                pred_row[(col, '')] = None
+                pred_row[(col, '')] = np.nan
         return pred_row
 
     def get_video_path(self, db_video_id: int) -> str:
@@ -507,12 +507,12 @@ class DLCArenaPose(ArenaPose):
 
     def add_bug_traj(self, pred_row, bug_traj, timestamp):
         pred_row = super().add_bug_traj(pred_row, bug_traj, timestamp)
-        p = pred_row.iloc[0]
+        p = pred_row.iloc[0] if isinstance(pred_row, pd.DataFrame) else pred_row
         if all(p[(bp, 'prob')] >= 0.8 for bp in ['nose', 'right_ear', 'left_ear']) and not np.isnan(p[('bug_x', '')]):
             pred_row[('dev_angle', '')] = self.calc_gaze_deviation_angle(ang=p[('angle', '')], bug_y=p[('bug_y', '')], bug_x=p[('bug_x', '')], 
                                                                         x=p[('nose', 'x')], y=p[('nose', 'y')])
         else:
-            pred_row[('dev_angle', '')] = None
+            pred_row[('dev_angle', '')] = np.nan
         return pred_row
 
     def calc_gaze_deviation_angle(self, ang: float, bug_y: float, bug_x: float, x: float, y: float):
@@ -547,7 +547,7 @@ class DLCArenaPose(ArenaPose):
             dev_ang = np.math.degrees(dev_ang)
 
         sgn = np.sign(x_obs - bug_x) if ang < np.pi else -np.sign(x_obs - bug_x)
-        return sgn * dev_ang, x_obs
+        return sgn * dev_ang
 
     @staticmethod
     def calc_angle_between_lines(a1, b1, a2, b2):
@@ -1156,8 +1156,8 @@ class VideoPoseScanner:
         self.orm = ORM() if is_use_db else None
         self.dlc = DLCArenaPose(cam_name, is_use_db=is_use_db, model_path=model_path, orm=self.orm, commit_bodypart=None)
 
-    def predict_all(self, is_tqdm=True, max_videos=None, errors_cache=None):
-        videos = self.get_videos_to_predict()
+    def predict_all(self, is_tqdm=True, max_videos=None, errors_cache=None, skip_committed=True):
+        videos = self.get_videos_to_predict(skip_committed)
         if not videos:
             return
         self.logger.info(f'found {len(videos)} to predict for pose')
@@ -1198,10 +1198,12 @@ class VideoPoseScanner:
         """Get from the DB all the videos that have not been predicted yet"""
         self.logger.info('Start scan of video predictions in the database')
         with self.orm.session() as s:
-            vids = s.query(Video).filter_by(cam_name=self.cam_name, predictions=None).all()
+            pred_kwargs = {'predictions': None} if skip_committed else {}
+            vids = s.query(Video).filter_by(cam_name=self.cam_name, **pred_kwargs).all()
             videos = []
             for vid in vids:
                 if not vid.path.endswith('.mp4') or not vid.animal_id.startswith('PV') \
+                    or vid.animal_id in ['test'] \
                     or (self.animal_id and self.animal_id != vid.animal_id):
                     continue
                 
@@ -1212,8 +1214,8 @@ class VideoPoseScanner:
                         video_path = Path(video_path.as_posix().replace(vid_exp_dir, config.EXPERIMENTS_DIR))
                 
                 if video_path.exists():
-                    # commit if the prediction file exists, but not committed yet
-                    if self.dlc.get_predicted_cache_path(video_path).exists():
+                    if skip_committed and self.dlc.get_predicted_cache_path(video_path).exists():
+                        # commit if the prediction file exists, but not committed yet
                         self.logger.info(f'{video_path.stem},{vid.animal_id} has already been predicted, but was not written to the database. Committing now.')
                         self.dlc.is_use_db = False
                         pose_df = self.dlc.load(video_path=video_path, only_load=True)
@@ -1253,6 +1255,30 @@ class VideoPoseScanner:
                     
                 pose_df = self.dlc.load(vid.path)
                 self.commit_video_prediction()
+
+    def add_bug_trajectory(self, videos=None):
+        if videos is None:
+            videos = self.get_videos_to_predict(skip_committed=False)
+        if not videos:
+            self.logger.info('No videos found; aborting')
+            return
+        self.logger.info(f'found {len(videos)} to add bug traj')
+        for i, video_path in enumerate(videos):
+            new_df = []
+            try:
+                if self.dlc.get_predicted_cache_path(video_path).exists():
+                    animal_id = Path(video_path).parts[-5]
+                    self.dlc.is_use_db = False
+                    pose_df = self.dlc.load(video_path=video_path, only_load=True)
+                    bug_traj = self.dlc.load_bug_trajectory(None, video_path)
+                    self.dlc.is_use_db = self.is_use_db
+                    for i, row in tqdm(pose_df.iterrows(), desc=f'({i+1}/{len(videos)}) {anima} {video_path.stem}', total=len(pose_df)):
+                        new_df.append(self.dlc.add_bug_traj(row, bug_traj, row[('time', '')]))
+                    new_df = pd.DataFrame(new_df)
+                    self.dlc.save_predicted_video(new_df, video_path)
+                    self.orm.update_video_prediction(video_path.stem, self.dlc.predictor.model_name, new_df.dropna(subset=[('nose', 'x')]))
+            except Exception as exc:
+                self.logger.error(f'{video_path}, {exc}')
 
     def fix_calibrations(self):
         """redo calibration for all video predictions in the database and files"""
@@ -1295,7 +1321,9 @@ if __name__ == '__main__':
     # DLCArenaPose('front').test_loaders(19)
     # print(get_videos_to_predict('PV148'))
     # commit_video_pred_to_db(animal_ids="PV163")
-    DLCArenaPose('front', is_use_db=True).predict_video(db_video_id=1071)
+    VideoPoseScanner().add_bug_trajectory()
+    # VideoPoseScanner(animal_id='PV163').add_bug_trajectory(videos=[Path('/media/reptilearn4/experiments/PV163/20240201/block10/videos/front_20240201T173016.mp4')])
+    # DLCArenaPose('front', is_use_db=True).predict_video(db_video_id=1071)
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
     # plt.imshow(img)
     # plt.show()
