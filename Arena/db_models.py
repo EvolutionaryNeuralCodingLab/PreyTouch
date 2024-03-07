@@ -673,9 +673,11 @@ class DWH:
                 recs = local_s.query(db_model)
                 if filters:
                     recs = recs.filter_by(**filters)
-                recs = recs.filter(db_model.dwh_key.is_not(None)).all()
                 columns = columns or [c.name for c in db_model.__table__.columns if c.name in ['id', 'dwh_key'] or c.foreign_keys]
-                for rec in tqdm(recs):
+                # for rec in tqdm(recs):
+                q = recs.filter(db_model.dwh_key.is_not(None))
+                total = q.count()
+                for rec in tqdm(q.yield_per(10), total=total):
                     dwh_rec = dwh_s.query(db_model).filter_by(id=rec.dwh_key).first()
                     if dwh_rec is None:  # object does not exist on dwh
                         rec.dwh_key = None
@@ -684,7 +686,7 @@ class DWH:
                         for c in columns:
                             setattr(dwh_rec, c, getattr(rec, c))
                         dwh_s.commit()
-                print(f'Finished updating columns={columns} for {db_model.__name__}; Total rows updated: {len(recs)}')
+                print(f'Finished updating columns={columns} for {db_model.__name__}; Total rows updated: {total}')
 
     @staticmethod
     def get_prev_committed_dwh_fk(s, local_fk, table):
@@ -728,7 +730,7 @@ if __name__ == '__main__':
     # delete_duplicates(VideoPrediction, 'video_id')
     # DWH().commit()
     # DWH().update_model(Strike, ['prediction_distance', 'calc_speed', 'projected_strike_coords', 'projected_leap_coords'])
-    DWH().update_model(VideoPrediction, ['data'], animal_id='PV91', model='front_head_only_resnet_152')
+    DWH().update_model(VideoPrediction, ['data'], model='front_head_only_resnet_152')
     DWH().commit()
     sys.exit(0)
 
