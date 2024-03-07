@@ -1272,7 +1272,7 @@ class VideoPoseScanner:
                     pose_df = self.dlc.load(video_path=video_path, only_load=True)
                     bug_traj = self.dlc.load_bug_trajectory(None, video_path)
                     self.dlc.is_use_db = self.is_use_db
-                    for i, row in tqdm(pose_df.iterrows(), desc=f'({i+1}/{len(videos)}) {anima} {video_path.stem}', total=len(pose_df)):
+                    for i, row in tqdm(pose_df.iterrows(), desc=f'({i+1}/{len(videos)}) {animal_id} {video_path.stem}', total=len(pose_df)):
                         new_df.append(self.dlc.add_bug_traj(row, bug_traj, row[('time', '')]))
                     new_df = pd.DataFrame(new_df)
                     self.dlc.save_predicted_video(new_df, video_path)
