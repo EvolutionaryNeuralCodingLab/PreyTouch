@@ -399,7 +399,7 @@ class ArenaPose:
         dt = (bug_traj.timestamp - timestamp).abs()
         for col in ['bug_x', 'bug_y']:
             if dt.min() < 0.05:  # in case the diff is bigger than 50 msec, it means that this frame is not with bug.
-                pred_row[(col, '')] = bug_traj.loc[dt.idxmin(), col] * config.SCREEN_PIX_CM
+                pred_row[(col, '')] = config.SCREEN_START_X + (bug_traj.loc[dt.idxmin(), col] * config.SCREEN_PIX_CM)
             else:
                 pred_row[(col, '')] = np.nan
         return pred_row
@@ -1270,6 +1270,9 @@ class VideoPoseScanner:
                     animal_id = Path(video_path).parts[-5]
                     self.dlc.is_use_db = False
                     pose_df = self.dlc.load(video_path=video_path, only_load=True)
+                    if ('dev_angle', '') in pose_df.columns:
+                        self.dlc.is_use_db = self.is_use_db
+                        continue    
                     bug_traj = self.dlc.load_bug_trajectory(None, video_path)
                     self.dlc.is_use_db = self.is_use_db
                     for i, row in tqdm(pose_df.iterrows(), desc=f'({i+1}/{len(videos)}) {animal_id} {video_path.stem}', total=len(pose_df)):
