@@ -164,7 +164,7 @@ class Loader:
         for _, frame in self.gen_frames_around_strike(0, 1):
             return frame
 
-    def gen_frames(self, frame_ids, video_path=None, cam_name=None):
+    def gen_frames(self, frame_ids, video_path=None, cam_name=None, frames_map=None):
         cap = cv2.VideoCapture(video_path or self.video_path.as_posix())
         start_frame, end_frame = frame_ids[0], frame_ids[-1]
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
@@ -174,6 +174,8 @@ class Loader:
                 continue
             if cam_name != 'back':
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            if frames_map is not None:
+                i = frames_map[i]
             yield i, frame
         cap.release()
 
@@ -185,7 +187,8 @@ class Loader:
     
         video_path = self.video_path.as_posix()
         if cam_name is not None and cam_name != 'front':
-            video_path, frame_ids = self.align_frames_to_other_cam(cam_name, video_path, frame_ids)
+            video_path, frame_ids, frames_pairs = self.align_frames_to_other_cam(cam_name, video_path, frame_ids)
+            return self.gen_frames(frame_ids, video_path=video_path, cam_name=cam_name, frames_map=frames_pairs)
 
         return self.gen_frames(frame_ids, video_path=video_path, cam_name=cam_name)
 
@@ -200,11 +203,14 @@ class Loader:
         frames_times['time'] = pd.to_datetime(frames_times['0'], unit='s', utc=True).dt.tz_convert(
             'Asia/Jerusalem').dt.tz_localize(None)
         orig_frames = self.frames_df.loc[frame_ids].time
+        orig_frames = self.frames_df.loc[frame_ids][['time']].reset_index().rename(columns={'index': 'orig_frame'})
+        orig_frames.columns = [c[0] for c in orig_frames.columns]
 
         merged = pd.merge_asof(left=orig_frames, right=frames_times, left_on='time', right_on='time', 
                                  direction='nearest', tolerance=pd.Timedelta('100 ms'))
         new_frames_ids = sorted(merged.frame_id.unique().tolist())
-        return vids[0].as_posix(), new_frames_ids
+        frames_pairs = merged[['orig_frame', 'frame_id']].set_index('frame_id').orig_frame.to_dict()
+        return vids[0].as_posix(), new_frames_ids, frames_pairs
 
     def get_bodypart_pose(self, bodypart):
         return pd.concat([pd.to_datetime(self.frames_df['time'], unit='s'), self.frames_df[bodypart]], axis=1)
@@ -242,7 +248,8 @@ class Loader:
     #     plt.title(str(self))
     #     plt.show()
 
-    def play_strike(self, cam_name=None, n_frames_back=None, n_frames_forward=None, annotations=None):
+    def play_strike(self, cam_name=None, n_frames_back=None, n_frames_forward=None, annotations=None,
+                    between_frames_delay=None):
         n_frames_back = n_frames_back or self.n_frames_back
         n_frames_forward = n_frames_forward or self.n_frames_forward
         if self.is_load_pose:
@@ -263,7 +270,8 @@ class Loader:
 
             frame = cv2.resize(frame, None, None, fx=0.5, fy=0.5)
             cv2.imshow(str(self), frame)
-            time.sleep(0.5)
+            if between_frames_delay:
+                time.sleep(between_frames_delay)
             if cv2.waitKey(25) & 0xFF == ord('q'):
                 break
         cv2.destroyAllWindows()

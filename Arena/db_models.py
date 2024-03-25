@@ -437,6 +437,28 @@ class ORM:
             s.add(vid_pred)
             s.commit()
 
+    def update_video_prediction(self, video_stem: str, model: str, data: pd.DataFrame):
+        with self.session() as s:
+            vid = s.query(Video).filter(Video.path.contains(video_stem)).first()
+            if not vid:
+                self.logger.warning(f'No video model found for update: {video_stem}')
+                return
+            elif not vid.predictions:
+                self.logger.warning(f'No video predictions found for update: {video_stem}')
+                return
+            
+            vps = [vp for vp in vid.predictions if vp.model == model]
+            if not vps:
+                self.logger.warning(f'No video predictions found for update: {video_stem}, model: {model}')
+                return
+            elif len(vps) > 1:
+                self.logger.warning(f'Multiple video predictions found for update: {video_stem}, model: {model}')
+                return
+
+            vp = vps[0]
+            vp.data = data.to_json()
+            s.commit()
+
     @commit_func
     def commit_pose_estimation(self, cam_name, start_time, x, y, angle, engagement, video_id, model,
                                bodypart, prob, frame_id, animal_id=None, block_id=None):
@@ -651,9 +673,11 @@ class DWH:
                 recs = local_s.query(db_model)
                 if filters:
                     recs = recs.filter_by(**filters)
-                recs = recs.filter(db_model.dwh_key.is_not(None)).all()
                 columns = columns or [c.name for c in db_model.__table__.columns if c.name in ['id', 'dwh_key'] or c.foreign_keys]
-                for rec in tqdm(recs):
+                # for rec in tqdm(recs):
+                q = recs.filter(db_model.dwh_key.is_not(None))
+                total = q.count()
+                for rec in tqdm(q.yield_per(10), total=total):
                     dwh_rec = dwh_s.query(db_model).filter_by(id=rec.dwh_key).first()
                     if dwh_rec is None:  # object does not exist on dwh
                         rec.dwh_key = None
@@ -662,7 +686,7 @@ class DWH:
                         for c in columns:
                             setattr(dwh_rec, c, getattr(rec, c))
                         dwh_s.commit()
-                print(f'Finished updating columns={columns} for {db_model.__name__}; Total rows updated: {len(recs)}')
+                print(f'Finished updating columns={columns} for {db_model.__name__}; Total rows updated: {total}')
 
     @staticmethod
     def get_prev_committed_dwh_fk(s, local_fk, table):
@@ -706,7 +730,7 @@ if __name__ == '__main__':
     # delete_duplicates(VideoPrediction, 'video_id')
     # DWH().commit()
     # DWH().update_model(Strike, ['prediction_distance', 'calc_speed', 'projected_strike_coords', 'projected_leap_coords'])
-    DWH().update_model(VideoPrediction, ['data'], animal_id='PV91', model='front_head_only_resnet_152')
+    DWH().update_model(VideoPrediction, ['data'], model='front_head_only_resnet_152')
     DWH().commit()
     sys.exit(0)
 

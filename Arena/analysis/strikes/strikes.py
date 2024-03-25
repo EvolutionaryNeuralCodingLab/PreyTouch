@@ -499,13 +499,23 @@ def delete_duplicate_strikes(animal_id):
         s.commit()
 
 
-def play_strikes(animal_id, start_time=None, cam_name='front', is_load_pose=True, strikes_ids=None):
-    if not strikes_ids:
-        strikes_ids = load_strikes(animal_id, start_time)
+def play_strikes(strikes_ids, cam_name='front', is_load_pose=True, sec_before=2, sec_after=2, is_dwh=False,
+                 between_frames_delay=None):
+    if not isinstance(strikes_ids, (list, tuple, np.ndarray)):
+        strikes_ids = [strikes_ids]
+    orm = ORM()
+    if is_dwh:
+        strikes_ = []
+        with orm.session() as s:
+            for sid in strikes_ids:
+                strk = s.query(Strike).filter_by(dwh_key=sid).first()
+                strikes_.append(strk.id)
+        strikes_ids = strikes_
+
     for sid in strikes_ids:
         try:
-            ld = Loader(sid, cam_name, is_load_pose=is_load_pose)
-            ld.play_strike()
+            ld = Loader(sid, cam_name, is_load_pose=is_load_pose, sec_after=sec_after, sec_before=sec_before, orm=orm, is_use_db=False)
+            ld.play_strike(between_frames_delay=between_frames_delay)
         except Exception as exc:
             print(f'ERROR strike_id={sid}: {exc}')
 
@@ -548,7 +558,7 @@ class StrikeScanner:
                 sa = StrikeAnalyzer(ld)
                 if self.is_plot_summary:
                     sa.plot_strike_analysis(only_save_to=self.output_dir.as_posix())
-                self.commit_strike_analysis(sid, sa)
+                self.update_strike_analysis_in_db(sid, sa)
                 n_committed += 1
 
             except MissingStrikeData as exc:
@@ -584,7 +594,7 @@ class StrikeScanner:
                         strikes_ids.append(strk.id)
         return sorted(strikes_ids)
 
-    def commit_strike_analysis(self, sid: int, sa: StrikeAnalyzer):
+    def update_strike_analysis_in_db(self, sid: int, sa: StrikeAnalyzer):
         """commit strike analysis to Strike table in the DB"""
         with self.orm.session() as s:
             strk = s.query(Strike).filter_by(id=sid).first()
@@ -654,11 +664,10 @@ if __name__ == '__main__':
     # sa = StrikeAnalyzer(ld)
     # sa.plot_strike_analysis()
     # delete_duplicate_strikes('PV80')
+    # play_strikes(2565, is_dwh=True, sec_after=0, between_frames_delay=0.1)
     # play_strikes('PV80', start_time='2022-12-01', cam_name='front', is_load_pose=False, strikes_ids=[6365])
-    StrikeScanner(animal_id='PV95', is_skip_committed=False).scan()
+    StrikeScanner().scan()
     # time2feeder(),
     # extract_bad_annotated_strike_frames('PV85')#, movement_type='random')
     # short_predict('PV80')
-    # foo()
-    # calibrate()
     # save_strikes_dataset('/data/Pogona_Pursuit/output/datasets/pogona_tongue/', 'PV80')

@@ -144,7 +144,8 @@ VIDEO_WRITER_FORMAT = env('VIDEO_WRITER_FORMAT', 'MJPG')
 DEFAULT_EXPOSURE = env.int('DEFAULT_EXPOSURE', 5000)
 ARENA_DISPLAY = env('ARENA_DISPLAY', ':0')
 output_dir_key = 'output_dir'  # used for cam_config
-pixels2cm = 0.01833304668870419
+SCREEN_PIX_CM = env.float('SCREEN_PIX_CM', 53/1440)
+SCREEN_START_X = env.float('SCREEN_START_X', 0)
 temperature_logging_delay_sec = env.int('temperature_logging_delay_sec', 5)
 MAX_VIDEO_TIME_SEC = env.int('MAX_VIDEO_TIME_SEC', 60 * 10)
 # the following is used by the scheduler and set the duration (seconds) in which 'manual' mode cameras would stay on.
@@ -216,6 +217,7 @@ MAX_DURATION_CONT_BLANK = env.int('MAX_DURATION_CONT_BLANK', 48*3600)
 IS_HOLD_TRIGGERS = env.bool('IS_HOLD_TRIGGERS', True)
 IS_CHECK_ENGAGEMENT_LEVEL = env.bool('IS_CHECK_ENGAGEMENT_LEVEL', False)
 HOLD_TRIGGERS_TIME = env.int('HOLD_TRIGGERS_TIME', 2)
+RANDOM_LOW_HORIZONTAL_MAX_STRIKES = env.int('RANDOM_LOW_HORIZONTAL_MAX_STRIKES', 30)
 experiment_types = {
     'bugs': ['reward_type', 'bug_types', 'reward_bugs', 'bug_speed', 'movement_type', 'time_between_bugs',
              'is_anticlockwise' 'target_drift', 'background_color', 'exit_hole_position'],

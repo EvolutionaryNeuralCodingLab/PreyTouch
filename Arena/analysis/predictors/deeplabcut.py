@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import yaml
 import argparse
+from tqdm.auto import tqdm
 from matplotlib.colors import TABLEAU_COLORS, CSS4_COLORS
 if __name__ == '__main__':
     os.chdir('../..')
@@ -158,12 +159,35 @@ class DLCPose(Predictor):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Deeplabcut helper')
-    parser.add_argument('command', choices=['export', 'train'], help='helper command')
+    # parser.add_argument('command', choices=['export', 'train'], help='helper command')
+    parser.add_argument('--predict', help='video path to predict')
+    parser.add_argument('--output_dir', help='Output directory for predict')
     args = parser.parse_args()
 
-    if args.command == 'export':
-        name = input('>> please enter name for the new model: ')
-        assert all(c not in name for c in '$!@=+/`~:;±§()*%&'), f'{name} - invalid name'
+    # if args.command:
+    #     if args.command == 'export':
+    #         name = input('>> please enter name for the new model: ')
+    #         assert all(c not in name for c in '$!@=+/`~:;±§()*%&'), f'{name} - invalid name'
 
-    elif args.command == 'train':
-        print('train')
+    #     elif args.command == 'train':
+    #         print('train')
+    
+    if args.predict:
+        output_dir = '.'
+        if args.output_dir:
+            assert Path(args.output_dir).exists(), f'output_dir: {args.output_dir} not exists'
+            output_dir = args.output_dir
+
+        dlc = DLCPose(cam_name='front')
+        assert Path(args.predict).exists(), f'{args.predict} does not exist'
+        cap = cv2.VideoCapture(args.predict)
+        n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        res = []
+        for i in tqdm(range(n_frames)):
+            ret, frame = cap.read()
+            if not dlc.is_initialized:
+                dlc.init(frame)
+            pdf = dlc.predict(frame)
+            res.append(pdf)
+        res = pd.concat(res).reset_index(drop=True)
+        res.to_csv(f'{output_dir}/{Path(args.predict).stem}.csv')
