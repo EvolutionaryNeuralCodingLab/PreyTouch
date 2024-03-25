@@ -397,7 +397,7 @@ class ArenaPose:
 
     def add_bug_traj(self, pred_row, bug_traj, timestamp):
         dt = (bug_traj.timestamp - timestamp).abs()
-        for col in ['bug_x', 'bug_y']:
+        for col in ['bug_x']:
             if dt.min() < 0.05:  # in case the diff is bigger than 50 msec, it means that this frame is not with bug.
                 pred_row[(col, '')] = config.SCREEN_START_X + (bug_traj.loc[dt.idxmin(), col] * config.SCREEN_PIX_CM)
             else:

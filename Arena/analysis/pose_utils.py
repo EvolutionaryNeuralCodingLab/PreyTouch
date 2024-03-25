@@ -171,7 +171,7 @@ def put_text(text, frame, x, y, font_scale=1, color=(255, 255, 0), thickness=2, 
 
 
 def plot_regression(ax, x, y, color='deeppink', prefix='', linewidth=2, is_legend=True, is_legend_outside=True,
-                    is_plot=True):
+                    is_plot=True, is_line_equation=False):
     assert isinstance(x, np.ndarray) and isinstance(y, np.ndarray), f'inputs must be numpy arrays'
     exclude_idx = np.concatenate([np.argwhere(np.isnan(x)), np.argwhere(np.isnan(y))])
     x, y = np.delete(x, exclude_idx), np.delete(y, exclude_idx)
@@ -180,6 +180,8 @@ def plot_regression(ax, x, y, color='deeppink', prefix='', linewidth=2, is_legen
         y_reg = slope * x + intercept
         p_val_text = f'p={p_value:.3f}' if p_value >= 0.001 else 'p<0.001'
         label = f'r={r_value:.2f}, {p_val_text}'
+        if is_line_equation:
+            label = label + f' (y={slope:.3f}x + {intercept:.3f})'
         if prefix:
             label = f'{prefix} ({label})'
         ax.plot(x, y_reg, color=color, label=label, linewidth=linewidth)
