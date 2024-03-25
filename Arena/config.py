@@ -200,6 +200,8 @@ IS_COMMIT_TO_DWH = env.bool('IS_COMMIT_TO_DWH', True)
 DWH_N_TRIES = env.int('DWH_N_TRIES', 5)
 IS_AGENT_ENABLED = env.bool('IS_AGENT_ENABLED', 0)
 AGENT_MIN_DURATION_BETWEEN_PUBLISH = env.int('AGENT_MIN_DURATION_BETWEEN_PUBLISH', 2 * 60 * 60)
+NIGHT_POSE_CAMERA = env('NIGHT_POSE_CAMERA', 'front')
+NIGHT_POSE_IS_RUN_ONLY_BUG_SESSIONS = env.bool('NIGHT_POSE_IS_RUN_ONLY_BUG_SESSIONS', False)
 
 # Experiments
 EXPERIMENTS_DIR = env('EXPERIMENTS_DIR', f"{OUTPUT_DIR}/experiments")
@@ -215,6 +217,7 @@ MAX_DURATION_CONT_BLANK = env.int('MAX_DURATION_CONT_BLANK', 48*3600)
 IS_HOLD_TRIGGERS = env.bool('IS_HOLD_TRIGGERS', True)
 IS_CHECK_ENGAGEMENT_LEVEL = env.bool('IS_CHECK_ENGAGEMENT_LEVEL', False)
 HOLD_TRIGGERS_TIME = env.int('HOLD_TRIGGERS_TIME', 2)
+RANDOM_LOW_HORIZONTAL_MAX_STRIKES = env.int('RANDOM_LOW_HORIZONTAL_MAX_STRIKES', 30)
 experiment_types = {
     'bugs': ['reward_type', 'bug_types', 'reward_bugs', 'bug_speed', 'movement_type', 'time_between_bugs',
              'is_anticlockwise' 'target_drift', 'background_color', 'exit_hole_position'],
