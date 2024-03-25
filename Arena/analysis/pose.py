@@ -1,5 +1,6 @@
 import datetime
 import math
+import time
 import pickle
 import re
 import yaml
@@ -1066,10 +1067,12 @@ def get_videos_to_predict(animal_id=None, experiments_dir=None, model_path=None,
     p = Path(experiments_dir)
     if animal_id:
         p = p / animal_id
-    all_videos = list(p.rglob('*front*.mp4'))
+    all_videos = list(p.rglob(f'*{config.NIGHT_POSE_CAMERA}*.mp4'))
     videos = []
-    ap = DLCArenaPose('front', is_use_db=False, model_path=model_path)
+    ap = DLCArenaPose(config.NIGHT_POSE_CAMERA, is_use_db=False, model_path=model_path)
     for vid_path in all_videos:
+        if config.NIGHT_POSE_IS_RUN_ONLY_BUG_SESSIONS and not (vid_path.parent.parent / 'bug_trajectory.csv').exists():
+            continue
         pred_path = ap.get_predicted_cache_path(vid_path)
         if (not is_override and (pred_path.exists() or pred_path.with_suffix('.txt').exists())) or \
                 (len(pred_path.parts) >= 6 and pred_path.parts[-6] == 'test'):
@@ -1111,20 +1114,26 @@ def fix_calibrations(animal_id=None, model_path=None):
 
 def predict_all_videos(animal_id=None, max_videos=None, experiments_dir=None, model_path=None, errors_cache=None,
                        is_tqdm=True):
+    logger = get_logger('Videos-Pose-Prediction')
     videos = get_videos_to_predict(animal_id, experiments_dir, model_path)
     if not videos:
-        print('No videos found')
+        logger.warning('No videos found')
         return
-    print(f'found {len(videos)} to predict')
+    logger.info(f'found {len(videos)} to predict')
     success_count = 0
-    ap = DLCArenaPose('front', is_use_db=True, model_path=model_path, commit_bodypart=None)
+    ap = DLCArenaPose(config.NIGHT_POSE_CAMERA, is_use_db=True, model_path=model_path, commit_bodypart=None)
     for i, video_path in enumerate(videos):
         try:
+            t0 = time.time()
+            if not is_tqdm:
+                logger.info(f'Start prediction of {video_path}')
             if ap.get_predicted_cache_path(video_path).exists():
                 continue
             ap.predict_video(video_path=video_path, is_create_example_video=False, 
                              prefix=f'({i+1}/{len(videos)}) ', is_tqdm=is_tqdm)
             success_count += 1
+            if not is_tqdm:
+                logger.info(f'Finished prediction of {video_path.stem} in {(time.time() - t0)/60:.1f} minutes')
             if max_videos and success_count >= max_videos:
                 return
         except MissingFile as exc:
@@ -1197,7 +1206,7 @@ if __name__ == '__main__':
     # DLCArenaPose('front').test_loaders(19)
     # print(get_videos_to_predict('PV148'))
     # commit_video_pred_to_db(animal_ids="PV163")
-    # predict_all_videos()
+    predict_all_videos()
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
     # plt.imshow(img)
     # plt.show()
