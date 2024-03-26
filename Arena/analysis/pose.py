@@ -398,8 +398,10 @@ class ArenaPose:
     def add_bug_traj(self, pred_row, bug_traj, timestamp):
         dt = (bug_traj.timestamp - timestamp).abs()
         for col in ['bug_x', 'bug_y']:
-            if dt.min() < 0.05:  # in case the diff is bigger than 50 msec, it means that this frame is not with bug.
-                pred_row[(col, '')] = config.SCREEN_START_X + (bug_traj.loc[dt.idxmin(), col] * config.SCREEN_PIX_CM)
+            if dt.min() < 0.03:  # in case the diff is bigger than 30 msec, it means that this frame is not with bug.    
+                pred_row[(col, '')] = bug_traj.loc[dt.idxmin(), col]
+                if col == 'bug_x':
+                    pred_row[('bug_x_cm', '')] = config.SCREEN_START_X + (bug_traj.loc[dt.idxmin(), col] * config.SCREEN_PIX_CM)
             else:
                 pred_row[(col, '')] = np.nan
         return pred_row
@@ -509,20 +511,19 @@ class DLCArenaPose(ArenaPose):
         pred_row = super().add_bug_traj(pred_row, bug_traj, timestamp)
         p = pred_row.iloc[0] if isinstance(pred_row, pd.DataFrame) else pred_row
         if all(p[(bp, 'prob')] >= 0.8 for bp in ['nose', 'right_ear', 'left_ear']) and not np.isnan(p[('bug_x', '')]):
-            pred_row[('dev_angle', '')] = self.calc_gaze_deviation_angle(ang=p[('angle', '')], bug_y=p[('bug_y', '')], bug_x=p[('bug_x', '')], 
-                                                                        x=p[('nose', 'x')], y=p[('nose', 'y')])
+            pred_row[('dev_angle', '')] = self.calc_gaze_deviation_angle(ang=p[('angle', '')], bug_x=p[('bug_x', '')], 
+                                                                         x=p[('nose', 'x')], y=p[('nose', 'y')])
         else:
             pred_row[('dev_angle', '')] = np.nan
         return pred_row
 
-    def calc_gaze_deviation_angle(self, ang: float, bug_y: float, bug_x: float, x: float, y: float):
+    def calc_gaze_deviation_angle(self, ang: float, bug_x: float, x: float, y: float):
         """
         Calculates the gaze deviation angle between an animal and a moving object.
 
         Args:
             ang (float): The angle between the animal's nose and the object [radians].
-            bug_y (float): The y-coordinate of the object [cm].
-            bug_x (float): The x-coordinate of the object [cm].
+            bug_x (float): The x-coordinate of the bug [cm].
             x (float): The x-coordinate of the animal's nose [cm].
             y (float): The y-coordinate of the animal's nose [cm].
 
@@ -530,16 +531,16 @@ class DLCArenaPose(ArenaPose):
             tuple[float, float]: A tuple containing the gaze deviation angle and the x-coordinate of the object.
 
         """
-        m_exp = (y - bug_y) / (x - bug_x)
+        m_exp = (y - config.SCREEN_Y) / (x - bug_x)
         if ang == np.pi / 2:
             x_obs = x
             dev_ang = np.math.degrees(self.calc_angle_between_lines(1, 0, m_exp, -1))
         else:
             m_obs = np.tan(np.pi - ang)
             n_obs = y - m_obs * x
-            x_obs = (bug_y - n_obs) / m_obs
-            a = distance.euclidean((bug_x, bug_y), (x, y))
-            b = distance.euclidean((x_obs, bug_y), (x, y))
+            x_obs = (config.SCREEN_Y - n_obs) / m_obs
+            a = distance.euclidean((bug_x, config.SCREEN_Y), (x, y))
+            b = distance.euclidean((x_obs, config.SCREEN_Y), (x, y))
             c = np.abs(x_obs - bug_x)
             dev_ang = np.arccos((a ** 2 + b ** 2 - c ** 2) / (2 * a * b))
             if ang > np.pi:
@@ -1270,9 +1271,9 @@ class VideoPoseScanner:
                     animal_id = Path(video_path).parts[-5]
                     self.dlc.is_use_db = False
                     pose_df = self.dlc.load(video_path=video_path, only_load=True)
-                    if ('dev_angle', '') in pose_df.columns:
+                    if ('bug_x_cm', '') in pose_df.columns:
                         self.dlc.is_use_db = self.is_use_db
-                        continue    
+                        continue
                     bug_traj = self.dlc.load_bug_trajectory(None, video_path)
                     self.dlc.is_use_db = self.is_use_db
                     for i, row in tqdm(pose_df.iterrows(), desc=f'({i+1}/{len(videos)}) {animal_id} {video_path.stem}', total=len(pose_df)):
