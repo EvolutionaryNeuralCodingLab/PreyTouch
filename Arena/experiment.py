@@ -293,6 +293,9 @@ class Block:
             if not self.exp_validation.is_reward_left():
                 utils.send_telegram_message('No reward left in feeder; stopping experiment')
                 raise EndExperimentException('No reward left; stopping experiment')
+            elif self.block_type == 'bugs' and self.exp_validation.is_max_reward_reached():
+                utils.send_telegram_message(f'Max daily rewards of {config.MAX_DAILY_REWARD} reached; stopping experiment')
+                raise EndExperimentException(f'Max daily rewards of {config.MAX_DAILY_REWARD} reached; stopping experiment')
             self.start_trial(trial_id)
             self.wait(self.trial_duration, check_visual_app_on=True, label=f'Trial {trial_id}')
             self.end_trial()
@@ -494,8 +497,9 @@ class Block:
             text='%{{localtime}}':x=30:y=30:fontcolor=red:fontsize=30" {filename}''', is_debug=False)
         )
 
-    def init_random_low_horizontal(self, max_strikes=30):
+    def init_random_low_horizontal(self, max_strikes=None):
         speeds = [2, 4, 6, 8]
+        max_strikes = max_strikes or config.RANDOM_LOW_HORIZONTAL_MAX_STRIKES
         speed_strikes_count = {k: 0 for k in speeds}
         with self.orm.session() as s:
             exps = s.query(Experiment_Model).filter_by(animal_id=self.animal_id).all()
@@ -622,7 +626,6 @@ class ExperimentValidation:
             'websocket_server_on': self.is_websocket_server_on(),
             'pogona_hunter_app_up': self.is_pogona_hunter_up(),
             'reward_left': self.is_reward_left(),
-            'max_reward_reached': self.is_max_reward_reached(),
             'touchscreen_mapped': self.is_touchscreen_mapped_to_hdmi()
         }
         if all(checks.values()):
@@ -695,7 +698,7 @@ class ExperimentValidation:
 
     def is_max_reward_reached(self):
         rewards_dict = self.orm.get_today_rewards(self.animal_id)
-        return sum(rewards_dict.values()) < config.MAX_DAILY_REWARD
+        return sum(rewards_dict.values()) >= config.MAX_DAILY_REWARD
 
     def get_reward_left(self):
         try:
