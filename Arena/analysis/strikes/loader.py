@@ -263,7 +263,8 @@ class Loader:
             if annotations and i in annotations:
                 put_text(annotations[i], frame, 30, frame.shape[0]-30)
             if self.is_load_pose:
-                self.dlc_pose.predictor.plot_predictions(frame, i, self.frames_df)
+                if cam_name == 'front':
+                    self.dlc_pose.predictor.plot_predictions(frame, i, self.frames_df)
                 if i in nose_df.index and not np.isnan(nose_df['cam_x'][i]):
                     angle = self.frames_df.loc[i, [("angle", "")]]
                     put_text(f'Angle={math.degrees(angle):.0f}', frame, 1000, 30)

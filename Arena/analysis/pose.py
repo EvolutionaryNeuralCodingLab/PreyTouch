@@ -1326,7 +1326,7 @@ if __name__ == '__main__':
     # DLCArenaPose('front').test_loaders(19)
     # print(get_videos_to_predict('PV148'))
     # commit_video_pred_to_db(animal_ids="PV163")
-    VideoPoseScanner().add_bug_trajectory()
+    VideoPoseScanner().fix_calibrations()
     # VideoPoseScanner(animal_id='PV163').add_bug_trajectory(videos=[Path('/media/reptilearn4/experiments/PV163/20240201/block10/videos/front_20240201T173016.mp4')])
     # DLCArenaPose('front', is_use_db=True).predict_video(db_video_id=1071)
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')

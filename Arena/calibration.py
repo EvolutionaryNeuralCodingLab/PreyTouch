@@ -2,6 +2,7 @@ import json
 import re
 import cv2
 import pickle
+import argparse
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
@@ -14,10 +15,6 @@ from loggers import get_logger
 
 ARUCO_DICT = cv2.aruco.DICT_4X4_1000
 ARUCO_IDS = np.arange(240).tolist()
-CENTER_ID = 0  # the marker that stands for (0, 0) in the new coordinate system
-IDS2PLOT = [0, 7, 160, 175, 232, 239]
-TEST_IDS = []  # this marker should have both positive coordinates, if not happen will induce fix
-SHIFTED_CAMS = ['top']  # frames that their x,y need to be swapped
 CHARUCO_COLS = 8
 
 
@@ -37,6 +34,7 @@ class Calibrator:
             'w': None,
             'h': None
         }
+        self.newcameramtx = None
         self.resize_dim = resize_dim
         self.undistort_mappers = None
         self.load_calibration()
@@ -93,9 +91,9 @@ class Calibrator:
     def calc_undistort_mappers(self):
         mtx, dist = self.calib_params['mtx'], self.calib_params['dist']
         w, h = self.calib_params['w'], self.calib_params['h']
-        newcameramtx, roi = cv2.getOptimalNewCameraMatrix(mtx, dist, (w, h), 1, (w, h))
+        self.newcameramtx, roi = cv2.getOptimalNewCameraMatrix(mtx, dist, (w, h), 1, (w, h))
         # undistort
-        self.undistort_mappers = cv2.initUndistortRectifyMap(mtx, dist, None, newcameramtx, (w, h), 5)
+        self.undistort_mappers = cv2.initUndistortRectifyMap(mtx, dist, None, self.newcameramtx, (w, h), 5)
 
     def calc_projection_error(self, objpoints, imgpoints, rvecs, tvecs, mtx, dist):
         mean_error = 0
@@ -125,6 +123,8 @@ class Calibrator:
         if len(img_files) < config.min_calib_images:
             raise CalibrationError(f'found only {len(img_files)} images for calibration, '
                                    f'expected {config.min_calib_images}')
+        else:
+            self.logger.info(f'found {len(img_files)} images for calibration in {calib_dir}')
         return img_files
 
     @property
@@ -136,32 +136,35 @@ class Calibrator:
         return Path(config.calibration_dir) / f'calib_detections_{self.cam_name}.png'
 
 
-SIGN_MASKS = {
-    'front': [-1, -1],
-    'top': [1, -1]
-}
-
-
 class CharucoEstimator:
-    def __init__(self, cam_name, resize_dim=None, logger=None, is_debug=True):
+    def __init__(self, cam_name, resize_dim=None, logger=None, is_debug=True, is_undistort=False):
         self.cam_name = cam_name
         self.resize_dim = resize_dim
         self.resize_scale = None
         self.is_debug = is_debug
+        self.is_undistort = is_undistort
+        # loaded from cache
         self.id_key = 'id'
-        self.logger = get_logger('calibration-pose-estimator') if logger is None else logger
+        self.scalingfactor = None
+        self.vector_translation = None
+        self.inverse_R_mtx = None
+        self.cached_params = ['id_key','scalingfactor','vector_translation', 'inverse_R_mtx']
+
         self.calibrator = Calibrator(cam_name, resize_dim=resize_dim)
+        self.mtx = self.calibrator.calib_params['mtx']
+        self.dist = self.calibrator.calib_params['dist']
+        self.newcam_mtx = self.calibrator.newcameramtx
+        self.inverse_newcam_mtx = np.linalg.inv(self.newcam_mtx)
+
         self.arucoDict = cv2.aruco.Dictionary_get(ARUCO_DICT)
         self.arucoParams = cv2.aruco.DetectorParameters_create()
-        self.is_swap_xy = cam_name in SHIFTED_CAMS
-        self.sign_mask = SIGN_MASKS[cam_name]
         self.state = 0  # 0 - not initiated, 1 - failure, 2 - initiated
         self.markers_image_date = None
         self.image_date = None
-        self.markers = {}
+        self.logger = get_logger('calibration-pose-estimator') if logger is None else logger
 
     def __str__(self):
-        return self.markers.get(self.id_key)
+        return self.id_key
 
     def init(self, img, img_shape=None, is_plot=False):
         try:
@@ -173,10 +176,9 @@ class CharucoEstimator:
                     raise Exception(f'Image size does not fit. expected: {tuple(self.resize_dim)}, received: {tuple(img_shape)}')
 
             self.set_image_date_and_load(self.image_date)
-            # self.align_axes()
             self.state = 2
             if self.is_debug:
-                self.logger.info(f'started pose-estimator caliber for frames of shape: {img_shape}')
+                self.logger.info(f'started real-world-coordinates transformer for frames of shape: {img_shape}')
             if is_plot:
                 img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
                 img = self.plot_calibrated_line(img)
@@ -188,49 +190,22 @@ class CharucoEstimator:
             self.state = 1
         return self
 
-    def get_location(self, frame_x, frame_y, check_init=True, return_closest=False):
-        """Convert camera x, y to real-world coordinates"""
+    def get_location(self, frame_x, frame_y, scalingfactor=None, check_init=True):
         if check_init and not self.is_initiated:
             return
-
         if self.resize_scale:
             frame_x, frame_y = self.resize_scale[0] * frame_x, self.resize_scale[1] * frame_y
-
-        closest_marker_id, closest_side, closest_dist = None, None, np.inf
-        for label in ['top_left', 'top_right', 'bottom_left', 'bottom_right']:
-            dists = {marker_id: distance.euclidean((frame_x, frame_y), d[label])
-                    for marker_id, d in self.markers.items() if marker_id != self.id_key}
-            if not dists:
-                continue
-            closest_marker_id_, closest_dist_ =  min(dists.items(), key=lambda x: x[1])
-            if closest_dist_ < closest_dist:
-                closest_dist = closest_dist_
-                closest_marker_id, closest_side = closest_marker_id_, label
-        if closest_marker_id is None:
-            return None, None
-
-        d = self.markers[closest_marker_id]
-        top = distance.euclidean(d['top_right'], d['top_left'])
-        side = distance.euclidean(d['top_right'], d['bottom_right'])
-        pixel2cm_x = config.ARUCO_MARKER_SIZE / (side if self.is_swap_xy else top)
-        pixel2cm_y = config.ARUCO_MARKER_SIZE / (top if self.is_swap_xy else side)
-        dx = self.sign_mask[0] * (frame_x - d[closest_side][0])
-        dy = self.sign_mask[1] * (frame_y - d[closest_side][1])
-
-        sides_fix = {
-            'top_left': (0, 0),
-            'top_right': (config.ARUCO_MARKER_SIZE, 0),
-            'bottom_left': (0, config.ARUCO_MARKER_SIZE),
-            'bottom_right': (config.ARUCO_MARKER_SIZE, config.ARUCO_MARKER_SIZE),
-        }
-
-        xr = d['x'] + sides_fix[closest_side][0] + pixel2cm_x * (dx if not self.is_swap_xy else dy)
-        yr = d['y'] + sides_fix[closest_side][1] + pixel2cm_y * (dy if not self.is_swap_xy else dx)
-        # print(f'({frame_x},{frame_y}) - close_dot: ({d["top_left"]}), res: ({xr:.1f},{yr:.1f})')
-        if return_closest:
-            return xr, yr, closest_marker_id, closest_side
-        else:
-            return xr, yr
+        
+        uv = cv2.undistortPoints(np.array([frame_x, frame_y]).astype('float32'), self.mtx, self.dist, None, self.newcam_mtx).ravel() 
+        uv_1 = np.array([[*uv,1]], dtype=np.float32)
+        uv_1 = uv_1.T
+        scalingfactor = scalingfactor or self.scalingfactor
+        suv_1 = scalingfactor * uv_1
+        xyz_c = self.inverse_newcam_mtx.dot(suv_1)
+        xyz_c = xyz_c - self.vector_translation
+        XYZ = self.inverse_R_mtx.dot(xyz_c)
+        XYZ = XYZ.ravel()
+        return XYZ[0], XYZ[1]
 
     def set_image_date_and_load(self, image_date=None):
         date_pattern = '%Y%m%dT%H%M%S'
@@ -239,9 +214,9 @@ class CharucoEstimator:
             image_date = datetime.strptime(image_date, date_pattern)
 
         last_date, last_path = None, None
-        for p in Path(config.calibration_dir).glob(f'{self.cached_markers_prefix}*.pkl'):
+        for p in Path(config.calibration_dir).glob(f'{self.cache_prefix}*.pkl'):
             sp = p.stem.split('_')
-            p_date, cam_name = sp[3], sp[1]
+            p_date, cam_name = sp[-1], sp[-3]
             p_date = datetime.strptime(p_date, date_pattern)
             if cam_name != self.cam_name or (image_date and p_date > image_date):
                 continue
@@ -250,83 +225,85 @@ class CharucoEstimator:
                 last_date = p_date
                 last_path = p
 
-        self.load_markers(last_path)
-        # print(f'Caliber is using {last_path}')
+        self.load_transformation(last_path)
 
     def load_image(self, image_path):
         assert re.match(r'\d{8}T\d{6}_\w+', Path(image_path).stem), 'Image filename must be of the pattern %Y%m%dT%H%M%S_<cam_name>.png'
         assert Path(image_path).exists(), f'Image path does not exist: {image_path}'
         self.markers_image_date = Path(image_path).stem.split('_')[0]
-        return cv2.imread(image_path)
-
-    def find_aruco_markers(self, image_path, is_plot=True):
-        frame = self.load_image(image_path)
+        frame = cv2.imread(image_path)
         if frame.shape[2] > 1:
             gray_frame = cv2.cvtColor(frame.copy(), cv2.COLOR_BGR2GRAY)
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         else:
             gray_frame = frame.copy()
             frame = cv2.cvtColor(frame.copy(), cv2.COLOR_GRAY2RGB)
-        # if self.resize_dim and frame.shape[:2] != self.resize_dim:
-        #     frame = cv2.resize(frame, self.resize_dim)
-        #     gray_frame = cv2.resize(gray_frame, self.resize_dim)
+        return frame, gray_frame
 
-        self.logger.info(f'start Aruco marker detection for image size: {frame.shape}')
-        marker_corners, ids, rejected = cv2.aruco.detectMarkers(gray_frame, self.arucoDict, parameters=self.arucoParams)
-        mtx, dist = self.calibrator.calib_params['mtx'], self.calibrator.calib_params['dist']
-        rVec, tVec, _ = cv2.aruco.estimatePoseSingleMarkers(marker_corners, config.ARUCO_MARKER_SIZE, mtx, dist)
+    def find_aruco_markers(self, image_path, is_plot=True):
+        frame, gray_frame = self.load_image(image_path)
+        self.logger.info(f'Start Aruco marker detection for image size: {frame.shape}')
+        # detect Charuco markers
+        marker_corners, marker_ids, rejected = cv2.aruco.detectMarkers(gray_frame, self.arucoDict, parameters=self.arucoParams)
+        # sort markers ids
+        marker_corners = [marker_corners[i] for i in marker_ids.ravel().argsort()]
+        marker_ids.sort(axis=0)
+        self.validate_detected_markers(marker_ids)
+        # create dataset for PnP using aruco top-left corner detections
+        image_points_2D = np.vstack([m[0][0] for m in marker_corners]).astype('float32')
+        real_world_points_3D = self.get_real_world_points(marker_ids).astype('float32')
+        # solve PnP
+        success, vector_rotation, self.vector_translation = cv2.solvePnP(real_world_points_3D, image_points_2D, self.mtx, self.dist)
+        if not success:
+            raise Exception('Failed to solve PnP')
+        
+        R_mtx, jac = cv2.Rodrigues(vector_rotation)
+        self.inverse_R_mtx = np.linalg.inv(R_mtx)
+        self.find_scaling(marker_ids, image_points_2D, real_world_points_3D)
 
-        missing_ids = []
-        for marker_id in ARUCO_IDS:
-            if marker_id not in ids:
-                missing_ids.append(marker_id)
-                continue
-
-            i = ids.astype(int).ravel().tolist().index(marker_id)
-            corners = marker_corners[i]
-            top_right, top_left, bottom_right, bottom_left = self.flatten_corners(corners)
-            charuco_df = self.create_charuco()
-            # row, col = marker_id // CHARUCO_COLS, marker_id % CHARUCO_COLS
-            self.markers[marker_id] = {
-                'x': charuco_df.loc[marker_id, 'x'],
-                'y': charuco_df.loc[marker_id, 'y'],
-                # 'x': round(tVec[i][0][0], 1),
-                # 'y': round(tVec[i][0][1], 1),
-                'cam_distance': np.sqrt(tVec[i][0][2] ** 2 + tVec[i][0][0] ** 2 + tVec[i][0][1] ** 2),
-                'corners': corners,
-                'top_right': top_right,
-                'bottom_right': bottom_right,
-                'bottom_left': bottom_left,
-                'top_left': top_left,
-                'center': ((top_right[0] + top_left[0]) // 2, (top_right[1] + bottom_right[1]) // 2),
-                'rVec': rVec[i],
-                'tVec': tVec[i]
-            }
-        self.markers[self.id_key] = utils.datetime_string()
-        self.logger.warning(f'The following markers were not detected: {missing_ids}')
-        # self.align_axes()
-        # self.align_coords_to_center_marker()
-        self.save_markers()
+        self.id_key = utils.datetime_string()
+        self.save_transformation()
         if is_plot:
-            frame = self.plot_aruco_detections(frame)
+            frame = self.plot_aruco_detections(frame, marker_ids, marker_corners, real_world_points_3D)
             plt.imshow(frame)
             plt.show()
         return frame, True
 
-    def align_axes(self):
-        """align the real-world coordinates"""
-        assert any(x in self.markers for x in TEST_IDS)
-        for tid in TEST_IDS:
-            if tid in self.markers:
-                break
-        x_real, y_real = self.get_location(*self.markers[tid]['center'], check_init=False)
-        if x_real < 0:
-            self.sign_mask[0] = -1
-        if y_real < 0:
-            self.sign_mask[1] = -1
+    def validate_detected_markers(self, marker_ids):
+        marker_ids = marker_ids.copy().ravel()
+        min_markers_amount = 60
+        if len(marker_ids) < min_markers_amount:
+            raise Exception(f'Not enough detected markers: {len(marker_ids)} < {min_markers_amount}')
+        
+        missing_aruco = [m for m in ARUCO_IDS if m not in marker_ids]
+        print(f'The following markers were not detected: {missing_aruco}')
+
+    def find_scaling(self, marker_ids, image_points_2D, real_world_points_3D):
+        scalings = np.arange(30, 100, 0.1)
+        scaling_res = []
+        for s in scalings:
+            scaling_res.append(self.calc_dist_for_scaling(marker_ids, image_points_2D, real_world_points_3D, s))
+
+        self.scalingfactor = scalings[np.argmin(scaling_res)]
+        print(f'chosen scaling: {self.scalingfactor:.1f}')
+        avg_dist = self.calc_dist_for_scaling(marker_ids, image_points_2D, real_world_points_3D, self.scalingfactor, is_print=True)
+        print(f'avg dist: {avg_dist:.2f}')
+
+    def calc_dist_for_scaling(self, marker_ids, image_points_2D, real_world_points_3D, scalingfactor, is_print=False):
+        # use only markers 0-22 for scaling, since they're the most important
+        test_marker_ids = np.where(marker_ids <= 22)[0]
+        ds = []
+        for i in test_marker_ids:
+            x, y = self.get_location(image_points_2D[i, 0], image_points_2D[i, 1], scalingfactor=scalingfactor, check_init=False)
+            real_xy = real_world_points_3D[i, :2]
+            d = distance.euclidean((x, y), real_xy)
+            ds.append(d)
+            if is_print:
+                print(f'{marker_ids[i]}: ({x:.2f},{y:.2f})  <-> {real_xy} = {d:.2f}')
+        return np.mean(ds)
 
     @staticmethod
-    def create_charuco(n=1000):
+    def get_real_world_points(marker_ids, n=150) -> pd.DataFrame:
         df = []
         is_even_row = True
         col = 0
@@ -334,48 +311,28 @@ class CharucoEstimator:
         aruco_outer_size = 2 * config.ARUCO_MARKER_SIZE
         for i in range(n):
             df.append({'marker_id': i, 'row': row, 'col': col,
-                       'x': round((2 * col + 1 if row % 2 else 2 * col) * aruco_outer_size),
-                       'y': round(row * aruco_outer_size)})
+                        'x': (2 * col + 1 if row % 2 else 2 * col) * aruco_outer_size,
+                        'y': row * aruco_outer_size})
             col += 1
             if (is_even_row and not (col % CHARUCO_COLS)) or (not is_even_row and not (col % (CHARUCO_COLS - 1))):
                 row += 1
                 is_even_row = not is_even_row
                 col = 0
         df = pd.DataFrame(df).set_index('marker_id')
+        df['z'] = 0
+        df = df.loc[marker_ids.ravel()][['x', 'y', 'z']].values
         return df
-    
 
-    def align_coords_to_center_marker(self):
-        if CENTER_ID not in self.markers:
-            return
-
-        x_center, y_center = self.markers[CENTER_ID]['x'], self.markers[CENTER_ID]['y']
-        for marker_id, d in self.markers.copy().items():
-            if marker_id == self.id_key:
-                continue
-            self.markers[marker_id]['x'] = d['x'] - x_center
-            self.markers[marker_id]['y'] = d['y'] - y_center
-
-    def plot_aruco_detections(self, frame):
+    def plot_aruco_detections(self, frame, marker_ids, marker_corners, real_world_points_3D):
         font, line_type, font_size = cv2.FONT_HERSHEY_PLAIN, cv2.LINE_AA, 1.8
-        for marker_id, d in self.markers.items():
-            if marker_id == self.id_key:
-                continue
-            cv2.polylines(frame, [d['corners'].astype(np.int32)], True, (0, 255, 255), 4, line_type)
-            # cv2.putText(frame, str(marker_id), d['top_right'], font, font_size, (0, 255, 255), 1, line_type)
-            # Draw the pose of the marker
-            # mtx, dist = self.calibrator.calib_params['mtx'], self.calibrator.calib_params['dist']
-            # cv2.drawFrameAxes(frame, mtx, dist, d['rVec'], d['tVec'], 4, 4)
-            # if d['y'] == 0 or d['x'] == 0:
-            x_, y_ = d['top_left']
-            cv2.circle(frame, (x_, y_), 2, (255, 0, 255), 3)
-                # if d['y'] == 0:  # screen axis
-            # pos = (x_ - self.sign_mask[0] * 50, y_) if self.is_swap_xy else (x_, y_ - self.sign_mask[1] * 50)
-            cv2.putText(frame, f"{marker_id},{(d['x'],d['y'])}", d['top_right'], font, 1.5, (255, 255, 255), 7, line_type)
-            cv2.putText(frame, f"{marker_id},{(d['x'], d['y'])}", d['top_right'], font, 1.5, (255, 0, 255), 3, line_type)
-                # if d['x'] == 0:
-            # pos = (x_, y_ - self.sign_mask[1] * 50) if self.is_swap_xy else (x_ - self.sign_mask[0] * 50, y_)
-            # cv2.putText(frame, f"{d['y']}", pos, font, font_size, (255, 0, 255), 2, line_type)
+        for i, (marker_id, corners) in enumerate(zip(marker_ids.ravel(), marker_corners)):
+            cv2.polylines(frame, [corners.astype(np.int32)], True, (0, 255, 255), 4, line_type)
+            top_right, top_left, _, _ = self.flatten_corners(corners)
+            cv2.circle(frame, top_left, 2, (255, 0, 255), 3)
+            real_x, real_y = real_world_points_3D[i, :2]
+            real_label = f'{marker_id} ({real_x:.1f},{real_y:.1f})'
+            cv2.putText(frame, real_label, top_right, font, 1.5, (255, 255, 255), 7, line_type)
+            cv2.putText(frame, real_label, top_right, font, 1.5, (255, 0, 255), 3, line_type)
         frame = self.plot_calibrated_line(frame)
         return frame
 
@@ -386,33 +343,11 @@ class CharucoEstimator:
         for frame_pos in [(w // 4, h // 3), (w // 4, h // 2), (w // 4, round(h / 1.3)),
                           (w // 2, h // 3), (w // 2, h // 2), (w // 2, round(h / 1.3)),
                           (3*w // 4, h // 3), (3*w // 4, h // 2), (3*w // 4, round(h / 1.3))]:
-            xc, yc, i, lbl = self.get_location(*frame_pos, check_init=False, return_closest=True)
+            xc, yc = self.get_location(*frame_pos, check_init=False)
             cv2.circle(frame, frame_pos, 4, color, 3)
-            cv2.putText(frame, f"({xc:.1f},{yc:.1f}),{i}", frame_pos, font, 2, (255, 255, 255), 8, line_type)
-            cv2.putText(frame, f"({xc:.1f},{yc:.1f}),{i}", frame_pos, font, 2, (0, 0, 0), 4, line_type)
+            cv2.putText(frame, f"({xc:.1f},{yc:.1f})", frame_pos, font, 2, (255, 255, 255), 8, line_type)
+            cv2.putText(frame, f"({xc:.1f},{yc:.1f})", frame_pos, font, 2, (0, 0, 0), 4, line_type)
         return frame
-
-    def load_markers(self, markers_file: Path=None):
-        if not markers_file.exists():
-            raise Exception(f'Aruco cache file {markers_file} does not exist')
-
-        with markers_file.open('rb') as f:
-            markers = pickle.load(f)
-            missing_markers = []
-            for marker_id in ARUCO_IDS + [self.id_key]:
-                marker_dict = markers.get(marker_id, {})
-                if not marker_dict and marker_id != self.id_key:
-                    missing_markers.append(marker_id)
-                else:
-                    self.markers[marker_id] = marker_dict
-            if self.is_debug:
-                self.logger.info(f'Loaded {len(self.markers)} markers from {markers_file}')
-            # self.logger.warning(f'The following markers are missing: {missing_markers}')
-
-    def save_markers(self):
-        with self.cached_markers_path.open('wb') as f:
-            pickle.dump(self.markers, f)
-            self.logger.info(f'Markers saved to {self.cached_markers_path}')
 
     def flatten_corners(self, corners):
         corners = corners.reshape(4, 2).astype(int)
@@ -422,6 +357,32 @@ class CharucoEstimator:
         bottom_left = corners[3].ravel()
         return top_right, top_left, bottom_right, bottom_left
 
+
+    def load_transformation(self, cache_file_path: Path=None):
+        if not cache_file_path.exists():
+            raise Exception(f'Aruco cache file {cache_file_path} does not exist')
+
+        with cache_file_path.open('rb') as f:
+            cache = pickle.load(f)
+            for k in self.cached_params:
+                setattr(self, k, cache[k])
+
+        if self.is_debug:
+            self.logger.info(f'Loaded cached transformation from {cache_file_path}')
+
+    def save_transformation(self):
+        with self.cache_path.open('wb') as f:
+            pickle.dump({k: getattr(self, k) for k in self.cached_params}, f)
+
+    @property
+    def cache_prefix(self):
+        return f'aruco_transformation_{self.cam_name}_{json.dumps(self.resize_dim)}'
+    
+    @property
+    def cache_path(self):
+        stem = f'{self.cache_prefix}_{self.markers_image_date}'
+        return Path(config.calibration_dir) / f'{stem}.pkl'
+
     @property
     def is_initiated(self):
         return self.state > 0
@@ -430,28 +391,36 @@ class CharucoEstimator:
     def is_on(self):
         return self.state == 2
 
-    @property
-    def cached_markers_prefix(self):
-        return f'markers_{self.cam_name}_{json.dumps(self.resize_dim)}'
-    
-    @property
-    def cached_markers_path(self):
-        return Path(config.calibration_dir) / f'{self.cached_markers_prefix}_{self.markers_image_date}.pkl'
 
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--calibration', action='store_true', help='Run camera calibration based on detection of chessboard images')
+    parser.add_argument('--transformation', action='store_true', help='Calculate the transformation between real world and image coordinates, based on Charuco markers')
+    parser.add_argument('--cam_name', type=str, help='Camera name')
+    parser.add_argument('--charuco_img_path', type=str, help='Path to charuco markers image')
+    parser.add_argument('--run_all_charuco', action='store_true', help='Run transformation on all charuco markers images in MARKERS_IMAGES_DIR')
+    args = parser.parse_args()
 
-def main(img_path, cam='top'):
-    pe = CharucoEstimator(cam)
-    img_path, ret = pe.find_aruco_markers(img_path)
+    assert args.calibration ^ args.transformation, 'Please specify either calibration or transformation'
 
+    if args.transformation:
+        assert args.charuco_img_path ^ args.run_all_charuco, 'Please specify either charuco_img_path or run_all_charuco'
+        if args.run_all_charuco:
+            img_dir = Path(config.MARKERS_IMAGES_DIR)
+            for p in img_dir.glob('*.png'):
+                cam_name = p.stem.split('_')[1]
+                ce = CharucoEstimator(cam_name)
+                ce.find_aruco_markers(p.as_posix())
+        else:  # charuco_img_path
+            assert args.cam_name, 'Please specify camera name'
+            ce = CharucoEstimator(args.cam_name)
+            ce.find_aruco_markers(args.charuco_img_path)
 
-def run_all():
-    img_dir = Path(config.MARKERS_IMAGES_DIR)
-    for p in img_dir.glob('*.png'):
-        main(p.as_posix(), p.stem.split('_')[1])
-
+    else:  # calibration
+        assert args.cam_name, 'Please specify camera name'
+        calibrator = Calibrator(args.cam_name)
+        calibrator.calibrate_camera()
 
 
 if __name__ == "__main__":
-    run_all()
-    # cam_, image_path_ = 'front', '/data/Pogona_Pursuit/output/captures/20240108T094606_front.png'
-    # main(image_path_, cam=cam_)
+    main()
