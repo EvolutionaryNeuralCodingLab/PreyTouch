@@ -225,6 +225,8 @@ class CharucoEstimator:
                 last_date = p_date
                 last_path = p
 
+        if not last_path:
+            raise CalibrationError(f'Could not find aruco image for date {image_date}')
         self.load_transformation(last_path)
 
     def load_image(self, image_path):
@@ -308,7 +310,7 @@ class CharucoEstimator:
         is_even_row = True
         col = 0
         row = 0
-        aruco_outer_size = config.ARUCO_MARKER_SIZE
+        aruco_outer_size = 2 * config.ARUCO_MARKER_SIZE
         for i in range(n):
             df.append({'marker_id': i, 'row': row, 'col': col,
                         'x': (2 * col + 1 if row % 2 else 2 * col) * aruco_outer_size,
@@ -319,7 +321,6 @@ class CharucoEstimator:
                 is_even_row = not is_even_row
                 col = 0
         df = pd.DataFrame(df).set_index('marker_id')
-        print(df)
         df['z'] = 0
         df = df.loc[marker_ids.ravel()][['x', 'y', 'z']].values
         return df
