@@ -303,12 +303,12 @@ class CharucoEstimator:
         return np.mean(ds)
 
     @staticmethod
-    def get_real_world_points(marker_ids, n=150) -> pd.DataFrame:
+    def get_real_world_points(marker_ids, n=1000) -> pd.DataFrame:
         df = []
         is_even_row = True
         col = 0
         row = 0
-        aruco_outer_size = 2 * config.ARUCO_MARKER_SIZE
+        aruco_outer_size = config.ARUCO_MARKER_SIZE
         for i in range(n):
             df.append({'marker_id': i, 'row': row, 'col': col,
                         'x': (2 * col + 1 if row % 2 else 2 * col) * aruco_outer_size,
@@ -319,6 +319,7 @@ class CharucoEstimator:
                 is_even_row = not is_even_row
                 col = 0
         df = pd.DataFrame(df).set_index('marker_id')
+        print(df)
         df['z'] = 0
         df = df.loc[marker_ids.ravel()][['x', 'y', 'z']].values
         return df
@@ -404,7 +405,7 @@ def main():
     assert args.calibration ^ args.transformation, 'Please specify either calibration or transformation'
 
     if args.transformation:
-        assert args.charuco_img_path ^ args.run_all_charuco, 'Please specify either charuco_img_path or run_all_charuco'
+        assert bool(args.charuco_img_path) ^ args.run_all_charuco, 'Please specify either charuco_img_path or run_all_charuco'
         if args.run_all_charuco:
             img_dir = Path(config.MARKERS_IMAGES_DIR)
             for p in img_dir.glob('*.png'):
