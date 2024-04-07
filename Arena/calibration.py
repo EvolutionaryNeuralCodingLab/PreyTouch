@@ -36,7 +36,6 @@ class Calibrator:
         }
         self.newcameramtx = None
         self.resize_dim = resize_dim
-        self.undistort_mappers = None
         self.load_calibration()
 
     def calibrate_camera(self, is_plot=True):
@@ -86,14 +85,12 @@ class Calibrator:
         self.logger.info('calibration finished successfully')
 
     def undistort_image(self, img) -> np.ndarray:
-        return cv2.remap(img, *self.undistort_mappers, cv2.INTER_LINEAR)
+        return cv2.undistort(img, self.calib_params['mtx'], self.calib_params['dist'], None, self.newcameramtx)
 
     def calc_undistort_mappers(self):
         mtx, dist = self.calib_params['mtx'], self.calib_params['dist']
         w, h = self.calib_params['w'], self.calib_params['h']
         self.newcameramtx, roi = cv2.getOptimalNewCameraMatrix(mtx, dist, (w, h), 1, (w, h))
-        # undistort
-        self.undistort_mappers = cv2.initUndistortRectifyMap(mtx, dist, None, self.newcameramtx, (w, h), 5)
 
     def calc_projection_error(self, objpoints, imgpoints, rvecs, tvecs, mtx, dist):
         mean_error = 0
@@ -145,16 +142,12 @@ class CharucoEstimator:
         self.is_undistort = is_undistort
         # loaded from cache
         self.id_key = 'id'
-        self.scalingfactor = None
-        self.vector_translation = None
-        self.inverse_R_mtx = None
-        self.cached_params = ['id_key','scalingfactor','vector_translation', 'inverse_R_mtx']
+        self.cached_params = ['homography']
 
         self.calibrator = Calibrator(cam_name, resize_dim=resize_dim)
         self.mtx = self.calibrator.calib_params['mtx']
         self.dist = self.calibrator.calib_params['dist']
         self.newcam_mtx = self.calibrator.newcameramtx
-        self.inverse_newcam_mtx = np.linalg.inv(self.newcam_mtx)
 
         self.arucoDict = cv2.aruco.Dictionary_get(ARUCO_DICT)
         self.arucoParams = cv2.aruco.DetectorParameters_create()
@@ -190,22 +183,21 @@ class CharucoEstimator:
             self.state = 1
         return self
 
-    def get_location(self, frame_x, frame_y, scalingfactor=None, check_init=True):
+    def get_location(self, frame_x, frame_y, is_undistort=True, check_init=True):
         if check_init and not self.is_initiated:
             return
         if self.resize_scale:
             frame_x, frame_y = self.resize_scale[0] * frame_x, self.resize_scale[1] * frame_y
-        
-        uv = cv2.undistortPoints(np.array([frame_x, frame_y]).astype('float32'), self.mtx, self.dist, None, self.newcam_mtx).ravel() 
-        uv_1 = np.array([[*uv,1]], dtype=np.float32)
-        uv_1 = uv_1.T
-        scalingfactor = scalingfactor or self.scalingfactor
-        suv_1 = scalingfactor * uv_1
-        xyz_c = self.inverse_newcam_mtx.dot(suv_1)
-        xyz_c = xyz_c - self.vector_translation
-        XYZ = self.inverse_R_mtx.dot(xyz_c)
-        XYZ = XYZ.ravel()
-        return XYZ[0], XYZ[1]
+        if is_undistort:
+            uv = cv2.undistortPoints(np.array([frame_x, frame_y]).astype('float32'), self.mtx, self.dist, None, self.newcam_mtx).ravel()
+        else:
+            uv = [frame_x, frame_y]
+        uv_1 = np.array([[*uv,1]], dtype=np.float32).T
+
+        result = np.dot(self.homography, uv_1).ravel()
+        projected_x = result[0] / result[2]
+        projected_y = result[1] / result[2]
+        return projected_x, projected_y
 
     def set_image_date_and_load(self, image_date=None):
         date_pattern = '%Y%m%dT%H%M%S'
@@ -234,6 +226,7 @@ class CharucoEstimator:
         assert Path(image_path).exists(), f'Image path does not exist: {image_path}'
         self.markers_image_date = Path(image_path).stem.split('_')[0]
         frame = cv2.imread(image_path)
+        frame = self.calibrator.undistort_image(frame)
         if frame.shape[2] > 1:
             gray_frame = cv2.cvtColor(frame.copy(), cv2.COLOR_BGR2GRAY)
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -254,14 +247,9 @@ class CharucoEstimator:
         # create dataset for PnP using aruco top-left corner detections
         image_points_2D = np.vstack([m[0][0] for m in marker_corners]).astype('float32')
         real_world_points_3D = self.get_real_world_points(marker_ids).astype('float32')
-        # solve PnP
-        success, vector_rotation, self.vector_translation = cv2.solvePnP(real_world_points_3D, image_points_2D, self.mtx, self.dist)
-        if not success:
-            raise Exception('Failed to solve PnP')
-        
-        R_mtx, jac = cv2.Rodrigues(vector_rotation)
-        self.inverse_R_mtx = np.linalg.inv(R_mtx)
-        self.find_scaling(marker_ids, image_points_2D, real_world_points_3D)
+        # estimate homography matrix
+        self.homography = self.estimate_homography(image_points_2D, real_world_points_3D[:, :2])
+        self.print_detection_error(image_points_2D, real_world_points_3D)
 
         self.id_key = utils.datetime_string()
         self.save_transformation()
@@ -271,6 +259,23 @@ class CharucoEstimator:
             plt.show()
         return frame, True
 
+    @staticmethod
+    def estimate_homography(image_points, dest_points):
+        """Find homography matrix."""
+        fp = np.array(image_points)
+        tp = np.array(dest_points)
+        H, _ = cv2.findHomography(fp, tp, 0)
+        return H
+
+    def print_detection_error(self, image_points_2D, real_world_points_3D):
+        dists = []
+        for image_point, dest_point in zip(image_points_2D, real_world_points_3D):
+            x, y = self.get_location(*image_point, is_undistort=False, check_init=False)
+            d = distance.euclidean((x, y), dest_point[:2])
+            print(f'{dest_point[:2]} <-> ({x:.1f},{y:.1f}) = {d:.2f}')
+            dists.append(d)
+        print(f'Average error: {np.mean(dists):.2f}')
+
     def validate_detected_markers(self, marker_ids):
         marker_ids = marker_ids.copy().ravel()
         min_markers_amount = 60
@@ -279,30 +284,6 @@ class CharucoEstimator:
         
         missing_aruco = [m for m in ARUCO_IDS if m not in marker_ids]
         print(f'The following markers were not detected: {missing_aruco}')
-
-    def find_scaling(self, marker_ids, image_points_2D, real_world_points_3D):
-        scalings = np.arange(30, 100, 0.1)
-        scaling_res = []
-        for s in scalings:
-            scaling_res.append(self.calc_dist_for_scaling(marker_ids, image_points_2D, real_world_points_3D, s))
-
-        self.scalingfactor = scalings[np.argmin(scaling_res)]
-        print(f'chosen scaling: {self.scalingfactor:.1f}')
-        avg_dist = self.calc_dist_for_scaling(marker_ids, image_points_2D, real_world_points_3D, self.scalingfactor, is_print=True)
-        print(f'avg dist: {avg_dist:.2f}')
-
-    def calc_dist_for_scaling(self, marker_ids, image_points_2D, real_world_points_3D, scalingfactor, is_print=False):
-        # use only markers 0-22 for scaling, since they're the most important
-        test_marker_ids = np.where(marker_ids <= 22)[0]
-        ds = []
-        for i in test_marker_ids:
-            x, y = self.get_location(image_points_2D[i, 0], image_points_2D[i, 1], scalingfactor=scalingfactor, check_init=False)
-            real_xy = real_world_points_3D[i, :2]
-            d = distance.euclidean((x, y), real_xy)
-            ds.append(d)
-            if is_print:
-                print(f'{marker_ids[i]}: ({x:.2f},{y:.2f})  <-> {real_xy} = {d:.2f}')
-        return np.mean(ds)
 
     @staticmethod
     def get_real_world_points(marker_ids, n=1000) -> pd.DataFrame:
@@ -345,7 +326,7 @@ class CharucoEstimator:
         for frame_pos in [(w // 4, h // 3), (w // 4, h // 2), (w // 4, round(h / 1.3)),
                           (w // 2, h // 3), (w // 2, h // 2), (w // 2, round(h / 1.3)),
                           (3*w // 4, h // 3), (3*w // 4, h // 2), (3*w // 4, round(h / 1.3))]:
-            xc, yc = self.get_location(*frame_pos, check_init=False)
+            xc, yc = self.get_location(*frame_pos, is_undistort=False, check_init=False)
             cv2.circle(frame, frame_pos, 4, color, 3)
             cv2.putText(frame, f"({xc:.1f},{yc:.1f})", frame_pos, font, 2, (255, 255, 255), 8, line_type)
             cv2.putText(frame, f"({xc:.1f},{yc:.1f})", frame_pos, font, 2, (0, 0, 0), 4, line_type)
@@ -358,7 +339,6 @@ class CharucoEstimator:
         bottom_right = corners[2].ravel()
         bottom_left = corners[3].ravel()
         return top_right, top_left, bottom_right, bottom_left
-
 
     def load_transformation(self, cache_file_path: Path=None):
         if not cache_file_path.exists():

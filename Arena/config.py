@@ -176,7 +176,7 @@ IS_CHECK_SCREEN_MAPPING = env.bool('IS_CHECK_SCREEN_MAPPING', 1)
 APP_SCREEN = env('APP_SCREEN', ':0.0')
 TEST_SCREEN = env('TEST_SCREEN', ':1.0')
 SCREEN_RESOLUTION = env('SCREEN_RESOLUTION', '1920,1080')  # must be written with comma
-SCREEN_DISPLACEMENT = env('SCREEN_DISPLACEMENT', '2025')  # used for displacing the screen contents in multi screen setup
+SCREEN_DISPLACEMENT = env('SCREEN_DISPLACEMENT', '000')  # used for displacing the screen contents in multi screen setup
 
 # temperature sensor
 SERIAL_PORT_TEMP = env('SERIAL_PORT_TEMP', '/dev/ttyACM0')
