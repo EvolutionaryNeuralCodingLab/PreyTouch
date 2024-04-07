@@ -1,6 +1,7 @@
 import json
 import re
 import cv2
+import sys
 import pickle
 import argparse
 from pathlib import Path
@@ -381,10 +382,19 @@ def main():
     parser.add_argument('--cam_name', type=str, help='Camera name')
     parser.add_argument('--charuco_img_path', type=str, help='Path to charuco markers image')
     parser.add_argument('--run_all_charuco', action='store_true', help='Run transformation on all charuco markers images in MARKERS_IMAGES_DIR')
+    parser.add_argument('--undistort_frame', type=str, help='Run undistort on frame')
     args = parser.parse_args()
 
-    assert args.calibration ^ args.transformation, 'Please specify either calibration or transformation'
+    if args.undistort_frame:
+        assert args.cam_name, 'Please specify camera name'
+        img = cv2.imread(args.undistort_frame)
+        ce = Calibrator(args.cam_name)
+        frame = ce.undistort_image(img)
+        plt.imshow(frame)
+        plt.show
+        sys.exit(0)
 
+    assert args.calibration ^ args.transformation, 'Please specify either calibration or transformation'
     if args.transformation:
         assert bool(args.charuco_img_path) ^ args.run_all_charuco, 'Please specify either charuco_img_path or run_all_charuco'
         if args.run_all_charuco:
