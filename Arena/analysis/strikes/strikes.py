@@ -344,14 +344,14 @@ class StrikeAnalyzer:
 
     @cached_property
     def calc_strike_frame(self):
-        max_diff_strike_frame = 150
-        y = self.pose_df.y.values
-        peaks_idx, _ = find_peaks(y, height=910, distance=10)
-        peaks_idx = peaks_idx[(np.abs(peaks_idx - self.strike_frame_id) < max_diff_strike_frame) &
-                              (peaks_idx < self.bug_traj_last_frame)]
-
         strike_frame_idx = self.strike_frame_id
+        max_diff_strike_frame = 10
         try:
+            y = self.pose_df.cam_y
+            peaks_idx, _ = find_peaks(y.values, height=910, distance=10)
+            peaks_idx = self.pose_df.index[peaks_idx]
+            peaks_idx = peaks_idx[(np.abs(peaks_idx - self.strike_frame_id) < max_diff_strike_frame) &
+                                (peaks_idx < self.bug_traj_last_frame)]
             if len(peaks_idx) > 0:
                 strike_frame_idx = peaks_idx[np.argmax(y[peaks_idx])]
             else:

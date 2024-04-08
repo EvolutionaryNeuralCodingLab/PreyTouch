@@ -181,7 +181,7 @@ def plot_regression(ax, x, y, color='deeppink', prefix='', linewidth=2, is_legen
         p_val_text = f'p={p_value:.3f}' if p_value >= 0.001 else 'p<0.001'
         label = f'r={r_value:.2f}, {p_val_text}'
         if is_line_equation:
-            label = label + f' (y={slope:.3f}x + {intercept:.3f})'
+            label = label + f'\n(y={slope:.3f}x + {intercept:.3f})'
         if prefix:
             label = f'{prefix} ({label})'
         ax.plot(x, y_reg, color=color, label=label, linewidth=linewidth)
