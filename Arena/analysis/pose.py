@@ -1148,11 +1148,13 @@ def compare_sides(animal_id='PV80'):
 
 
 class VideoPoseScanner:
-    def __init__(self, cam_name='front', is_use_db=True, model_path=None, animal_id=None, is_replace_exp_dir=True):
+    def __init__(self, cam_name='front', is_use_db=True, model_path=None, animal_ids=None, is_replace_exp_dir=True):
         self.cam_name = cam_name
         self.is_use_db = is_use_db
         self.model_path = model_path
-        self.animal_id = animal_id
+        if animal_ids and isinstance(animal_ids, str):
+            animal_ids = [animal_ids]
+        self.animal_ids = animal_ids
         self.is_replace_exp_dir = is_replace_exp_dir
         self.logger = get_logger('Video-Pose-Scanner')
         self.orm = ORM() if is_use_db else None
@@ -1206,7 +1208,7 @@ class VideoPoseScanner:
             for vid in vids:
                 if not vid.path.endswith('.mp4') or not vid.animal_id.startswith('PV') \
                     or vid.animal_id in ['test'] \
-                    or (self.animal_id and self.animal_id != vid.animal_id):
+                    or (self.animal_ids and vid.animal_id not in self.animal_ids):
                     continue
                 
                 video_path = Path(vid.path)
@@ -1231,11 +1233,16 @@ class VideoPoseScanner:
     
     def _get_videos_to_predict_from_files(self, experiments_dir=None, is_skip_predicted=True):
         experiments_dir = experiments_dir or config.EXPERIMENTS_DIR
-        p = Path(experiments_dir)
-        if self.animal_id:
-            p = p / self.animal_id
-        self.logger.info(f'Start scan of video files in {p}')
-        all_videos = p.rglob(f'*{self.cam_name}*.mp4')
+        exp_path = Path(experiments_dir)
+        self.logger.info(f'Start scan of video files in {exp_path}')
+        if self.animal_ids:
+            all_videos = []
+            for animal_id in self.animal_ids:
+                p_ = exp_path / animal_id
+                all_videos.extend(list(p_.rglob(f'*{self.cam_name}*.mp4')))
+        else:
+            all_videos = exp_path.rglob(f'*{self.cam_name}*.mp4')
+
         videos = []
         for vid_path in all_videos:
             pred_path = self.dlc.get_predicted_cache_path(vid_path)
@@ -1252,7 +1259,7 @@ class VideoPoseScanner:
             vids = s.query(Video).filter_by(cam_name=self.cam_name, predictions=None).all()
             for vid in vids:
                 if not vid.path.endswith('.mp4') or not vid.animal_id.startswith('PV') \
-                    or (self.animal_id and self.animal_id != vid.animal_id):
+                    or (self.animal_ids and vid.animal_id not in self.animal_ids):
                     continue
                     
                 pose_df = self.dlc.load(vid.path)
