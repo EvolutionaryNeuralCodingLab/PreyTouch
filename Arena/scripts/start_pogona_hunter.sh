@@ -1,11 +1,10 @@
 #!/bin/bash
 
 # https://peter.sh/experiments/chromium-command-line-switches/
-# "--ignore-certificate-errors" 
-# "--chrome-frame" 
+# "--ignore-certificate-errors"  
 
 params=( "--disable-session-crashed-bubble" "--disable-infobars" "--disable-component-update" \
-         "--disable-pinch" "--window-size=$2"  "--window-position=$4,001" \
+         "--disable-pinch" "--chrome-frame" "--window-size=$2"  "--window-position=$4,001" \
          "--remember-cert-error-decisions" \
          "--ignore-urlfetcher-cert-requests" "--allow-running-insecure-content" \
          '--simulate-outdated-no-au="01 Jan 2199"' \
