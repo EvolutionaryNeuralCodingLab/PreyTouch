@@ -82,8 +82,10 @@ experiment_metrics = {
     'trial_data': {
         'is_write_csv': True,
         'is_write_db': True,
-        'csv_file': {'bug_trajectory': 'bug_trajectory.csv', 'video_frames': 'video_frames.csv',
-                     'app_events': 'app_events.csv'},
+        'csv_file': {'bug_trajectory': 'bug_trajectory.csv', 
+                     'video_frames': 'video_frames.csv',
+                     'app_events': 'app_events.csv',
+                     'trials_data': 'trials_data.csv'},
         'is_overall_experiment': False
     }
 }

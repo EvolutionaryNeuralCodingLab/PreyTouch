@@ -500,7 +500,7 @@ def delete_duplicate_strikes(animal_id):
 
 
 def play_strikes(strikes_ids, cam_name='front', is_load_pose=True, sec_before=2, sec_after=2, is_dwh=False,
-                 between_frames_delay=None, save_frames=False):
+                 between_frames_delay=None, save_video=False):
     if not isinstance(strikes_ids, (list, tuple, np.ndarray)):
         strikes_ids = [strikes_ids]
     orm = ORM()
@@ -515,7 +515,7 @@ def play_strikes(strikes_ids, cam_name='front', is_load_pose=True, sec_before=2,
     for sid in strikes_ids:
         try:
             ld = Loader(sid, 'front', is_load_pose=is_load_pose, sec_after=sec_after, sec_before=sec_before, orm=orm, is_use_db=False)
-            ld.play_strike(cam_name=cam_name, between_frames_delay=between_frames_delay)
+            ld.play_strike(cam_name=cam_name, between_frames_delay=between_frames_delay, save_video=save_video)
         except Exception as exc:
             print(f'ERROR strike_id={sid}: {exc}')
 
@@ -655,7 +655,26 @@ def time2feeder():
     ld = Loader(sid, 'front', is_debug=False, orm=orm, sec_before=0, sec_after=10)
     ld.play_strike(n_frames_back=0, n_frames_forward=ld.n_frames_forward)
     # sa = StrikeAnalyzer(ld)
-    #
+
+
+def print_strikes_ids(animal_id, movement_type=None, is_hit=None, bug_type=None):
+    orm = ORM()
+    strikes_ids = []
+    with orm.session() as s:
+        orm_res = s.query(Strike, Block, Experiment).join(Block, Block.id == Strike.block_id).join(Experiment, Experiment.id == Block.experiment_id).filter(
+            Experiment.animal_id == animal_id
+        ).all()
+
+        for strk, blk, exp in orm_res:
+            if movement_type and blk.movement_type!= movement_type:
+                continue
+            if is_hit is not None and strk.is_hit != is_hit:
+                continue
+            if bug_type and strk.bug_type != bug_type:
+                continue
+            strikes_ids.append(strk.id)
+
+    print(sorted(strikes_ids))
 
 
 if __name__ == '__main__':
@@ -664,8 +683,13 @@ if __name__ == '__main__':
     # sa = StrikeAnalyzer(ld)
     # sa.plot_strike_analysis()
     # delete_duplicate_strikes('PV80')
-    play_strikes(2533, cam_name='back', is_dwh=True, sec_after=0, sec_before=1, between_frames_delay=0.5)
-    # play_strikes('PV80', start_time='2022-12-01', cam_name='front', is_load_pose=False, strikes_ids=[6365])
+
+    # print_strikes_ids('PV163', movement_type='jump_up', bug_type='green_beetle')
+    # orm = ORM()
+    # with orm.session() as s:
+    #     print(set([blk.movement_type for blk in s.query(Block).all()]))
+    play_strikes(3554, cam_name='back', is_dwh=False, sec_after=4, sec_before=2, between_frames_delay=0.016, save_video=True)
+
     # StrikeScanner().scan()
     # time2feeder(),
     # extract_bad_annotated_strike_frames('PV85')#, movement_type='random')

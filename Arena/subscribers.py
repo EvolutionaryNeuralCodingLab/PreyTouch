@@ -219,7 +219,11 @@ class TouchLogger(ExperimentLogger):
 class TrialDataLogger(ExperimentLogger):
     def save_to_csv(self, payload, filename=None):
         for key, csv_path in self.config["csv_file"].items():
-            payload_ = payload.get(key)
+            if key == 'trials_data':
+                payload_ = {k: v for k, v in payload.items() if k not in ['bug_trajectory', 'video_frames', 'app_events']}
+            else:
+                payload_ = payload.get(key)
+                
             if payload_:
                 super().save_to_csv(payload_, filename=csv_path)
 

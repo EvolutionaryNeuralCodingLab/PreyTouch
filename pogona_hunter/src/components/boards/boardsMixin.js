@@ -262,7 +262,8 @@ export default {
         end_time: endTime,
         bug_trajectory: this.bugTrajectoryLog,
         video_frames: null,
-        app_events: this.eventsLog
+        app_events: this.eventsLog,
+        exit_hole: this.bugsSettings.exitHole
       }
       this.$socketClient.set('IS_VISUAL_APP_ON', 0)
       this.clearBoard()

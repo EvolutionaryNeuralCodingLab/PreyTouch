@@ -167,6 +167,8 @@ class Trial(Base):
     end_time = Column(DateTime, nullable=True, default=None)
     duration = Column(Float, nullable=True, default=None)
     bug_trajectory = Column(JSON, nullable=True)
+    exit_hole = Column(String, nullable=True)
+    bug_type = Column(String, nullable=True)
     strikes = relationship('Strike')
     dwh_key = Column(Integer, nullable=True)
 

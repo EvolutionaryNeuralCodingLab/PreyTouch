@@ -4,16 +4,9 @@
     ],
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
-    "python.analysis.extraPaths": [
-        "Arena"
-    ],
-    "python.autoComplete.extraPaths": [
-        "Arena"
-    ],
     "terminal.integrated.env.linux": {
         "PYTHONPATH": "${workspaceFolder}/Arena"
     },
-    "terminal.integrated.cwd": "${workspaceFolder}/Arena",
     "editor.tokenColorCustomizations": {
         "textMateRules": [
             {
@@ -49,5 +42,6 @@
             "database": "arena",
             "username": "postgres"
         }
-    ]
+    ],
+    "python.terminal.executeInFileDir": true
 }

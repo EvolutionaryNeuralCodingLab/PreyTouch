@@ -10,6 +10,7 @@ if Path('.').resolve().name != 'Arena':
 import config
 from analysis.pose import ArenaPose
 from analysis.pose_utils import put_text
+from image_handlers.video_writers import ImageIOWriter
 from db_models import ORM, Block, Strike, Trial, Temperature
 
 DEFAULT_OUTPUT_DIR = '/data/Pogona_Pursuit/output'
@@ -38,6 +39,7 @@ class Loader:
         self.strike_frame_id = None
         self.video_path = None
         self.avg_temperature = None
+        self.strike_video_writer = None
         self.dlc_pose = ArenaPose(cam_name, 'deeplabcut', is_use_db=is_use_db, orm=orm)
         self.frames_df: pd.DataFrame = pd.DataFrame()
         self.traj_df: pd.DataFrame = pd.DataFrame(columns=['time', 'x', 'y'])
@@ -249,7 +251,7 @@ class Loader:
     #     plt.show()
 
     def play_strike(self, cam_name=None, n_frames_back=None, n_frames_forward=None, annotations=None,
-                    between_frames_delay=None):
+                    between_frames_delay=None, save_video=False):
         n_frames_back = n_frames_back or self.n_frames_back
         n_frames_forward = n_frames_forward or self.n_frames_forward
         if self.is_load_pose:
@@ -269,6 +271,8 @@ class Loader:
                     angle = self.frames_df.loc[i, [("angle", "")]]
                     put_text(f'Angle={math.degrees(angle):.0f}', frame, 1000, 30)
 
+            if save_video:
+                self.save_strike_video(frame, cam_name)
             frame = cv2.resize(frame, None, None, fx=0.5, fy=0.5)
             cv2.imshow(str(self), frame)
             if between_frames_delay:
@@ -276,6 +280,21 @@ class Loader:
             if cv2.waitKey(25) & 0xFF == ord('q'):
                 break
         cv2.destroyAllWindows()
+
+        if save_video:
+            self.strike_video_writer.close()
+        self.strike_video_writer = None
+
+    def save_strike_video(self, frame, cam_name):
+        output_dir = Path(config.OUTPUT_DIR) / 'strikes_videos'
+        output_dir.mkdir(parents=True, exist_ok=True)
+        if self.strike_video_writer is None:
+            is_color = cam_name == 'back'
+            video_path = (output_dir / f'strike_{self.strike_db_id}_{cam_name}.mp4').as_posix()
+            self.strike_video_writer = ImageIOWriter(frame, 30, None, cam_name, is_color, full_path=video_path)
+        
+        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        self.strike_video_writer.write(frame)
 
     def get_block_info(self):
         with self.orm.session() as s:
