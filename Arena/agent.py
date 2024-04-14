@@ -12,7 +12,7 @@ from loggers import get_logger
 import config
 
 CONFIG_PATH = 'configurations/agent_config.yaml'
-EXIT_HOLES = ['bottomLeft', 'bottomRight']
+EXIT_HOLES = ['left', 'right']
 
 
 class Agent:

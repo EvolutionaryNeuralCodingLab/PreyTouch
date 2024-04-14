@@ -134,7 +134,7 @@ trials:
       key: trials
       amount: 100
       per:
-        exit_hole: [ 'bottomLeft', 'bottomRight' ]
+        exit_hole: [ 'left', 'right' ]
     exit_hole: per_ordered
     bug_speed: 6
     movement_type: low_horizontal

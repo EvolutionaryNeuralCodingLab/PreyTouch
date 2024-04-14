@@ -52,6 +52,7 @@ export default {
       'cmd/visual_app/init_bugs': (options) => {
         options = JSON.parse(options)
         console.log(options)
+        // this.$socketClient.publish('cmd/visual_app/console', 'Trial started')
         Object.assign(this.bugsSettings, options)
         this.$store.commit('reset_score')
         this.initBoard(!!options['isLogTrajectory'])
@@ -108,7 +109,8 @@ export default {
   },
   computed: {
     currentBugType: function () {
-      return Array.isArray(this.bugsSettings.bugTypes) ? this.bugsSettings.bugTypes[0] : this.bugsSettings.bugTypes
+      let bug = this.$refs.bugChild[0]
+      return bug.currentBugType
     }
   },
   methods: {
@@ -237,6 +239,7 @@ export default {
     },
     destruct(bugIndex, x, y, isRewardBug) {
       let currentBugs = this.$refs.bugChild
+      let lastBugType = currentBugs[bugIndex].currentBugType
       currentBugs[bugIndex].isDead = true
       if (isRewardBug) {
         this.$refs.audio1.play()
@@ -245,19 +248,19 @@ export default {
       const bloodTimeout = setTimeout(() => {
         this.$refs.bugChild = currentBugs.filter((items, index) => bugIndex !== index)
         if (this.$refs.bugChild.length === 0) {
-          this.endTrial()
+          this.endTrial(lastBugType)
         }
         clearTimeout(bloodTimeout)
       }, this.bugsSettings.bloodDuration)
     },
-    endTrial() {
+    endTrial(lastBugType) {
       // endTrial can be called only after: 1) bug caught [destruct method], 2) trial time reached
       let endTime = Date.now()
       let trialID = this.bugsSettings.trialID
       let payload = {
         trial_db_id: this.bugsSettings.trialDBId,
         start_time: this.bugsSettings.trialStartTime,
-        bug_type: this.currentBugType,
+        bug_type: lastBugType,
         duration: (endTime - this.bugsSettings.trialStartTime) / 1000,
         end_time: endTime,
         bug_trajectory: this.bugTrajectoryLog,

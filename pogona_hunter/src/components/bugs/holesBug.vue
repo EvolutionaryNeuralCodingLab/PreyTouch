@@ -47,10 +47,10 @@ export default {
       return (this.bugsSettings.trialDuration || 1) * 60
     },
     isRightExit: function () {
-      return this.bugsSettings.exitHole === 'bottomRight'
+      return this.bugsSettings.exitHole === 'right'
     },
     isLeftExit: function () {
-      return this.bugsSettings.exitHole === 'bottomLeft'
+      return this.bugsSettings.exitHole === 'left'
     },
     isMoveInCircles: function () {
       return this.bugsSettings.movementType === 'circle'

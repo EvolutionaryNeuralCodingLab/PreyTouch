@@ -99,7 +99,7 @@ if __name__ == '__main__':
     #         orm.commit_block(A(start_time=block_start, end_time=None,
     #                            block_id=i + 1, num_trials=num_trials, trial_duration=40, iti=30, block_type=exp_name,
     #                            bug_types='cockroach,red_beetle', bug_speed=4, bug_size=100,
-    #                            is_default_bug_size=True, exit_hole='bottomLeft', reward_type='always',
+    #                            is_default_bug_size=True, exit_hole='left', reward_type='always',
     #                            reward_bugs='cockroach,red_beetle', reward_any_touch_prob=1, media_url='',
     #                            movement_type=exp_name, is_anticlockwise=True, target_drift='left',
     #                            bug_height=20, time_between_bugs=2000, background_color=None))

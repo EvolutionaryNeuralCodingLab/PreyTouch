@@ -29,7 +29,8 @@
                                 // named "node_modules" from 
                                 // the explore tree
         "**/.idea": true,
-        "pose_analysis": true
+        "pose_analysis": true,
+        "**/.archive": true
     },
     "git.untrackedChanges": "separate",
     "sqltools.connections": [

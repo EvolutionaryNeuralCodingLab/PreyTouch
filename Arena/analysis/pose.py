@@ -783,7 +783,7 @@ class SpatialAnalyzer:
             self.plot_hist2d(df_, axes_[i], single_animal, animal_colors=animal_colors, cbar_ax=cbar_ax)
             self.plot_arena(axes_[i], is_close_to_screen_only=True)
             if len(self.split_by) == 1 and self.split_by[0] == 'exit_hole':
-                group_name = r'Left $\rightarrow$ Right' if 'bottomRight' in group_name else r'Left $\leftarrow$ Right'
+                group_name = r'Left $\rightarrow$ Right' if 'right' in group_name else r'Left $\leftarrow$ Right'
             if is_title:
                 axes_[i].set_title(group_name)
         if axes is None:
@@ -1347,6 +1347,6 @@ if __name__ == '__main__':
     #                 is_use_db=True).plot_trajectories(only_to_screen=True)
     # SpatialAnalyzer(animal_ids=['PV91'], split_by=['exit_hole'], bodypart='nose').plot_out_of_experiment_pose()
     # fix_calibrations('PV95')
-    # for vid in sa.get_videos_paths()['exit_hole=bottomLeft']:
+    # for vid in sa.get_videos_paths()['exit_hole=left']:
     #     sa.play_trajectories(vid, only_to_screen=True)
     # compare_sides(animal_id='PV80')

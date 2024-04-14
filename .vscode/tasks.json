@@ -4,7 +4,7 @@
 		{
 			"type": "shell",
 			"label": "npm: start - pogona_hunter",
-			"command": "PORT=8090 npm run dev",
+			"command": "PORT=8090 HOST=localhost npm run dev",
 			"detail": "npm run dev",
 			"isBackground": true,
 			"problemMatcher": {

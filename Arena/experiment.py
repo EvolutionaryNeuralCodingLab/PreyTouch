@@ -544,7 +544,7 @@ class Block:
             'isLogTrajectory': True,
             'bugSize': self.bug_size,
             'backgroundColor': self.background_color,
-            'exitHole': random.choice(['bottomLeft', 'bottomRight']) if self.exit_hole == 'random' else self.exit_hole,
+            'exitHole': random.choice(['left', 'right']) if self.exit_hole == 'random' else self.exit_hole,
             'rewardAnyTouchProb': self.reward_any_touch_prob,
             # 'holesHeight': self.holes_height
         }
@@ -781,7 +781,7 @@ def main():
 def start_trial():
     arg_parser = argparse.ArgumentParser(description='Experiments')
     arg_parser.add_argument('-m', '--movement_type', default='random')
-    arg_parser.add_argument('--exit_hole', default='bottomLeft', choices=['bottomLeft', 'bottomRight'])
+    arg_parser.add_argument('--exit_hole', default='left', choices=['left', 'right'])
     arg_parser.add_argument('--speed', type=int, default=5)
     args = arg_parser.parse_args()
     cache_ = RedisCache()

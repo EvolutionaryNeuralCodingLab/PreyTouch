@@ -92,8 +92,9 @@
     }
   },
   "holePositions": {
-    "bottomLeft": "Bottom Left",
-    "bottomRight": "Bottom Right"
+    "left": "Left",
+    "right": "Right",
+    "random": "Random"
   },
   "movementTypes": {
     "static": "static",
