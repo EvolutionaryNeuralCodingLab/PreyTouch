@@ -79,6 +79,8 @@ class AlliedVisionCamera(Camera):
                 try:
                     img = frame.as_numpy_ndarray()
                     timestamp = frame.get_timestamp() / 1e9 + self.camera_time_delta
+                    if not self.is_color_cam():
+                        img = img.squeeze()
                     self.frames_queue.put(img, timestamp)
                     self.calc_fps(timestamp)
                     break

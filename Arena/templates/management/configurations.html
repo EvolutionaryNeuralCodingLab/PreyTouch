@@ -1,0 +1,479 @@
+<div class="modal fade" id="arenaConfig" tabindex="-1" role="dialog"
+     aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog  modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Arena Configurations</h2>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="row" style="margin: 1em">
+                {% for conf_name in configurations.keys() %}
+                    {% set modal_name = '#' + conf_name + 'ConfigEditor' %}
+                    <button class="btn btn-sm btn-primary mr-1" data-toggle="modal" data-target={{modal_name}}>{{conf_name}}</button>
+                {% endfor %}
+            </div>
+            <div id="conf-accordion" class="accordion">
+                {% for group, d in config_envs.items() %}
+                <div class="card" id="conf-group-{{group}}" style="padding: 0.5em;">
+                    <div class="card-header collapsed" id="conf-heading-{{group}}" data-toggle="collapse" data-target="#conf-collapse-{{group}}" aria-expanded="false" aria-controls="conf-collapse-{{group}}">
+                        <span class="title">{{ group }}</span>
+                        <span class="accicon"><i class="fa fa-angle-down rotate-icon"></i></span>
+                    </div>
+                    <div id="conf-collapse-{{group}}" class="collapse" aria-labelledby="conf-heading-{{group}}" data-parent="#conf-accordion">
+                        <div class="card-body">
+                            {% for key, map in d.items() %}
+                                <div class="row">
+                                    <div class="col-md-8">
+                                        <div><b>{{ key }}</b></div>
+                                        <p>{{ '{0} (Default: {1})'.format(map['desc'], map['default']) }}</p>
+                                    </div>    
+                                    <div class="col-md-3 pl-1">
+                                        <input id="config-value-{{ key }}" type="text" value="{{ map['value'] }}" size="20" autocomplete="off"
+                                         class="{{ 'changedEnvInput' if map['is_changed'] else 'nonChangedEnvInput' }}" />
+                                    </div>
+                                    <div class="col">
+                                        <button id="config-edit-{{ key }}" type="button" class="btn" style="padding: 0">
+                                            <i class="fa fa-edit"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% for conf_name in configurations.keys() %}
+    <div class="modal fade" id="{{conf_name}}ConfigEditor" tabindex="-1" role="dialog"
+        aria-labelledby="exampleModalLabel" aria-hidden="true">
+        <div class="modal-dialog  modal-lg" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>{{conf_name|capitalize}} Configuration</h3>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <form>
+                    <div class="modal-body">
+                        <div id="{{conf_name}}-jsoneditor" style="width: 768px; height: 650px;"></div>
+                    </div>
+                </form>
+                <div class="modal-footer">
+                    {% if conf_name == 'cameras' %}
+                        <button class="btn btn-primary mr-1" data-toggle="modal" data-target="#camScanModal" id="openCamScanModal">Cam Scan</button>
+                        <button class="btn btn-primary mr-1" data-toggle="modal" data-target="#addNewCamModal">Add New Cam</button>
+                    {% endif %}
+                    {% if conf_name == 'periphery' %}
+                        <button class="btn btn-primary mr-1" data-toggle="modal" data-target="#peripheryScanModal" id="openPeripheryScanModal">Serial Scan</button>
+                    {% endif %}
+                    {% if conf_name == 'agent' %}
+                        <button class="btn btn-primary mr-1" type="button" id="loadAgentExample">Load Example Config</button>
+                    {% endif %}
+                    {% if conf_name == 'predict' %}
+                        <button class="btn btn-primary mr-1" data-toggle="modal" data-target="#addDLCModal">Add New Model</button>
+                    {% endif %}
+                    <button id="save{{conf_name}}Config" type="button" class="btn btn-primary">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endfor %}
+
+<!-- Add New Camera Modal -->
+<div class="modal fade" id="addNewCamModal" tabindex="-1" role="dialog"
+    aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog  modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add New Camera</h3>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <form id="newCamForm">
+                <div class="modal-body">
+                    
+                    <div class="col mb-3">
+                        <label class="form-check-label" for="add-cam-name">Cam Name</label>
+                        <input type="text" class="form-control" id="add-cam-name" placeholder="Camera Name" autocomplete="off" required />
+                    </div>
+
+                    <div class="col mb-3">
+                        <label class="form-check-label" for="add-cam-id">Cam ID</label>
+                        <input type="text" class="form-control" id="add-cam-id" placeholder="Camera ID" name="id" autocomplete="off" required>
+                    </div>
+                    
+                    <div class="col mb-3">
+                        <label class="form-check-label" for="add-cam-module">Cam Module</label>
+                        <select class="form-control" id="add-cam-module" name="module">
+                            <option value="allied_vision">Allied Vision</option>
+                            <option value="flir">FLIR</option>
+                        </select>
+                    </div>
+                    
+                    <div class="col mb-3">
+                        <label class="form-check-label" for="add-cam-image-size">Image Size [height,width]</label>
+                        <input type="text" class="form-control" id="add-cam-image-size" name="image_size" value="1088,1456" autocomplete="off" pattern="^\d+,\d+$" required>
+                    </div>
+
+                    <div class="col mb-3">
+                        <label class="form-check-label" for="add-cam-mode">Acquisition Mode</label>
+                        <select class="form-control" id="add-cam-mode">
+                            <option value="trigger">Trigger</option>
+                            <option value="fps">FPS</option>
+                        </select>
+                    </div>
+
+                    <div class="col mb-3" id="add-cam-trigger-source-div">
+                        <label class="form-check-label" for="add-cam-trigger-source">Trigger Source</label>
+                        <input type="text" class="form-control" id="add-cam-trigger-source" name="trigger_source" value="Line3" autocomplete="off">
+                    </div>
+
+                    <div class="col mb-3" id="add-cam-fps-div">
+                        <label class="form-check-label" for="add-cam-fps">FPS</label>
+                        <input type="number" class="form-control" id="add-cam-fps" name="fps" autocomplete="off" onkeypress="return (event.charCode !=8 && event.charCode ==0 || (event.charCode >= 48 && event.charCode <= 57))">
+                    </div>
+
+                    <div class="col mb-3">
+                        <label class="form-check-label" for="add-cam-exposure">Exposure</label>
+                        <input type="number" class="form-control" id="add-cam-exposure" placeholder="Exposure" name="exposure" autocomplete="off" value="{{exposure}}" onkeypress="return (event.charCode !=8 && event.charCode ==0 || (event.charCode >= 48 && event.charCode <= 57))">
+                    </div>
+                    
+                    <div class="col mb-3">
+                        <label class="form-check-label" for="add-cam-is-color">Color Camera</label>
+                        <select class="form-control" id="add-cam-is-color" name="is_color">
+                            <option value="0">False</option>
+                            <option value="1">True</option>
+                        </select>
+                    </div>
+
+                    <div class="col mb-3">
+                        <label class="form-check-label" for="add-cam-special-mode">Special Mode</label>
+                        <select class="form-control" id="add-special-mode" name="mode">
+                            <option value="null">None</option>
+                            <option value="tracking">Tracking</option>
+                            <option value="manual">Manual</option>
+                        </select>
+                    </div>
+                </div>
+            </form>
+            <div class="modal-footer">
+                <button id="saveNewCam" type="button" class="btn btn-primary">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- . -->
+
+<!-- cam scan modal -->
+<div class="modal fade" id="camScanModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog  modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Cam Scan</h3>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <pre id="cam-scan-text"></pre>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- . -->
+
+<!-- periphery scan modal -->
+<div class="modal fade" id="peripheryScanModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog  modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Periphery Scan</h3>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <pre id="periphery-scan-text"></pre>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- . -->
+
+
+<!-- add deeplabcut predictor modal -->
+<div class="modal fade" id="addDLCModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog  modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add Predict Model</h3>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <form id="newDLCForm">
+                <div class="modal-body">
+                    
+                    <div class="col mb-3">
+                        <label class="form-check-label" for="add-dlc-model-name">Model Name</label>
+                        <input type="text" class="form-control" id="add-dlc-model-name" placeholder="Model Name" autocomplete="off" required />
+                    </div>
+
+                    <div class="col mb-3">
+                        <label class="form-check-label" for="add-cam-mode">Model Type</label>
+                        <select class="form-control" id="add-dlc-class" name="predictor_name">
+                            <option value="DLCPose">DeepLabCut</option>
+                        </select>
+                    </div>
+
+                    <div class="col mb-3">
+                        <label class="form-check-label" for="add-dlc-model-path">Model Path</label>
+                        <p style="margin-bottom: 0;font-size: 0.8em;">Path to directory with the exported model</p>
+                        <input type="text" class="form-control" id="add-dlc-model-path" placeholder="Model Path" autocomplete="off" name="model_path" required />
+                    </div>
+
+                    <div class="col mb-3">
+                        <label class="form-check-label" for="add-dlc-bodyparts">Bodyparts</label>
+                        <input type="text" class="form-control" id="add-dlc-bodyparts" value="nose,right_ear,left_ear" autocomplete="off" name="bodyparts" required />
+                    </div>
+
+                    <div class="col mb-3">
+                        <label class="form-check-label" for="add-dlc-thresh">Threshold</label>
+                        <input type="number" class="form-control" id="add-dlc-thresh" placeholder="Threshold" name="threshold" autocomplete="off" required />
+                    </div>
+                    
+                </div>
+            </form>
+            <div class="modal-footer">
+                <button id="saveNewDLC" type="button" class="btn btn-primary">Add</button>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- . -->
+
+
+<script>
+    {% for group, d in config_envs.items() %}
+        {% for key, map in d.items() %}
+        $("#config-edit-{{ key }}").click(function (e) {
+            $.ajax({
+                url: "/update_arena_config",
+                type: "POST",
+                data: JSON.stringify({
+                    key: "{{ key }}",
+                    value: $("#config-value-{{ key }}").val()
+                }),
+                contentType: "application/json",
+                success: function (data) {
+                    window.alert(data)
+                },
+                error: function (data) {
+                    window.alert(data.responseText)
+                }
+            })
+        })
+        {% endfor %}
+    {% endfor %}
+
+
+    function getJsonEditor(name) {
+        const container = document.getElementById(name)
+        const options = {}
+        const editor = new JSONEditor(container, options)
+        return editor
+    }
+
+    let editors = {}
+    {% for conf_name, conf in configurations.items() %}
+        editors['{{conf_name}}'] = getJsonEditor('{{conf_name}}-jsoneditor')
+        editors['{{conf_name}}'].set(JSON.parse('{{ conf|safe }}'))
+
+        $("#save{{conf_name}}Config").click(() => {
+            const updatedJson = editors['{{conf_name}}'].get()
+            $.ajax({
+                url: "/save_config/{{conf_name}}",
+                type: "POST",
+                data: JSON.stringify(updatedJson),
+                contentType: "application/json",
+                success: function (data) {
+                    window.alert(data)
+                },
+                error: function (data) {
+                    window.alert(data.responseText)
+                }
+            })
+        })
+    {% endfor %}
+    
+    function getNewCamFormData(){
+        let camName = $("#add-cam-name").val()
+        let unindexed_array = $("#newCamForm").serializeArray();
+        let indexed_array = {};
+        $.map(unindexed_array, function(n, i){
+            let value = n['value']
+            if (!isNaN(value)) {
+                value = Number(value)
+            }
+            indexed_array[n['name']] = value;
+        });
+        error = validateNewCamForm(indexed_array, camName)
+        if (!!error) {
+            window.alert(error)
+            return {}
+        }        
+        let newConf = {}
+        newConf[camName] = alignCamForm(indexed_array)
+        return newConf
+    }
+
+    function alignCamForm(indexed_array) {
+        indexed_array['output_dir'] = null
+        indexed_array['image_size'] = indexed_array['image_size'].split(',').map(x => Number(x))
+        if (!!indexed_array['is_color']) {
+            indexed_array['image_size'].push(3)
+        }
+        if (indexed_array['mode'] === "null") {
+            delete indexed_array['mode']
+        }
+
+        return indexed_array
+    }
+
+    function validateNewCamForm(indexed_array, camName) {
+        if (!camName) {
+            return "Camera Name is required"
+        }
+        for (let [key, value] of Object.entries(indexed_array)) {
+            switch (key) {
+                case 'image_size':
+                    if (!value.match(/^\d+,\d+$/)) {
+                        return 'Image size must be of the form "height,width"'
+                    }
+                    break
+                case 'exposure':
+                    if ((!value) || (value < 1000) || (value > 15000)) {
+                        return 'Exposure must be between 1000 and 15000'
+                    }
+                    break
+                case 'id':
+                case 'trigger_source':
+                    if (!value) {
+                        return `${key} cannot be empty`
+                    }
+            }
+        }
+    }
+
+    $("#saveNewCam").click(() => {
+        let currentCamConf = editors['cameras'].get()
+        let newConf = getNewCamFormData()
+        console.log(newConf)
+        Object.assign(currentCamConf, newConf)
+        editors['cameras'].set(currentCamConf)
+        $('#addNewCamModal').modal('hide')
+    })
+
+    function getNewDLCForm() {
+        let modelName = $("#add-dlc-model-name").val()
+        if (!modelName) {
+            window.alert('Must provide model name')
+            return {}
+        }
+        let unindexed_array = $("#newDLCForm").serializeArray();
+        let indexed_array = {};
+        $.map(unindexed_array, function(n, i){
+            let value = n['value']
+            if (!isNaN(value)) {
+                value = Number(value)
+            }
+            indexed_array[n['name']] = value;
+        });
+        for (let [key, value] of Object.entries(indexed_array)) {
+            if (!value) {
+                window.alert(`${key} cannot be empty`)
+                return {}
+            } 
+            if (key === 'bodyparts') {
+                indexed_array[key] = value.split(',')
+            }
+        }
+        let newConf = {}
+        newConf[modelName] = indexed_array
+        return newConf
+    }
+
+    $("#saveNewDLC").click(() => {
+        let currentCamConf = editors['predict'].get()
+        let newConf = getNewDLCForm()
+        console.log(newConf)
+        Object.assign(currentCamConf, newConf)
+        editors['predict'].set(currentCamConf)
+        $('#addDLCModal').modal('hide')
+    })
+
+    $("#add-cam-mode").change(() => {
+        let mode = $("#add-cam-mode").val()
+        let trigger$ = $("#add-cam-trigger-source-div")
+        let fps$ = $("#add-cam-fps-div")
+        if (mode == "trigger") {
+            $("#add-cam-trigger-source").prop("disabled", false)
+            $("#add-cam-fps").prop("disabled", true)
+            trigger$.show()
+            fps$.hide()
+        } else {
+            $("#add-cam-trigger-source").prop("disabled", true)
+            $("#add-cam-fps").prop("disabled", false)
+            trigger$.hide()
+            fps$.show()
+        }
+    }).trigger('change')
+
+    $("#add-cam-module").change(() => {
+        let camModule = $("#add-cam-module").val()
+        if (camModule === "allied_vision") {
+            $("#add-cam-image-size").val('1088,1456')
+        } else if (camModule === "flir") {
+            $("#add-cam-image-size").val('1080,1440')
+        }
+    }).trigger('change')
+    
+    $("#openCamScanModal").click(() => {
+        $.get('/cam_scan').done((res) => {
+            $("#cam-scan-text").text(res)
+        })
+    })
+
+    $("#openPeripheryScanModal").click(() => {
+        $.get('/periphery_scan').done((res) => {
+            $("#periphery-scan-text").text(res)
+        })
+    })
+
+    $("#loadAgentExample").click(() => {
+        $.get('/load_example_config/agent').done((res) => {
+            res = JSON.parse(res)
+            editors['agent'].set(res)
+        })
+    })
+
+</script>
+
+
+<style>
+    .changedEnvInput {
+        border:1px solid red;
+    }
+
+    .nonChangedEnvInput {
+        border:1px solid black;
+    }
+</style>

@@ -1,6 +1,6 @@
 import io
 import time
-
+import os
 import cv2
 import json
 import warnings
@@ -8,9 +8,14 @@ import base64
 import psutil
 import logging
 import pytest
+import importlib
+import tempfile
 from pathlib import Path
 from PIL import Image
 from datetime import datetime
+import numpy as np
+import pandas as pd
+from io import BytesIO
 import torch.multiprocessing as mp
 from flask import Flask, render_template, Response, request, send_from_directory, jsonify, send_file
 import sentry_sdk
@@ -21,9 +26,10 @@ from utils import titlize, turn_display_on, turn_display_off, get_sys_metrics, g
 from experiment import ExperimentCache
 from arena import ArenaManager
 from loggers import init_logger_config, create_arena_handler
-from calibration import CharucoEstimator
+from calibration import CharucoEstimator, Calibrator
 from periphery_integration import PeripheryIntegrator
 from agent import Agent
+from analysis.pose import run_predict
 import matplotlib
 matplotlib.use('Agg')
 
@@ -37,23 +43,27 @@ queue_app = None
 @app.route('/')
 def index():
     """Video streaming ."""
-    cached_experiments = sorted([c.stem for c in Path(config.experiment_cache_path).glob('*.json')])
+    cached_experiments = sorted([c.stem for c in Path(config.CACHED_EXPERIMENTS_DIR).glob('*.json')])
     with open('../pogona_hunter/src/config.json', 'r') as f:
         app_config = json.load(f)
     if arena_mgr is None:
         cameras = list(config.cameras.keys())
     else:
         cameras = list(arena_mgr.units.keys())
+
     if config.IS_ANALYSIS_ONLY:
-        toggels, feeders = [], []
+        toggels, feeders, cameras = [], [], []
     else:
         toggels, feeders = periphery_mgr.toggles, periphery_mgr.feeders
+
+    confs = {k: json.dumps(config.load_configuration(k)) for k in config.configurations.keys()}
+    predictors = list(config.load_configuration('predict').keys())
     return render_template('index.html', cameras=cameras, exposure=config.DEFAULT_EXPOSURE, arena_name=config.ARENA_NAME,
                            config=app_config, log_channel=config.ui_console_channel, reward_types=config.reward_types,
-                           experiment_types=config.experiment_types, media_files=list_media(),
-                           blank_rec_types=config.blank_rec_types,
+                           experiment_types=config.experiment_types, media_files=list_media(), min_calib_images=config.MIN_CALIBRATION_IMAGES,
+                           blank_rec_types=config.blank_rec_types, config_envs=config.env.get_all_from_cache(), predictors=predictors,
                            max_blocks=config.api_max_blocks_to_show, toggels=toggels, psycho_files=get_psycho_files(),
-                           extra_time_recording=config.extra_time_recording, feeders=feeders,
+                           extra_time_recording=config.EXTRA_TIME_RECORDING, feeders=feeders, configurations=confs,
                            acquire_stop={'num_frames': 'Num Frames', 'rec_time': 'Record Time [sec]'})
 
 
@@ -71,22 +81,28 @@ def check():
         res['n_rewards'] = f'{rewards_dict["auto"]} ({rewards_dict["manual"]})'
     else:
         res.update({'temperature': None, 'n_strikes': 0, 'n_rewards': 0})
-    res['reward_left'] = periphery_mgr.get_feeders_counts()
-    res['streaming_camera'] = arena_mgr.get_streaming_camera()
-    res['schedules'] = arena_mgr.schedules
-    res['cached_experiments'] = sorted([c.stem for c in Path(config.experiment_cache_path).glob('*.json')])
+    
+    res['cached_experiments'] = sorted([c.stem for c in Path(config.CACHED_EXPERIMENTS_DIR).glob('*.json')])
     res['cam_trigger_state'] = cache.get(cc.CAM_TRIGGER_STATE)
-    for cam_name, cu in arena_mgr.units.copy().items():
-        res.setdefault('cam_units_status', {})[cam_name] = cu.is_on()
-        res.setdefault('cam_units_fps', {})[cam_name] = {k: cu.mp_metadata.get(k).value for k in ['cam_fps', 'sink_fps', 'pred_fps', 'pred_delay']}
-        res.setdefault('cam_units_predictors', {})[cam_name] = ','.join(cu.get_alive_predictors()) or '-'
-        proc_cpus = {}
-        for p in cu.processes.copy().values():
-            try:
-                proc_cpus[p.name] = round(psutil.Process(p.pid).cpu_percent(0.1))
-            except:
-                continue
-        res.setdefault('processes_cpu', {})[cam_name] = proc_cpus
+
+    if config.IS_ANALYSIS_ONLY:
+        res.update({'reward_left': 0, 'schedules': {}})
+    else:
+        res['reward_left'] = periphery_mgr.get_feeders_counts()
+        res['streaming_camera'] = arena_mgr.get_streaming_camera()
+        res['schedules'] = arena_mgr.schedules
+        for cam_name, cu in arena_mgr.units.copy().items():
+            res.setdefault('cam_units_status', {})[cam_name] = cu.is_on()
+            res.setdefault('cam_units_fps', {})[cam_name] = {k: cu.mp_metadata.get(k).value for k in ['cam_fps', 'sink_fps', 'pred_fps', 'pred_delay']}
+            res.setdefault('cam_units_predictors', {})[cam_name] = ','.join(cu.get_alive_predictors()) or '-'
+            proc_cpus = {}
+            for p in cu.processes.copy().values():
+                try:
+                    proc_cpus[p.name] = round(psutil.Process(p.pid).cpu_percent(0.1))
+                except:
+                    continue
+            res.setdefault('processes_cpu', {})[cam_name] = proc_cpus
+
     res.update(get_sys_metrics())
     return jsonify(res)
 
@@ -187,7 +203,7 @@ def update_animal_id():
 
 @app.route('/get_current_animal', methods=['GET'])
 def get_current_animal():
-    if config.DISABLE_DB:
+    if config.DISABLE_DB or config.IS_ANALYSIS_ONLY:
         return jsonify({})
     animal_id = cache.get(cc.CURRENT_ANIMAL_ID)
     if not animal_id:
@@ -238,12 +254,47 @@ def update_trigger_fps():
     return Response('ok')
 
 
+@app.route('/update_arena_config', methods=['POST'])
+def update_arena_config():
+    data = request.json
+    try:
+        config.env.update_from_api(data['key'], data['value'])
+    except Exception as exc:
+        error_msg = f'Error in update_arena_config; {exc}'
+        arena_mgr.logger.error(error_msg)
+        return Response(error_msg, status=400)
+    
+    return Response(f'updated {data["key"]} to {data["value"]}', status=200)
+
+
+@app.route('/save_config/<name>', methods=['POST'])
+def save_config(name):
+    data = request.json
+
+    try:
+        conf_p, (test_module, test_class) = config.configurations[name]
+        test_module = importlib.import_module(test_module)
+        test_class = getattr(test_module, test_class)
+
+        test_class().run_all(data)
+
+        with Path(conf_p).open('w') as f:
+            json.dump(data, f, indent=4)
+
+    except Exception as exc:
+        error_msg = f'Error in save_config; {exc}'
+        arena_mgr.logger.error(error_msg)
+        return Response(error_msg, status=400)
+
+    return Response(f'Saved {name} config')
+
+
 @app.route('/capture', methods=['POST'])
 def capture():
     cam = request.form['camera']
     folder_prefix = request.form.get('folder_prefix')
     img = arena_mgr.get_frame(cam)
-    dir_path = config.capture_images_dir
+    dir_path = config.CAPTURE_IMAGES_DIR
     Path(dir_path).mkdir(exist_ok=True, parents=True)
     if folder_prefix:
         dir_path = Path(dir_path) / folder_prefix
@@ -254,31 +305,59 @@ def capture():
     return Response('ok')
 
 
-@app.route('/calibrate', methods=['POST'])
-def calibrate():
-    """Calibrate camera"""
-    cam = request.form['camera']
-    img = arena_mgr.get_frame(cam)
-    conf_preds = arena_mgr.units[cam].get_conf_predictors()
-    pred_image_size = list(conf_preds.values())[0][:2] if conf_preds else img.shape[:2]
+@app.route('/run_calibration/<mode>', methods=['POST'])
+def run_calibration(mode):
+    assert mode in ['undistort', 'realworld'], f'mode must be "undistort" or "realworld", received: {mode}'
+    data = request.json
+    calib = Calibrator(data['cam_name']) if mode == 'undistort' else CharucoEstimator(data['cam_name'])
     try:
-        pe = CharucoEstimator(cam, pred_image_size)
-        img, ret = pe.find_aruco_markers(img)
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            for img_name, img in data['images'].items():
+                imgdata = img.split(',')[1]
+                img = base64.b64decode(imgdata)
+                img = np.array(Image.open(BytesIO(img)))
+                cv2.imwrite(f'{tmpdirname}/{img_name}', img)
+            
+            calib_date = datetime.strptime(data['date'], '%Y-%m-%d')
+            if mode == 'undistort':
+                calib.calibrate_camera(img_dir=tmpdirname, calib_date=calib_date)
+                img = cv2.imread(calib.calib_results_image_path)
+            else:
+                img, _ = calib.find_aruco_markers(f'{tmpdirname}/{list(data["images"].keys())[0]}')
+            
+            img = Image.fromarray(img)
+            rawBytes = io.BytesIO()
+            img.save(rawBytes, "JPEG")
+            rawBytes.seek(0)
+            img_base64 = base64.b64encode(rawBytes.read())
+            return jsonify({'status': str(img_base64)})
+
     except Exception as exc:
-        arena_mgr.logger.error(f'Error in calibrate; {exc}')
-        return Response('error')
-    img = img.astype('uint8')
+        return Response(f'Error in calibration; {exc}', status=500)
 
-    # cv2.imwrite(f'../output/calibrations/{cam}.jpg', img)
-    if img.shape[2] == 1:
-        img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
-    img = Image.fromarray(img)
-    rawBytes = io.BytesIO()
-    img.save(rawBytes, "JPEG")
-    rawBytes.seek(0)
-    img_base64 = base64.b64encode(rawBytes.read())
-    return jsonify({'status': str(img_base64)})
 
+@app.route('/run_predictions', methods=['POST'])
+def run_predictions():
+    data = request.json
+    try:
+        assert data['pred_name'] in config.load_configuration('predict'), f'Unknown predictor: {data["pred_name"]}'
+        image_date = data.get('image_date')
+        if image_date:
+            image_date = datetime.strptime(image_date, '%Y-%m-%d')
+        res = run_predict(data['pred_name'], list(data['images'].values()), data.get('cam_name', ''), image_date, is_base64=True)
+        if 'images' not in res or len(res['images']) == 0:
+            return Response(f'Prediction returned nothing', status=500)
+        
+        img, pdf = res['images'][0]
+        img = Image.fromarray(img)
+        rawBytes = io.BytesIO()
+        img.save(rawBytes, "JPEG")
+        rawBytes.seek(0)
+        img_base64 = base64.b64encode(rawBytes.read())
+        return jsonify({'image': str(img_base64), 'result': pdf.to_string() if isinstance(pdf, (pd.Series, pd.DataFrame)) is not None else 'No prediction'})
+    except ImportError as exc:
+        return Response(f'Error in prediction; {exc}', status=500)
+    
 
 @app.route('/reward')
 def reward():
@@ -315,7 +394,7 @@ def cameras_info():
 @app.route('/check_cameras')
 def check_cameras():
     """Check all cameras are connected"""
-    if config.is_debug_mode:
+    if config.DISABLE_CAMERAS_CHECK:
         return Response(json.dumps([]))
     info_df = arena_mgr.display_info()
     missing_cameras = []
@@ -368,7 +447,7 @@ def start_media():
         data = request.json
         if not data or not data.get('media_url'):
             return Response('Unable to find media url')
-        payload = json.dumps({'url': f'{config.management_url}/media/{data["media_url"]}'})
+        payload = json.dumps({'url': f'{config.MANAGEMENT_URL}/media/{data["media_url"]}'})
         print(payload)
         cache.publish_command('init_media', payload)
     return Response('ok')
@@ -382,7 +461,7 @@ def stop_media():
 
 def list_media():
     media_files = []
-    for f in Path(config.static_files_dir).glob('*'):
+    for f in Path(config.STATIC_FILES_DIR).glob('*'):
         if f.suffix.lower() in ['.png', '.jpg', '.jpeg', '.bmp', '.avi', '.mp4', '.mpg', '.mov']:
             media_files.append(f.name)
     return media_files
@@ -390,7 +469,7 @@ def list_media():
 
 @app.route('/media/<filename>')
 def send_media(filename):
-    return send_from_directory(config.static_files_dir, filename)
+    return send_from_directory(config.STATIC_FILES_DIR, filename)
 
 
 @app.route('/set_stream_camera', methods=['POST'])
@@ -413,6 +492,66 @@ def animal_summary():
     ag.update()
     return Response(ag.get_animal_history())
 
+
+@app.route('/cam_scan', methods=['GET'])
+def cam_scan():
+    report = ''
+    try:
+        report += 'Allied Vision Cameras Scan:\n'
+        from cameras.allied_vision import scan_cameras
+        df = scan_cameras()
+        res = df.reset_index()[['index','Camera ID']].values.tolist()
+        for cam_name, cam_id in res:
+            report += f'- {cam_name}: {cam_id}\n'
+    except Exception as exc:
+        report += f'Error scanning allied_vision: {exc}\n'
+    report += '\n'
+    try:
+        report += 'FLIR Cameras Scan:\n'
+        from cameras.flir import scan_cameras
+        df = scan_cameras()
+        res = df.reset_index()[['index', 'DeviceID']].values.tolist()
+        for cam_name, cam_id in res:
+            report += f'- {cam_name}: {cam_id}\n'
+    except Exception as exc:
+        report += f'Error scanning flir: {exc}\n'
+    return Response(report)
+
+
+@app.route('/periphery_scan', methods=['GET'])
+def periphery_scan():
+    try:
+        from serial.tools import list_ports
+        ports = list_ports.comports()
+        res = 'Serial Scan:\n'
+        for p in ports:
+            if p.serial_number is not None:
+                res += f'- Device: {p.device}, SN: {p.serial_number} ({p.description})\n'
+        return Response(res)
+    except Exception as exc:
+        return Response(f'Error scanning periphery: {exc}')
+
+
+@app.route('/reboot_service/<service>', methods=['GET'])
+def reboot_service(service):
+    rc = os.system(f'cd ../docker && docker-compose restart {service}')
+    if rc != 0:
+        return Response(f'Error restarting service {service}', status=500)
+    return Response('ok')
+
+
+@app.route('/load_example_config/<conf_name>', methods=['GET'])
+def load_example_config(conf_name):
+    if conf_name not in config.configurations:
+        return Response(f'Configuration {conf_name} not found', status=404)
+    
+    p = Path(f'configurations/examples/{conf_name}_example.json')
+    if not p.exists():
+        return Response(f'Example configuration file {p} not found', status=404)
+    
+    with p.open('r') as f:
+        data = json.load(f)
+    return Response(json.dumps(data), status=200)
 
 @app.route('/video_feed')
 def video_feed():
@@ -533,8 +672,35 @@ def play():
     return render_template('management/play_video.html')
 
 
+def restart_cmd():
+    import signal
+    import loggers
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    # pid = os.fork()
+    # if pid > 0:
+    loggers.init_logger_config()
+    logger = loggers.get_logger('restart')
+    logger.info(f'starting restart in process')
+    rc = os.system('nohup supervisorctl restart prey_touch')
+    logger.info(f'finished restart with rc={rc}')
+
+
 @app.route('/restart')
 def restart():
+    # from subprocess import Popen, PIPE
+
+    arena_mgr.logger.info(f'start arena restart')
+    # returncode = os.system('supervisorctl restart prey_touch &')
+    # err = os.system('supervisorctl restart prey_touch')
+    # CMD = ['nohup', 'supervisorctl', 'restart', 'prey_touch']
+    # process = Popen(CMD, preexec_fn=os.setpgrp)
+    # stdout, stderr = process.communicate()
+    # os.spawnvpe(os.P_NOWAIT, CMD[0], CMD, os.environ)
+
+    # p = mp.Process(target=restart_cmd, name='RESTART_ARENA')
+    # p.daemon = True
+    # p.start()
+
     arena_mgr.arena_shutdown()
     queue_app.put('restart')
     return Response('ok')
@@ -560,7 +726,7 @@ def start_app(queue):
         if arena_mgr.is_cam_trigger_setup() and not config.DISABLE_PERIPHERY:
             periphery_mgr.cam_trigger(1)
 
-    app.run(host='0.0.0.0', port=config.FLASK_PORT, debug=False)
+    app.run(host='0.0.0.0', port=config.MANAGEMENT_PORT, debug=False)
 
 
 if __name__ == "__main__":
@@ -602,5 +768,5 @@ if __name__ == "__main__":
         app.logger.warning('Restarting Arena!')
         p.terminate()
 
-    app.run(host='0.0.0.0', port=config.FLASK_PORT, debug=False)
+    app.run(host='0.0.0.0', port=config.MANAGEMENT_PORT, debug=False)
 

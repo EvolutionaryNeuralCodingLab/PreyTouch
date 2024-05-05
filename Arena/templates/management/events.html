@@ -1,4 +1,5 @@
 <div class="col" id="events_column">
+    {% include "management/configurations.html" %}
     <h4 style="text-align: center;">Events</h4>
 
     {% for name in toggels %}
@@ -46,15 +47,14 @@
         <button id="reward" type="button" class="btn btn-sm btn-primary mx-auto">Reward</button>
     </div>
     <div class="row mb-2">
-        <button id="reloadApp" type="button" class="btn btn-sm btn-primary mx-auto">Reload App</button>
-    </div>
-    <div class="row mb-2">
-        <button id="restartArena" type="button" class="btn btn-sm btn-primary mx-auto">Restart Arena</button>
-    </div>
-    <div class="row mb-2">
         <button id="animalSummary" type="button" class="btn btn-sm btn-primary mx-auto">Animal Summary</button>
     </div>
-
+    <div class="row mb-2">
+        <button data-toggle="modal" data-target="#calibrationsModal" class="btn btn-sm btn-primary mx-auto">Calibration</button>
+    </div>
+    <div class="row mb-2">
+        <button data-toggle="modal" data-target="#predictionsModal" class="btn btn-sm btn-primary mx-auto">Predict</button>
+    </div>
 </div>
 
 <!-- Media Modal -->
@@ -133,13 +133,9 @@
     $("#display_off").click(function (e) {
         $.get('/display/off')
     })
-    $("#reloadApp").click(function (e) {
-        $.get('/reload_app')
-        console.log('>> App reload command sent manually')
-    })
 
-    $("#restartArena").click(() => {
-        $.get('/restart')
+    $("#openArenaConfig").click(() => {
+        $('#arenaConfig').modal('toggle');
     })
 
     $("#reward").click(function (e) {

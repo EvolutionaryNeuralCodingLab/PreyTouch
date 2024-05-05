@@ -40,8 +40,8 @@ class Experiment:
     num_blocks: int = 1
     name: str = ''
     blocks: list = field(default_factory=list, repr=False)
-    time_between_blocks: int = config.time_between_blocks
-    extra_time_recording: int = config.extra_time_recording
+    time_between_blocks: int = config.TIME_BETWEEN_BLOCKS
+    extra_time_recording: int = config.EXTRA_TIME_RECORDING
     is_identical_blocks: bool = False
     is_test: bool = False
     cache = RedisCache()
@@ -198,7 +198,7 @@ class Block:
     cam_units: dict
     orm: ORM
     cache: RedisCache
-    extra_time_recording: int = config.extra_time_recording
+    extra_time_recording: int = config.EXTRA_TIME_RECORDING
     start_time = None
     bug_types: list = field(default_factory=list)
     num_trials: int = 1
@@ -328,14 +328,14 @@ class Block:
         self.periphery.cam_trigger(1)  # turn trigger on
         self.logger.info(f'Trigger was off for {time.time() - t0:.2f} sec')
         time.sleep(1)
-        self.periphery.switch(config.IR_NAME, 1)
+        self.periphery.switch(config.IR_LIGHT_NAME, 1)
         time.sleep(1)
-        self.periphery.switch(config.IR_NAME, 0)
+        self.periphery.switch(config.IR_LIGHT_NAME, 0)
 
     def end_block(self):
-        self.periphery.switch(config.IR_NAME, 1)
+        self.periphery.switch(config.IR_LIGHT_NAME, 1)
         time.sleep(1)
-        self.periphery.switch(config.IR_NAME, 0)
+        self.periphery.switch(config.IR_LIGHT_NAME, 0)
         time.sleep(1)
         self.periphery.cam_trigger(0)
         t0 = time.time()
@@ -461,32 +461,18 @@ class Block:
 
     def check_engagement_level(self):
         """check if there are any strikes in the previous 2 hours. If not, give a manual reward"""
-        if not config.IS_CHECK_ENGAGEMENT_LEVEL:
+        if not config.CHECK_ENGAGEMENT_HOURS:
             return
         with self.orm.session() as s:
-            res = s.query(Strike).filter(Strike.time > datetime.now() - timedelta(hours=2)).all()
+            res = s.query(Strike).filter(Strike.time > datetime.now() - timedelta(hours=config.CHECK_ENGAGEMENT_HOURS)).all()
         if not res:
             self.periphery.feed(is_manual=True)
 
     def run_psycho(self):
         psycho_files = get_psycho_files()
-        cmd = f'cd {psycho_files[self.psycho_file]} && DISPLAY="{config.ARENA_DISPLAY}" {config.PSYCHO_PYTHON_INTERPRETER} {self.psycho_file}.py'
+        cmd = f'cd {psycho_files[self.psycho_file]} && DISPLAY="{config.APP_SCREEN}" {config.PSYCHO_PYTHON_INTERPRETER} {self.psycho_file}.py'
         self.logger.info(f'Running the following psycho cmd: {cmd}')
         next(run_command(cmd))
-
-    def hold_triggers(self):
-        if not config.IS_HOLD_TRIGGERS:
-            return
-        try:
-            self.logger.info(f'holding triggers for {config.HOLD_TRIGGERS_TIME} sec')
-            self.cache.set(cc.CAM_TRIGGER_DISABLE, True, timeout=self.block_duration)
-            self.periphery.cam_trigger(0)
-            time.sleep(config.HOLD_TRIGGERS_TIME)
-            self.periphery.cam_trigger(1)
-            time.sleep(1)
-            self.cache.delete(cc.CAM_TRIGGER_DISABLE)
-        except Exception as exc:
-            self.logger.error(f'Error holding triggers: {exc}')
 
     def record_screen(self):
         filename = f'{self.block_path}/screen_record.mp4'
@@ -523,7 +509,7 @@ class Block:
     def media_options(self) -> dict:
         return {
             'trialID': 1,  # default value, changed in init_media,
-            'url': f'{config.management_url}/media/{self.media_url}'
+            'url': f'{config.MANAGEMENT_URL}/media/{self.media_url}'
         }
 
     @property
@@ -673,7 +659,7 @@ class ExperimentValidation:
             is_mapped = _check_mapped()
             if not is_mapped:
                 self.logger.info('Fixing mapping of touchscreen output')
-                cmd = f'DISPLAY="{config.ARENA_DISPLAY}" xinput map-to-output {touchscreen_device_id} HDMI-0'
+                cmd = f'DISPLAY="{config.APP_SCREEN}" xinput map-to-output {touchscreen_device_id} HDMI-0'
                 self.map_touchscreen_to_hdmi()
                 time.sleep(1)
                 is_mapped = _check_mapped()
@@ -687,7 +673,7 @@ class ExperimentValidation:
 
     def map_touchscreen_to_hdmi(self, is_display_on=False):
         touchscreen_device_id = self.get_touchscreen_device_id()
-        cmd = f'DISPLAY="{config.ARENA_DISPLAY}" xinput map-to-output {touchscreen_device_id} HDMI-0'
+        cmd = f'DISPLAY="{config.APP_SCREEN}" xinput map-to-output {touchscreen_device_id} HDMI-0'
         if not is_display_on:
             turn_display_on()
             time.sleep(5)
@@ -716,7 +702,7 @@ class ExperimentValidation:
 
 class ExperimentCache:
     def __init__(self, cache_dir=None):
-        self.cache_dir = cache_dir or config.experiment_cache_path
+        self.cache_dir = cache_dir or config.CACHED_EXPERIMENTS_DIR
         mkdir(self.cache_dir)
         self.saved_caches = self.get_saved_caches()
 

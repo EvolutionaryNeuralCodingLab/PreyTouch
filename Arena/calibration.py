@@ -17,7 +17,7 @@ from loggers import get_logger
 ARUCO_DICT = cv2.aruco.DICT_4X4_1000
 ARUCO_IDS = np.arange(240).tolist()
 CHARUCO_COLS = 8
-
+DATE_FORMAT = '%Y%m%dT%H%M%S'
 
 class CalibrationError(Exception):
     """"""
@@ -37,25 +37,27 @@ class Calibrator:
         }
         self.newcameramtx = None
         self.resize_dim = resize_dim
-        self.load_calibration()
+        self.calib_images_date = None
+        self.current_undistort_folder = Path(config.CLIBRATION_DIR) / 'undistortion' / self.cam_name
+        if not self.current_undistort_folder.exists():
+            self.current_undistort_folder.mkdir(parents=True, exist_ok=True)
+        self.load_calibration()  # load the latest undistortion calibration
 
-    def calibrate_camera(self, is_plot=True):
-        self.logger.info(f'start camera {self.cam_name} calibration')
+    def calibrate_camera(self, is_plot=True, img_dir=None, calib_date=None):
         # termination criteria
         criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
         # prepare object points, like (0,0,0), (1,0,0), (2,0,0) ....,(6,5,0)
         objp = np.zeros((np.prod(config.CHESSBOARD_DIM), 3), np.float32)
         objp[:, :2] = np.mgrid[:config.CHESSBOARD_DIM[0], :config.CHESSBOARD_DIM[1]].T.reshape(-1, 2)
-        img_files = self.get_calib_images()
-        if is_plot:
-            cols = 3
-            rows = int(np.ceil(len(img_files) / cols))
-            fig, axes = plt.subplots(rows, cols, figsize=(30, 5 * rows))
-            axes = axes.flatten()
 
+        self.set_calib_date(calib_date)
+        img_files = self.get_calib_images(img_dir)
+
+        self.logger.info(f'start camera {self.cam_name} calibration with {len(img_files)} images')
         # Arrays to store object points and image points from all the images.
         objpoints = []  # 3d point in real world space
         imgpoints = []  # 2d points in image plane.
+        detected_frames = []
         for i, p in enumerate(img_files):
             gray = cv2.imread(p.as_posix(), 0)
             if self.resize_dim:
@@ -67,23 +69,49 @@ class Calibrator:
                 objpoints.append(objp)
                 corners_ = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
                 imgpoints.append(corners_)
-                if is_plot:
-                    cv2.drawChessboardCorners(gray, config.CHESSBOARD_DIM, corners_, ret)
-                    axes[i].imshow(gray)
+                detected_frames.append((p, corners_))
 
         h, w = gray.shape[:2]
         ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, (w, h), None, None)
         if not ret:
             raise CalibrationError('calibrateCamera failed')
+        
         # save calibration params to class
         for k in self.calib_params.copy().keys():
             self.calib_params[k] = locals().get(k)
+
         self.save_calibration()
+
         if is_plot:
-            fig.tight_layout()
-            fig.savefig(self.calib_image_detections_path)
+            self.plot_undistorted(detected_frames)
+
         self.calc_projection_error(objpoints, imgpoints, rvecs, tvecs, mtx, dist)
         self.logger.info('calibration finished successfully')
+
+    def set_calib_date(self, calib_date=None):
+        if calib_date is None:
+            calib_date = datetime.now()
+        
+        self.calib_images_date = calib_date
+        self.load_calibration()
+
+    def plot_undistorted(self, detected_frames):
+        cols, rows = 2, len(detected_frames)
+        fig, axes = plt.subplots(rows, cols, figsize=(30, 10 * rows))
+        for i, (p, corners) in enumerate(detected_frames):
+            gray = cv2.imread(p.as_posix(), 0)
+            frame = cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB)
+            cv2.drawChessboardCorners(frame, config.CHESSBOARD_DIM, corners, True)
+            axes[i, 0].imshow(frame)
+            axes[i, 0].axis('off')
+
+            undistorted_img = self.undistort_image(gray)
+            axes[i, 1].imshow(cv2.cvtColor(undistorted_img, cv2.COLOR_GRAY2RGB))
+            axes[i, 1].axis('off')
+        
+        fig.tight_layout()
+        fig.savefig(self.calib_results_image_path, bbox_inches='tight')
+        plt.close(fig)
 
     def undistort_image(self, img) -> np.ndarray:
         return cv2.undistort(img, self.calib_params['mtx'], self.calib_params['dist'], None, self.newcameramtx)
@@ -102,10 +130,12 @@ class Calibrator:
         self.logger.info("total projection error: {}".format(mean_error / len(objpoints)))
 
     def load_calibration(self):
-        if not self.calib_params_path.exists():
-            self.calibrate_camera()
+        last_path = get_last_artifact(self.current_undistort_folder, self.cache_prefix, self.calib_images_date)
+        if not last_path:
+            self.logger.warning('Could not load undistortion; no artifacts found')
+            return
 
-        with self.calib_params_path.open('rb') as f:
+        with open(last_path, 'rb') as f:
             self.calib_params = pickle.load(f)
         self.calc_undistort_mappers()
 
@@ -113,25 +143,29 @@ class Calibrator:
         with self.calib_params_path.open('wb') as f:
             pickle.dump(self.calib_params, f)
 
-    def get_calib_images(self):
-        calib_dir = Path(config.calibration_dir) / self.cam_name
+    def get_calib_images(self, calib_dir=None):
+        calib_dir = Path(calib_dir) or (Path(config.CLIBRATION_DIR) / self.cam_name)
         if not calib_dir.exists():
             raise CalibrationError(f'{calib_dir} not exist')
         img_files = list(calib_dir.glob('*.png'))
-        if len(img_files) < config.min_calib_images:
+        if len(img_files) < config.MIN_CALIBRATION_IMAGES:
             raise CalibrationError(f'found only {len(img_files)} images for calibration, '
-                                   f'expected {config.min_calib_images}')
+                                   f'expected {config.MIN_CALIBRATION_IMAGES}')
         else:
             self.logger.info(f'found {len(img_files)} images for calibration in {calib_dir}')
         return img_files
 
     @property
-    def calib_params_path(self):
-        return Path(config.calibration_dir) / f'calib_params_{self.cam_name}_{json.dumps(self.resize_dim)}.pkl'
+    def cache_prefix(self):
+        return f'undistortion_{json.dumps(self.resize_dim)}'
 
     @property
-    def calib_image_detections_path(self):
-        return Path(config.calibration_dir) / f'calib_detections_{self.cam_name}.png'
+    def calib_params_path(self):
+        return self.current_undistort_folder / f'{self.cache_prefix}_{self.calib_images_date.strftime(DATE_FORMAT)}.pkl'
+
+    @property
+    def calib_results_image_path(self):
+        return self.current_undistort_folder / f'calib_detections_{self.calib_images_date.strftime(DATE_FORMAT)}.jpg'
 
 
 class CharucoEstimator:
@@ -145,6 +179,9 @@ class CharucoEstimator:
         self.id_key = 'id'
         self.cached_params = ['homography']
 
+        self.current_realworld_folder = Path(config.CLIBRATION_DIR) / 'real_world' / self.cam_name
+        if not self.current_realworld_folder.exists():
+            self.current_realworld_folder.mkdir(parents=True, exist_ok=True)
         self.calibrator = Calibrator(cam_name, resize_dim=resize_dim)
         self.mtx = self.calibrator.calib_params['mtx']
         self.dist = self.calibrator.calib_params['dist']
@@ -201,31 +238,20 @@ class CharucoEstimator:
         return projected_x, projected_y
 
     def set_image_date_and_load(self, image_date=None):
-        date_pattern = '%Y%m%dT%H%M%S'
-        if image_date:
-            assert re.match(r'\d{8}T\d{6}', image_date), f'Image date must be of the form {date_pattern}'
-            image_date = datetime.strptime(image_date, date_pattern)
-
-        last_date, last_path = None, None
-        for p in Path(config.calibration_dir).glob(f'{self.cache_prefix}*.pkl'):
-            sp = p.stem.split('_')
-            p_date, cam_name = sp[-1], sp[-3]
-            p_date = datetime.strptime(p_date, date_pattern)
-            if cam_name != self.cam_name or (image_date and p_date > image_date):
-                continue
-            
-            if last_date is None or p_date > last_date:
-                last_date = p_date
-                last_path = p
-
+        last_path = get_last_artifact(self.current_realworld_folder, self.cache_prefix, image_date)
         if not last_path:
             raise CalibrationError(f'Could not find aruco image for date {image_date}')
+        self.calibrator.set_calib_date(image_date)
         self.load_transformation(last_path)
 
-    def load_image(self, image_path):
-        assert re.match(r'\d{8}T\d{6}_\w+', Path(image_path).stem), 'Image filename must be of the pattern %Y%m%dT%H%M%S_<cam_name>.png'
-        assert Path(image_path).exists(), f'Image path does not exist: {image_path}'
-        self.markers_image_date = Path(image_path).stem.split('_')[0]
+    def load_aruco_image(self, image_path, image_date=None):
+        if image_date is None:
+            assert re.match(r'\d{8}T\d{6}_\w+', Path(image_path).stem), f'Image filename must be of the pattern {DATE_FORMAT}_<cam_name>.png'
+            assert Path(image_path).exists(), f'Image path does not exist: {image_path}'
+            self.markers_image_date = Path(image_path).stem.split('_')[0]
+        else:
+            self.markers_image_date = image_date
+
         frame = cv2.imread(image_path)
         frame = self.calibrator.undistort_image(frame)
         if frame.shape[2] > 1:
@@ -236,8 +262,8 @@ class CharucoEstimator:
             frame = cv2.cvtColor(frame.copy(), cv2.COLOR_GRAY2RGB)
         return frame, gray_frame
 
-    def find_aruco_markers(self, image_path, is_plot=True):
-        frame, gray_frame = self.load_image(image_path)
+    def find_aruco_markers(self, image_path, image_date=None, is_plot=True):
+        frame, gray_frame = self.load_aruco_image(image_path, image_date)
         self.logger.info(f'Start Aruco marker detection for image size: {frame.shape}')
         # detect Charuco markers
         marker_corners, marker_ids, rejected = cv2.aruco.detectMarkers(gray_frame, self.arucoDict, parameters=self.arucoParams)
@@ -256,8 +282,7 @@ class CharucoEstimator:
         self.save_transformation()
         if is_plot:
             frame = self.plot_aruco_detections(frame, marker_ids, marker_corners, real_world_points_3D)
-            plt.imshow(frame)
-            plt.show()
+            cv2.imwrite(self.detected_markers_image_path.as_posix(), frame)
         return frame, True
 
     @staticmethod
@@ -359,12 +384,16 @@ class CharucoEstimator:
 
     @property
     def cache_prefix(self):
-        return f'aruco_transformation_{self.cam_name}_{json.dumps(self.resize_dim)}'
-    
+        return f'aruco_transformation_{json.dumps(self.resize_dim)}'
+
     @property
     def cache_path(self):
         stem = f'{self.cache_prefix}_{self.markers_image_date}'
-        return Path(config.calibration_dir) / f'{stem}.pkl'
+        return self.current_realworld_folder / f'{stem}.pkl'
+
+    @property
+    def detected_markers_image_path(self):
+        return self.current_realworld_folder / f'detected_{self.cache_prefix}_{self.markers_image_date}.jpg'
 
     @property
     def is_initiated(self):
@@ -375,13 +404,31 @@ class CharucoEstimator:
         return self.state == 2
 
 
+def get_last_artifact(search_folder, cache_prefix, image_date=None):
+    if image_date and isinstance(image_date, str):
+        assert re.match(r'\d{8}T\d{6}', image_date), f'Image date must be of the form {DATE_FORMAT}'
+        image_date = datetime.strptime(image_date, DATE_FORMAT)
+
+    last_date, last_path = None, None
+    for p in Path(search_folder).glob(f'{cache_prefix}*.pkl'):
+        sp = p.stem.split('_')
+        p_date = sp[-1]
+        p_date = datetime.strptime(p_date, DATE_FORMAT)
+        if image_date and p_date > image_date:
+            continue
+        
+        if last_date is None or p_date > last_date:
+            last_date = p_date
+            last_path = p
+    return last_path
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--calibration', action='store_true', help='Run camera calibration based on detection of chessboard images')
     parser.add_argument('--transformation', action='store_true', help='Calculate the transformation between real world and image coordinates, based on Charuco markers')
     parser.add_argument('--cam_name', type=str, help='Camera name')
     parser.add_argument('--charuco_img_path', type=str, help='Path to charuco markers image')
-    parser.add_argument('--run_all_charuco', action='store_true', help='Run transformation on all charuco markers images in MARKERS_IMAGES_DIR')
     parser.add_argument('--undistort_frame', type=str, help='Run undistort on frame')
     args = parser.parse_args()
 
@@ -397,16 +444,9 @@ def main():
     assert args.calibration ^ args.transformation, 'Please specify either calibration or transformation'
     if args.transformation:
         assert bool(args.charuco_img_path) ^ args.run_all_charuco, 'Please specify either charuco_img_path or run_all_charuco'
-        if args.run_all_charuco:
-            img_dir = Path(config.MARKERS_IMAGES_DIR)
-            for p in img_dir.glob('*.png'):
-                cam_name = p.stem.split('_')[1]
-                ce = CharucoEstimator(cam_name)
-                ce.find_aruco_markers(p.as_posix())
-        else:  # charuco_img_path
-            assert args.cam_name, 'Please specify camera name'
-            ce = CharucoEstimator(args.cam_name)
-            ce.find_aruco_markers(args.charuco_img_path)
+        assert args.cam_name, 'Please specify camera name'
+        ce = CharucoEstimator(args.cam_name)
+        ce.find_aruco_markers(args.charuco_img_path)
 
     else:  # calibration
         assert args.cam_name, 'Please specify camera name'

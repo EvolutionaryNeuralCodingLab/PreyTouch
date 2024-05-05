@@ -11,7 +11,6 @@ from experiment import ExperimentCache, ExperimentValidation
 from loggers import get_logger
 import config
 
-CONFIG_PATH = 'configurations/agent_config.yaml'
 EXIT_HOLES = ['left', 'right']
 
 
@@ -25,8 +24,8 @@ class Agent:
         self.history = {}
         self.next_trial_name = None
 
-        if Path(CONFIG_PATH).exists():
-            agent_config = yaml.load(Path(CONFIG_PATH).open(), Loader=yaml.FullLoader)
+        if Path(config.configurations['agent'][0]).exists():
+            agent_config = config.load_configuration('agent')
             self.check_agent_config(agent_config)
             self.trials = agent_config['trials']
             self.default_struct = agent_config['default_struct']

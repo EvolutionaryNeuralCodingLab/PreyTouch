@@ -25,7 +25,7 @@ def run_command(cmd, is_debug=True):
     yield stdout
 
 
-DISPLAY = f'DISPLAY="{config.ARENA_DISPLAY}"'
+DISPLAY = f'DISPLAY="{config.APP_SCREEN}"'
 
 
 def turn_display_on(board='holes', is_test=False):
@@ -62,7 +62,7 @@ def turn_display_off(app_only=False):
 
 
 def get_hdmi_xinput_id():
-    out = next(run_command(f'DISPLAY="{config.ARENA_DISPLAY}" xinput | grep -i "{config.TOUCH_SCREEN_NAME}"')).decode()
+    out = next(run_command(f'DISPLAY="{config.APP_SCREEN}" xinput | grep -i "{config.TOUCH_SCREEN_NAME}"')).decode()
     m = re.search(r'id=(\d+)', out)
     if m:
         return m.group(1)
@@ -120,9 +120,9 @@ class Serializer:
     """Serializer for connecting the TTL Arduino"""
     def __init__(self, logger=None):
         self.logger = logger
-        self.device_id = config.SERIAL_PORT_TEMP
+        self.device_id = '/dev/ttyACM0'
         self.find_temperature_sensor_device()
-        self.ser = serial.Serial(self.device_id, config.SERIAL_BAUD, timeout=1)
+        self.ser = serial.Serial(self.device_id, 9600, timeout=1)
         time.sleep(0.5)
 
     def read_line(self):
@@ -337,10 +337,11 @@ def timeit(func):
 
 def get_psycho_files():
     files = {}
-    for p in Path(config.PSYCHO_FOLDER).glob('*'):
-        if not p.is_dir():
-            continue
-        main_file = p / f'{p.name}.py'
-        if main_file.exists():
-            files[p.name] = p
+    if config.PSYCHO_FOLDER and Path(config.PSYCHO_FOLDER).exists():
+        for p in Path(config.PSYCHO_FOLDER).glob('*'):
+            if not p.is_dir():
+                continue
+            main_file = p / f'{p.name}.py'
+            if main_file.exists():
+                files[p.name] = p
     return files

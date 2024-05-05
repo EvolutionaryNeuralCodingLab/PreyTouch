@@ -36,22 +36,25 @@ class PogonaHead(Predictor):
         self.detector.load()
         self.is_initialized = True
 
-    def predict(self, img, return_centroid=True, is_draw_pred=False):
+    def predict(self, img, return_centroid=False, is_plot_preds=False):
         det, img = self.detector.detect_image(img)
         if det is None:
             return None, None
 
-        if return_centroid and not is_draw_pred:
-            return self.to_centroid(det)
+        if is_plot_preds:
+            img = self.plot_predictions(img, 0, det)
+
+        if return_centroid:
+            return self.to_centroid(det), img
         else:
-            if is_draw_pred:
-                img = self.draw_predictions(det, img)
-            return det, img
+            return pd.Series(det, index=['xA', 'yA', 'xB', 'yB', 'confidence']), img
 
     @staticmethod
-    def draw_predictions(det, img):
+    def plot_predictions(img, frame_id, det):
         if det is None:
             return img
+        if len(img.shape) == 2:
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
         xA, yA, xB, yB, confidence = det
         img = cv2.rectangle(img, (int(xA), int(yA)), (int(xB), int(yB)), (0, 255, 0), 2)
         return img

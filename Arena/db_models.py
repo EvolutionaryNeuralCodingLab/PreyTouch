@@ -699,7 +699,7 @@ class DWH:
 
 
 def get_engine():
-    return create_engine(config.sqlalchemy_url, pool_size=10, max_overflow=20)
+    return create_engine(config.sqlalchemy_url, pool_size=20, max_overflow=30)
 
 
 def delete_duplicates(model, col):

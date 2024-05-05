@@ -86,7 +86,7 @@ class ArenaProcess(mp.Process):
     def calc_fps(self, timestamp):
         fps = 0.0
         self.timestamps_stack.append(timestamp)
-        if len(self.timestamps_stack) > config.count_timestamps_for_fps_calc:
+        if len(self.timestamps_stack) > config.COUNT_TIMESTAMPS_FOR_FPS_CALC:
             fps = 1 / np.diff(self.timestamps_stack).mean()
             self.timestamps_stack.pop(0)
 
@@ -95,7 +95,7 @@ class ArenaProcess(mp.Process):
     def calc_pred_delay(self, timestamp, pred_timestamp):
         dt = (pred_timestamp - timestamp) * 1000
         self.delays_stack.append(dt)
-        if len(self.delays_stack) > config.count_timestamps_for_fps_calc:
+        if len(self.delays_stack) > config.COUNT_TIMESTAMPS_FOR_FPS_CALC:
             self.delays_stack.pop(0)
         dt = np.mean(self.delays_stack)
         self.mp_metadata['pred_delay'].value = dt
@@ -125,6 +125,9 @@ class Camera(ArenaProcess):
         server_time = time.time_ns()
         self.camera_time_delta = (server_time - cam_time) / 1e9
 
+    def is_color_cam(self):
+        return self.cam_config.get('is_color', False)
+
 
 class ImageSink(ArenaProcess):
     calc_fps_name = 'sink_fps'
@@ -148,7 +151,7 @@ class ImageSink(ArenaProcess):
     def _run(self):
         self.logger.debug('Start frame handling in ImageSink')
         self.orm = ORM()
-        self.writing_queue = queue.Queue(maxsize=config.writing_video_queue_maxsize)
+        self.writing_queue = queue.Queue(maxsize=config.WRITING_VIDEO_QUEUE_MAXSIZE)
         frames_counter = 0
         while not self.stop_signal.is_set():
             try:
@@ -282,7 +285,7 @@ class ImageSink(ArenaProcess):
     def commit_video_frames_to_db(self, video_path: str):
         self.orm.commit_video_frames(self.write_video_timestamps, self.db_video_id)
         # frames timestamp artifact
-        frames_output_dir = Path(video_path).parent / config.frames_timestamps_dir
+        frames_output_dir = Path(video_path).parent / config.FRAMES_TIMESTAMPS_DIR
         frames_output_dir.mkdir(exist_ok=True)
         csv_path = frames_output_dir / Path(video_path).with_suffix('.csv').name
         pd.DataFrame(self.write_video_timestamps).to_csv(csv_path)
@@ -342,7 +345,7 @@ class CameraUnit:
         self.processes = {}
         self.is_stopping = False
         self.is_starting = False
-        self.frames_queue = TimestampedArrayQueue(config.array_queue_size_mb)
+        self.frames_queue = TimestampedArrayQueue(config.ARRAY_QUEUE_SIZE_MB)
         self.shm_manager = SharedMemoryManager()
         self.shm_manager.start()
         self.shm = self.shm_manager.SharedMemory(size=int(np.prod(self.cam_config['image_size'])))
@@ -607,7 +610,7 @@ class ArenaManager(SyncManager):
                             cam_config, self.log_queue)
             self.units[cam_name] = cu
         self.logger.info('Arena started')
-        self.logger.debug(config.management_url)
+        self.logger.debug(config.MANAGEMENT_URL)
 
     def update_camera_unit(self, cam_name, data):
         if cam_name not in self.units:
@@ -679,7 +682,7 @@ class ArenaManager(SyncManager):
             return
         self.schedules = {}
         for s in self.orm.get_upcoming_schedules().all():
-            self.schedules[s.id] = f'{s.date.strftime(config.schedule_date_format)} - {s.experiment_name}'
+            self.schedules[s.id] = f'{s.date.strftime(config.SCHEDULER_DATE_FORMAT)} - {s.experiment_name}'
 
     def reset_cache(self):
         for name, col in cc.__dict__.items():
@@ -747,7 +750,7 @@ class ArenaManager(SyncManager):
         folder_name = datetime_string()
         if folder_prefix != '':
             folder_name = f'{folder_prefix}_{folder_name}'
-        output = f"{output_dir or config.recordings_output_dir}/{folder_name}"
+        output = f"{output_dir or config.RECORDINGS_OUTPUT_DIR}/{folder_name}"
         return mkdir(output)
 
     def is_cam_trigger_setup(self):

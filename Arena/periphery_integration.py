@@ -12,8 +12,6 @@ from db_models import ORM
 import config
 
 
-CONFIG_PATH = 'configurations/periphery_config.json'
-
 
 class PeripheryIntegrator:
     """class for communicating with reptilearn's arena.py"""
@@ -23,22 +21,14 @@ class PeripheryIntegrator:
         self.cache = RedisCache()
         self.mqtt_client = mqtt.Client()
         self.orm = ORM()
-        self.periphery_config = self.read_config()
+        self.periphery_config = config.load_configuration('periphery')
         if self.periphery_config and 'arena' in self.periphery_config:
             self.devices = self.periphery_config['arena']['interfaces']
         else:
             self.devices = []
 
-    @staticmethod
-    def read_config() -> dict:
-        d = {}
-        if Path(CONFIG_PATH).exists():
-            with open(CONFIG_PATH, 'r') as f:
-                d = json.load(f)
-        return d
-
     def save_config_to_file(self):
-        with open(CONFIG_PATH, 'w') as f:
+        with open(config.configurations["periphery"][0], 'w') as f:
             json.dump(self.periphery_config, f, indent=4)
 
     def switch(self, name, state):
@@ -54,7 +44,6 @@ class PeripheryIntegrator:
         self.mqtt_publish(config.mqtt['publish_topic'], f'["get","Camera Trigger"]')
 
     def change_trigger_fps(self, new_fps):
-
         new_duration = round(1000 / new_fps)
         trig_inters = self.periphery_config['camera trigger']['interfaces'][0]
         trig_inters['pulse_len'] = new_duration
