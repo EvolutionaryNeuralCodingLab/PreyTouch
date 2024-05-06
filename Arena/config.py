@@ -25,6 +25,7 @@ MANAGEMENT_URL = f'http://{MANAGEMENT_HOST}:{MANAGEMENT_PORT}'
 POGONA_HUNTER_PORT = env.int('POGONA_HUNTER_PORT', 8080, group='General', desc='Port of the application')
 DISABLE_ARENA_SCREEN = env.bool('DISABLE_ARENA_SCREEN', False, group='General', desc='Work without application screen')
 api_max_blocks_to_show = 20
+IS_GPU = env.bool('IS_GPU', True, group='General', desc='Whether the system has a CUDA GPU')
 
 # Output Folders
 CAPTURE_IMAGES_DIR = env('CAPTURE_IMAGES_DIR', f'{OUTPUT_DIR}/captures', is_map=False)
@@ -34,6 +35,7 @@ EXPERIMENTS_DIR = env('EXPERIMENTS_DIR', f"{OUTPUT_DIR}/experiments", is_map=Fal
 
 # Application
 TOUCH_SCREEN_NAME = env('TOUCH_SCREEN_NAME', 'Elo', group='Application', desc='Name of the touch screen to be searched in xinput')
+DISABLE_APP_SCREEN = env.bool('DISABLE_APP_SCREEN', False, group='Application', desc='whether to disable the application screen')
 IS_SCREEN_INVERTED = env.bool('IS_SCREEN_INVERTED', False, group='Application', desc='whether to invert the application screen')
 IS_CHECK_SCREEN_MAPPING = env.bool('IS_CHECK_SCREEN_MAPPING', True, group='Application', desc='whether to check the mapping of the touch screen before each experiment')
 APP_SCREEN = env('APP_SCREEN', ':0', group='Application', desc='Application screen address')
@@ -42,8 +44,10 @@ SCREEN_RESOLUTION = env('SCREEN_RESOLUTION', '1920,1080', group='Application', d
 SCREEN_DISPLACEMENT = env('SCREEN_DISPLACEMENT', '000', group='Application', desc='Screen displacement. Used if more than one screen in connected to the server')  # used for displacing the screen contents in multi screen setup
 
 # Cache (Redis)
-redis_host = env('REDIS_HOST', 'localhost', group='Cache', desc='Host of the redis server')
-websocket_url = env('WEBSOCKET_URL', 'ws://localhost:6380', group='Cache', desc='URL of the websocket server that connects the management UI with the BackEnd')
+IS_USE_REDIS = env.bool('IS_USE_REDIS', True, group='Cache', desc='whether to use redis as cache')
+REDIS_HOST = env('REDIS_HOST', 'localhost', group='Cache', desc='Host of the redis server')
+REDIS_PORT = env.int('REDIS_PORT', 6379, group='Cache', desc='Port of the redis server')
+WEBSOCKET_URL = env('WEBSOCKET_URL', 'ws://localhost:6380', group='Cache', desc='URL of the websocket server that connects the management UI with the BackEnd')
 ui_console_channel = "cmd/visual_app/console"
 # listeners that should listen only during an experiment
 experiment_metrics = {

@@ -39,7 +39,7 @@ class CacheColumns:
 
 class RedisCache:
     def __init__(self):
-        self._redis = redis.Redis(host=config.redis_host, port=6379, db=0)
+        self._redis = redis.Redis(host=config.REDIS_HOST, port=config.REDIS_PORT, db=0)
 
     def get(self, cache_column: Column):
         res = self._redis.get(cache_column.name)

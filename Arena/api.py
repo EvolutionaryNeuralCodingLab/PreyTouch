@@ -709,9 +709,11 @@ def restart():
 def start_app(queue):
     global cache, arena_mgr, periphery_mgr, queue_app
     queue_app = queue
+    assert pytest.main(['-x', 'tests', '-s']) == 0
 
-    import torch
-    torch.cuda.set_device(0)
+    if config.IS_GPU:
+        import torch
+        torch.cuda.set_device(0)
     logging.getLogger('werkzeug').setLevel(logging.WARNING)
     init_logger_config()
     arena_handler = create_arena_handler('API')
@@ -730,7 +732,6 @@ def start_app(queue):
 
 
 if __name__ == "__main__":
-    assert pytest.main(['-x', 'tests']) == 0
 
     # app.logger.removeHandler(flask_logging.default_handler)
     # h = logging.StreamHandler(sys.stdout)

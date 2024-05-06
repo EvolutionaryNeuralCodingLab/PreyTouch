@@ -51,7 +51,8 @@ class Scheduler(threading.Thread):
         self.logger.debug('Scheduler started...')
         self.arena_mgr = arena_mgr
         self.periphery = PeripheryIntegrator()
-        self.agent = Agent()
+        if config.IS_AGENT_ENABLED:
+            self.agent = Agent()
         self.next_experiment_time = None
         self.dlc_on = multiprocessing.Event()
         self.dlc_errors_cache = []
@@ -66,7 +67,7 @@ class Scheduler(threading.Thread):
         t0 = None  # every minute
         t1 = None  # every 5 minutes
         t2 = None  # every 15 minutes
-        while not self.arena_mgr.arena_shutdown_event.is_set():
+        while not self.is_stop_set():
             if not t0 or time.time() - t0 >= 60:  # every minute
                 t0 = time.time()
                 self.current_animal_id = cache.get(cc.CURRENT_ANIMAL_ID)
@@ -268,6 +269,12 @@ class Scheduler(threading.Thread):
 
     def is_test_animal(self):
         return self.current_animal_id in ['test']
+
+    def is_stop_set(self):
+        try:
+            return self.arena_mgr.arena_shutdown_event.is_set()
+        except Exception:
+            return True
 
 
 def _run_pose_callback(dlc_on, errors_cache):

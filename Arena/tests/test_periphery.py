@@ -12,10 +12,13 @@ import config
 class TestPeripheryConfig:
     periphery_config = config.load_configuration('periphery', is_assert_exist=False)
     
-    # def test_exist(self):
-    #     if not self.periphery_config:
-    #         with open(config.configurations['periphery'][0], 'w') as f:
-    #             json.dump({}, f)
+    def test_periphery_config_not_empty(self):
+        if not self.periphery_config:
+            print('Periphery config is empty; Setting DISABLE_PERIPHERY=True in config')
+            config.DISABLE_PERIPHERY = True
+
+    def test_mqtt_alive(self):
+        pass
 
     def run_all(self, periphery_config):
         self.periphery_config = periphery_config

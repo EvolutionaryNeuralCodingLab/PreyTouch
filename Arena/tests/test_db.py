@@ -5,8 +5,28 @@ from alembic.runtime import migration
 import sqlalchemy
 from db_models import get_engine
 from sqlalchemy_utils import database_exists, create_database
+from sqlalchemy.orm import sessionmaker
+import config
 
 
+def db_test(func):
+    def wrapper(*args, **kwargs):
+        if not config.DISABLE_DB:
+            return func(*args, **kwargs)
+    return wrapper
+
+
+@db_test
+def test_db_exists():
+    engine = get_engine()
+    try:
+        engine.connect()
+    except Exception as exc:
+        print(f'Unable to connect to Database in {config.db_host}:{config.db_port}')
+        config.DISABLE_DB = True
+
+
+@db_test
 def test_schema_exists():
     engine = get_engine()
     if not database_exists(engine.url):
@@ -14,6 +34,7 @@ def test_schema_exists():
         print(f'Database {config.db_name} was created')
 
 
+@db_test
 def test_migrations():
     engine = get_engine()
     alembic_cfg = config.Config('alembic.ini')

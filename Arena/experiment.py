@@ -628,11 +628,11 @@ class ExperimentValidation:
     def is_websocket_server_on(self):
         try:
             ws = websocket.WebSocket()
-            ws.connect(config.websocket_url)
+            ws.connect(config.WEBSOCKET_URL)
             return True
         except Exception:
             if not self.is_silent:
-                self.logger.error(f'Websocket server on {config.websocket_url} is dead')
+                self.logger.error(f'Websocket server on {config.WEBSOCKET_URL} is dead')
 
     def is_pogona_hunter_up(self):
         try:

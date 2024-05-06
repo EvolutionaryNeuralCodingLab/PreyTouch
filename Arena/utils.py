@@ -1,4 +1,4 @@
-import os
+import os, sys
 import re
 import requests
 import json
@@ -29,6 +29,8 @@ DISPLAY = f'DISPLAY="{config.APP_SCREEN}"'
 
 
 def turn_display_on(board='holes', is_test=False):
+    if config.DISABLE_APP_SCREEN:
+        return
     touch_device_id = get_hdmi_xinput_id()
     screen = config.APP_SCREEN if not is_test else config.TEST_SCREEN
 
@@ -51,6 +53,8 @@ def turn_display_on(board='holes', is_test=False):
 
 
 def turn_display_off(app_only=False):
+    if config.DISABLE_APP_SCREEN:
+        return
     touch_device_id = get_hdmi_xinput_id()
     cmds = ['pkill chrome || true']
     if not app_only:
@@ -169,34 +173,36 @@ def run_in_thread(func):
 
 def get_sys_metrics():
     gpu_usage, cpu_usage, memory_usage, storage = None, None, None, None
-    try:
-        cmd = 'nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits'
-        res = next(run_command(cmd)).decode().replace(' ', '').replace('\n', '')
-        res = [int(x) for x in res.split(',')]
-        gpu_usage = res[0] / res[1]
-    except Exception:
-        pass
-    try:
-        # cmd = "cat /proc/stat |grep cpu |tail -1|awk '{print ($5*100)/($2+$3+$4+$5+$6+$7+$8+$9+$10)}'|awk '{print 100-$1}'"
-        cmd = "awk '{u=$2+$4; t=$2+$4+$5; if (NR==1){u1=u; t1=t;} else print ($2+$4-u1) * 100 / (t-t1); }' <(grep 'cpu ' /proc/stat) <(sleep 1;grep 'cpu ' /proc/stat)"
-        res = next(run_command(cmd)).decode().replace(' ', '').replace('\n', '')
-        cpu_usage = float(res)
-    except Exception:
-        pass
-    try:
-        cmd = "free -mt | grep Total"
-        res = next(run_command(cmd)).decode()
-        m = re.search(r'Total:\s+(?P<total>\d+)\s+(?P<used>\d+)\s+(?P<free>\d+)', res)
-        memory_usage = int(m.group('used')) / int(m.group('total'))
-    except Exception:
-        pass
-    try:
-        cmd = 'df -h /data | grep -oP "\d+%"'
-        res = next(run_command(cmd)).decode()
-        if res and isinstance(res, str):
-            storage = float(res.replace('%', ''))
-    except Exception:
-        pass
+    if sys.platform == 'linux':
+        try:
+            if config.IS_GPU:
+                cmd = 'nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits'
+                res = next(run_command(cmd)).decode().replace(' ', '').replace('\n', '')
+                res = [int(x) for x in res.split(',')]
+                gpu_usage = res[0] / res[1]
+        except Exception:
+            pass
+        try:
+            # cmd = "cat /proc/stat |grep cpu |tail -1|awk '{print ($5*100)/($2+$3+$4+$5+$6+$7+$8+$9+$10)}'|awk '{print 100-$1}'"
+            cmd = "awk '{u=$2+$4; t=$2+$4+$5; if (NR==1){u1=u; t1=t;} else print ($2+$4-u1) * 100 / (t-t1); }' <(grep 'cpu ' /proc/stat) <(sleep 1;grep 'cpu ' /proc/stat)"
+            res = next(run_command(cmd)).decode().replace(' ', '').replace('\n', '')
+            cpu_usage = float(res)
+        except Exception:
+            pass
+        try:
+            cmd = "free -mt | grep Total"
+            res = next(run_command(cmd)).decode()
+            m = re.search(r'Total:\s+(?P<total>\d+)\s+(?P<used>\d+)\s+(?P<free>\d+)', res)
+            memory_usage = int(m.group('used')) / int(m.group('total'))
+        except Exception:
+            pass
+        try:
+            cmd = 'df -h / | grep -oP "\d+%"'
+            res = next(run_command(cmd)).decode()
+            if res and isinstance(res, str):
+                storage = float(res.replace('%', ''))
+        except Exception:
+            pass
     return {'gpu_usage': gpu_usage, 'cpu_usage': cpu_usage, 'memory_usage': memory_usage, 'storage': storage}
 
 

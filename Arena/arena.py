@@ -628,20 +628,22 @@ class ArenaManager(SyncManager):
 
     def arena_shutdown(self, *args) -> None:
         self.logger.warning('shutdown start')
-        self.logger.debug(f'open threads: {list(self.threads.keys())}')
+        current_thread = threading.current_thread().name
+        self.logger.debug(f'open threads: {[t for t in self.threads.keys() if self.threads[t].name != current_thread]}')
         self.arena_shutdown_event.set()
         [cu.stop() for cu in self.units.values()]
         for name, t in self.threads.items():
-            if threading.current_thread().name != t.name:
+            if current_thread != t.name:
                 try:
                     t.join()
-                    self.logger.debug(f'thread {name} is down')
+                    print(f'thread {name} is joined')
                 except:
-                    self.logger.exception(f'Error joining thread {name}')
+                    print(f'Error joining thread {name}')
         self.units, self.threads = {}, {}
-        self.logger.info('Closing logging thread; Arena is down')
+        print('Closing logging thread; Arena is down')
         self.stop_logging_event.set()
         self.logging_thread.join()
+        print('logging thread is joined')
         self.shutdown()
         print('shutdown finished')
 
@@ -685,6 +687,8 @@ class ArenaManager(SyncManager):
             self.schedules[s.id] = f'{s.date.strftime(config.SCHEDULER_DATE_FORMAT)} - {s.experiment_name}'
 
     def reset_cache(self):
+        if not config.IS_USE_REDIS:
+            return
         for name, col in cc.__dict__.items():
             if name.startswith('_') or col.timeout == 'static':
                 continue

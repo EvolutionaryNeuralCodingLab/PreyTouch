@@ -74,10 +74,13 @@
         });
         let wsclient = new WebSocketClient('ws://127.0.0.1:6380', {
             reconnectEnabled: true,
-            reconnectInterval: 5000 // time to reconnect in milliseconds
+            reconnectInterval: 2000 // time to reconnect in milliseconds
         })
+        wsclient.onOpen = () => {
+          console.log('websockets connected')
+        }
         wsclient.onError = (event) => {
-            appendOutput('Error connecting to Redis', color='red')
+          console.log('websockets error')
         }
         wsclient.connect()
         wsclient.subscribe({
