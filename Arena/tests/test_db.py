@@ -22,7 +22,7 @@ def test_db_exists():
     try:
         engine.connect()
     except Exception as exc:
-        print(f'Unable to connect to Database in {config.db_host}:{config.db_port}')
+        print(f'Unable to connect to Database in {config.db_host}:{config.db_port}; Setting DISABLE_DB=True')
         config.DISABLE_DB = True
 
 

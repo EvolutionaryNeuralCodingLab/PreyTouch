@@ -1,6 +1,6 @@
 import io
 import time
-import os
+import sys
 import cv2
 import json
 import warnings
@@ -709,7 +709,9 @@ def restart():
 def start_app(queue):
     global cache, arena_mgr, periphery_mgr, queue_app
     queue_app = queue
-    assert pytest.main(['-x', 'tests', '-s']) == 0
+    if pytest.main(['-x', 'tests', '-s', '--tb=line', '--color=yes']) != 0:
+        queue_app.put('stop')
+        return
 
     if config.IS_GPU:
         import torch
@@ -765,6 +767,8 @@ if __name__ == "__main__":
                 time.sleep(1)
             else:
                 x = queue_app.get()
+                if x == 'stop':
+                    sys.exit(1)
                 break
         app.logger.warning('Restarting Arena!')
         p.terminate()

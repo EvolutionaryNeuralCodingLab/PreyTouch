@@ -1,5 +1,6 @@
 import config
 import redis
+import pytest
 
 
 def test_redis_exists():
@@ -7,6 +8,6 @@ def test_redis_exists():
     try:
         r.ping()
     except Exception as exc:
-        print(f'Unable to connect to Redis in {config.REDIS_HOST}:{config.REDIS_PORT}')
-        config.IS_USE_REDIS = False
-        config.IS_AGENT_ENABLED = False
+        pytest.fail(f'Unable to connect to Redis in {config.REDIS_HOST}:{config.REDIS_PORT}')
+        # config.IS_USE_REDIS = False
+        # config.IS_AGENT_ENABLED = False

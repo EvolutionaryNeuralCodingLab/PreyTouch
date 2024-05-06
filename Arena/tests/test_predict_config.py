@@ -1,6 +1,7 @@
 import config
 import yaml
 import json
+import importlib
 from pathlib import Path
 import config
 import warnings
@@ -44,3 +45,15 @@ class TestPredictConfig:
                 raise Exception('dlclive is not installed and deeplabcut model is configured in predict_config')
             except Exception as exc:
                 raise Exception(f'Unable to load {pred_name} model from {dlc_config["model_path"]}; {exc}')
+
+    def test_predictors(self):
+        """check if the expected methods of predictors exist in configured predictors"""
+        methods2check = ['predict']
+        for prd_name, (prd_module, prd_class) in config.arena_modules['predictors'].items():
+            try:
+                prd_module = importlib.import_module(prd_module)
+                predictor = getattr(prd_module, prd_class)
+                for m in methods2check:
+                    assert getattr(predictor, m)
+            except Exception as exc:
+                print(f'unable to import predictor {prd_name}; {exc}')
