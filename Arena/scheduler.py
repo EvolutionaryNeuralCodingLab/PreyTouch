@@ -224,7 +224,7 @@ class Scheduler(threading.Thread):
 
     @schedule_method
     def compress_videos(self):
-        if self.is_in_range('cameras_on') or not self.is_compression_thread_available():
+        if self.is_in_range('cameras_on') or not self.is_compression_thread_available() or config.DISABLE_DB:
             return
 
         videos = get_videos_ids_for_compression(sort_by_size=True)

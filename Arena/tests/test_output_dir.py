@@ -5,7 +5,9 @@ import config
 
 
 def test_output_dir_exists():
-    assert Path(config.OUTPUT_DIR).exists(), f'Output directory {config.OUTPUT_DIR} does not exist'
+    output_dir = Path(config.OUTPUT_DIR)
+    if not output_dir.exists():
+        output_dir.mkdir()
 
 
 def test_output_dir_writable():

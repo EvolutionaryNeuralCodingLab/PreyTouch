@@ -85,8 +85,9 @@ class Calibrator:
         if is_plot:
             self.plot_undistorted(detected_frames)
 
-        self.calc_projection_error(objpoints, imgpoints, rvecs, tvecs, mtx, dist)
         self.logger.info('calibration finished successfully')
+        err_text = self.calc_projection_error(objpoints, imgpoints, rvecs, tvecs, mtx, dist)
+        return err_text
 
     def set_calib_date(self, calib_date=None):
         if calib_date is None:
@@ -127,7 +128,8 @@ class Calibrator:
             imgpoints2, _ = cv2.projectPoints(objpoints[i], rvecs[i], tvecs[i], mtx, dist)
             error = cv2.norm(imgpoints[i], imgpoints2, cv2.NORM_L2) / len(imgpoints2)
             mean_error += error
-        self.logger.info("total projection error: {}".format(mean_error / len(objpoints)))
+        err_text = "total projection error: {}".format(mean_error / len(objpoints))
+        return err_text
 
     def load_calibration(self):
         last_path = get_last_artifact(self.current_undistort_folder, self.cache_prefix, self.calib_images_date)
@@ -140,6 +142,7 @@ class Calibrator:
         self.calc_undistort_mappers()
 
     def save_calibration(self):
+        self.logger.info(f'saving calibration to {self.calib_params_path}')
         with self.calib_params_path.open('wb') as f:
             pickle.dump(self.calib_params, f)
 
@@ -276,14 +279,14 @@ class CharucoEstimator:
         real_world_points_3D = self.get_real_world_points(marker_ids).astype('float32')
         # estimate homography matrix
         self.homography = self.estimate_homography(image_points_2D, real_world_points_3D[:, :2])
-        self.print_detection_error(image_points_2D, real_world_points_3D)
+        err_text = self.print_detection_error(image_points_2D, real_world_points_3D, marker_ids)
 
         self.id_key = utils.datetime_string()
         self.save_transformation()
         if is_plot:
             frame = self.plot_aruco_detections(frame, marker_ids, marker_corners, real_world_points_3D)
             cv2.imwrite(self.detected_markers_image_path.as_posix(), frame)
-        return frame, True
+        return frame, err_text
 
     @staticmethod
     def estimate_homography(image_points, dest_points):
@@ -293,14 +296,17 @@ class CharucoEstimator:
         H, _ = cv2.findHomography(fp, tp, 0)
         return H
 
-    def print_detection_error(self, image_points_2D, real_world_points_3D):
+    def print_detection_error(self, image_points_2D, real_world_points_3D, marker_ids):
         dists = []
-        for image_point, dest_point in zip(image_points_2D, real_world_points_3D):
+        text = 'Projection Errors: (expected <-> projected = distance [cm]) \n'
+        for i, image_point, dest_point in zip(marker_ids, image_points_2D, real_world_points_3D):
             x, y = self.get_location(*image_point, is_undistort=False, check_init=False)
             d = distance.euclidean((x, y), dest_point[:2])
-            print(f'{dest_point[:2]} <-> ({x:.1f},{y:.1f}) = {d:.2f}')
+            text += f'{i} {tuple(dest_point[:2].tolist())} <-> ({x:.1f}, {y:.1f}) = {d:.2f} cm\n'
             dists.append(d)
-        print(f'Average error: {np.mean(dists):.2f}')
+        text += f'Average error: {np.mean(dists):.2f} cm'
+        print(text)
+        return text
 
     def validate_detected_markers(self, marker_ids):
         marker_ids = marker_ids.copy().ravel()
@@ -338,10 +344,10 @@ class CharucoEstimator:
             cv2.polylines(frame, [corners.astype(np.int32)], True, (0, 255, 255), 4, line_type)
             top_right, top_left, _, _ = self.flatten_corners(corners)
             cv2.circle(frame, top_left, 2, (255, 0, 255), 3)
-            real_x, real_y = real_world_points_3D[i, :2]
-            real_label = f'{marker_id} ({real_x:.1f},{real_y:.1f})'
-            cv2.putText(frame, real_label, top_right, font, 1.5, (255, 255, 255), 7, line_type)
-            cv2.putText(frame, real_label, top_right, font, 1.5, (255, 0, 255), 3, line_type)
+            # real_x, real_y = real_world_points_3D[i, :2]
+            # real_label = f'{marker_id} ({real_x:.1f},{real_y:.1f})'
+            # cv2.putText(frame, real_label, top_right, font, 1.5, (255, 255, 255), 7, line_type)
+            # cv2.putText(frame, real_label, top_right, font, 1.5, (255, 0, 255), 3, line_type)
         frame = self.plot_calibrated_line(frame)
         return frame
 

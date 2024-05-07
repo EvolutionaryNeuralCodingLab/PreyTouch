@@ -320,17 +320,17 @@ def run_calibration(mode):
             
             calib_date = datetime.strptime(data['date'], '%Y-%m-%d')
             if mode == 'undistort':
-                calib.calibrate_camera(img_dir=tmpdirname, calib_date=calib_date)
+                err_text = calib.calibrate_camera(img_dir=tmpdirname, calib_date=calib_date)
                 img = cv2.imread(calib.calib_results_image_path)
             else:
-                img, _ = calib.find_aruco_markers(f'{tmpdirname}/{list(data["images"].keys())[0]}')
+                img, err_text = calib.find_aruco_markers(f'{tmpdirname}/{list(data["images"].keys())[0]}')
             
             img = Image.fromarray(img)
             rawBytes = io.BytesIO()
             img.save(rawBytes, "JPEG")
             rawBytes.seek(0)
             img_base64 = base64.b64encode(rawBytes.read())
-            return jsonify({'status': str(img_base64)})
+            return jsonify({'res': str(img_base64), 'err_text': err_text})
 
     except Exception as exc:
         return Response(f'Error in calibration; {exc}', status=500)

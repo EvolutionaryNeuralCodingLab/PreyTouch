@@ -72,6 +72,7 @@
     <div class="modal-dialog  modal-xl" role="document">
         <div class="modal-content">
             <div class="modal-body">
+                <pre id="calibResultsText"></pre>
                 <img id="calibResultsImage" src="" alt="" style="width: 100%;">
             </div>
         </div>
@@ -142,8 +143,9 @@
                     $("#calibResultsModal").modal('show')
                     $("#loadCalibModal").modal('hide')
                     $("#calibrationsModal").modal('hide')
-                    let bytestring = data['status']
+                    let bytestring = data['res']
                     let image = bytestring.split('\'')[1]
+                    $("#calibResultsText").text(data['err_text'])
                     $("#calibResultsImage").attr('src' , 'data:image/jpeg;base64,'+image)
                 },
                 error: function (data) {

@@ -15,7 +15,7 @@ ARENA_NAME = env('ARENA_NAME', socket.gethostname(), group='General', desc='The 
 IS_ANALYSIS_ONLY = env.bool('IS_ANALYSIS_ONLY', False, group='General', desc='Mode for development. If set, the arena-manager and periphery are not initialized')
 LOGGING_LEVEL = env('LOGGING_LEVEL', 'DEBUG', group='General', desc='The logging level of the system log (DEBUG,INFO,WARNING,etc.)')
 UI_LOGGING_LEVEL = env('UI_LOGGING_LEVEL', 'INFO', group='General', desc='The logging level of the management console')
-OUTPUT_DIR = env('OUTPUT_DIR', '/data/PreyTouch/output', group='General', desc='The output directory', is_map=False)
+OUTPUT_DIR = env('OUTPUT_DIR', (Path(__file__).parent.parent.resolve() / 'output').as_posix(), group='General', desc='The output directory')
 
 # API
 STATIC_FILES_DIR = env('STATIC_FILES_DIR', 'static', group='General', desc='Path to media files directory', is_map=False)
