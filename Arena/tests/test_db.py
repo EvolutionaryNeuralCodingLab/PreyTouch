@@ -1,5 +1,5 @@
 import pytest
-from alembic import config, script
+from alembic import config as alembic_config, script
 from alembic.command import stamp, upgrade, revision
 from alembic.runtime import migration
 import sqlalchemy
@@ -37,7 +37,7 @@ def test_schema_exists():
 @db_test
 def test_migrations():
     engine = get_engine()
-    alembic_cfg = config.Config('alembic.ini')
+    alembic_cfg = alembic_config.Config('alembic.ini')
     script_ = script.ScriptDirectory.from_config(alembic_cfg)
     with engine.begin() as conn:
         context = migration.MigrationContext.configure(conn)

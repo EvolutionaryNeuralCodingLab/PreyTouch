@@ -360,7 +360,7 @@ class WebSocketServer(mp.Process):
         try:
             asyncio.run(self.main_loop())
         except Exception as e:
-            print(f'websocket server stopped running!')
+            print(f'websocket server stopped running!; {e}')
 
     async def echo(self, websocket):
         self.connections.add(websocket)
