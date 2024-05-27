@@ -16,6 +16,8 @@ class TestAgentConfig:
 
     def test_main_structure(self):
         if not self.agent_config:
+            config.IS_AGENT_ENABLED = False
+            print('Agent config is empty; Setting IS_AGENT_ENABLED=False in config')
             return
         main_keys = ['trials', 'default_struct', 'times']
         for k in main_keys:

@@ -34,10 +34,10 @@ import matplotlib
 matplotlib.use('Agg')
 
 app = Flask('ArenaAPI')
-cache = None
-arena_mgr = None
-periphery_mgr = None
-queue_app = None
+cache: RedisCache = None
+arena_mgr: ArenaManager = None
+periphery_mgr: PeripheryIntegrator = None
+queue_app: mp.Queue = None
 
 
 @app.route('/')
@@ -75,13 +75,6 @@ def check():
     res['block_id'] = cache.get(cc.EXPERIMENT_BLOCK_ID)
     res['open_app_host'] = cache.get(cc.OPEN_APP_HOST)
     res['temperature'] = json.loads(cache.get(cc.TEMPERATURE) or "{}")
-    if not config.DISABLE_DB and not config.IS_ANALYSIS_ONLY:
-        res['n_strikes'] = sum(arena_mgr.orm.get_today_strikes().values())
-        rewards_dict = arena_mgr.orm.get_today_rewards()
-        res['n_rewards'] = f'{rewards_dict["auto"]} ({rewards_dict["manual"]})'
-    else:
-        res.update({'n_strikes': 0, 'n_rewards': 0})
-    
     res['cached_experiments'] = sorted([c.stem for c in Path(config.CACHED_EXPERIMENTS_DIR).glob('*.json')])
     res['cam_trigger_state'] = cache.get(cc.CAM_TRIGGER_STATE)
 
@@ -211,6 +204,29 @@ def get_current_animal():
         return jsonify({})
     animal_dict = arena_mgr.orm.get_animal_settings(animal_id)
     return jsonify(animal_dict)
+
+
+@app.route('/animal_today_summary', methods=['GET'])
+def animal_today_summary():
+    if config.DISABLE_DB or config.IS_ANALYSIS_ONLY:
+        return Response('Unable to load animal summary since DB is disabled')
+    try:
+        animal_id = cache.get(cc.CURRENT_ANIMAL_ID)
+        strike_df = arena_mgr.orm.get_today_strikes()
+        rewards_counts = arena_mgr.orm.get_today_rewards()
+        text = f'Animal ID: {animal_id}\n'
+        text += f'Total Strikes Today: {len(strike_df)}\n'
+        text += f'Today Rewards: {rewards_counts["auto"]} (manual: {rewards_counts["manual"]})\n\n'
+        if not strike_df.empty:
+            text += f'Today Strikes:\n\n{strike_df.to_string(index=False)}\n\n'
+        if config.IS_AGENT_ENABLED:
+            ag = Agent()
+            ag.update()
+            text += f'Agent Summary:\n{ag.get_animal_history()}'
+        return Response(text)
+    except Exception as e:
+        arena_mgr.logger.exception(e)
+        return Response('Error loading animal summary', status=500)
 
 
 @app.route('/start_camera_unit', methods=['POST'])
@@ -484,13 +500,6 @@ def stop_stream_camera():
     if request.method == 'POST':
         arena_mgr.stop_stream()
         return Response('ok')
-
-
-@app.route('/animal_summary', methods=['GET'])
-def animal_summary():
-    ag = Agent()
-    ag.update()
-    return Response(ag.get_animal_history())
 
 
 @app.route('/cam_scan', methods=['GET'])

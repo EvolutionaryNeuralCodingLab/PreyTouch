@@ -583,14 +583,16 @@ class ORM:
         return {'manual': rewards.filter_by(is_manual=True).count(),
                 'auto': rewards.filter_by(is_manual=False).count()}
 
-    def get_today_strikes(self, animal_id=None) -> dict:
+    def get_today_strikes(self, animal_id=None) -> pd.DataFrame:
         with self.session() as s:
             strks = s.query(Strike).filter(and_(cast(Strike.time, Date) == date.today(),
                                                   Strike.arena == config.ARENA_NAME))
             if animal_id:
                 strks = strks.filter_by(animal_id=animal_id)
-                
-        return {'hit': strks.filter_by(is_hit=True).count(), 'miss': strks.filter_by(is_hit=False).count()}
+
+        cols = ['id', 'time', 'is_hit', 'bug_type', 'x', 'y', 'bug_x', 'bug_y', 'bug_size', 'in_block_trial_id',
+                'is_climbing', 'analysis_error', 'block_id', 'trial_id', 'video_id']
+        return pd.DataFrame([{c: strk.__dict__.get(c) for c in cols} for strk in strks.all()])
 
     def today_summary(self):
         summary = {}
@@ -727,7 +729,6 @@ def delete_duplicates(model, col):
             num_deleted += 1
         session.commit()
         print(f'Deleted {num_deleted} duplicates for {model.__name__}')
-
 
 
 if __name__ == '__main__':

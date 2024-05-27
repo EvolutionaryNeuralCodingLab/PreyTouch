@@ -164,7 +164,7 @@
                     let expName = data['experiment_name']
                     let blockId = data['block_id']
                     let openAppHost = data['open_app_host']
-                    let tempString = 'Temperature:'
+                    let tempString = (!data['temperature'] || !data['temperature'].length) ? '' : 'Temperature:'
                     for (let sensor in data['temperature']) {
                         tempString += `\n ${sensor}: ${data['temperature'][sensor] ? data['temperature'][sensor].toFixed(1) : "-"}ºC`
                     }
@@ -179,8 +179,8 @@
                     $("#currentBlockID").text(expName ? `Block ID: ${blockId}` : '')
                     $("#openAppHostDiv").text(openAppHost ? `pogona hunter run on: ${openAppHost}` : 'No APP is running')
 
-                    $("#nStrikes").text(`Today Strikes Count: ${(data['n_strikes']).toFixed(0)}`)
-                    $("#nRewards").text(`Today Rewards Count: ${(data['n_rewards'])}`)
+                    // $("#nStrikes").text(`Today Strikes Count: ${(data['n_strikes']).toFixed(0)}`)
+                    // $("#nRewards").text(`Today Rewards Count: ${(data['n_rewards'])}`)
 
                     for (let feederName in data['reward_left']) {
                         let feederCount = data['reward_left'][feederName]
@@ -249,7 +249,7 @@
             } else if (!!maxValue && value > maxValue) {
                 color = 'red'
             }
-            $comp.text(`${text}: ${!!value ? value.toFixed(fixation): value}${units}`).css({'color': color})
+            $comp.text(`${text}: ${!!value ? value.toFixed(fixation): value}${value == null ? '' : units}`).css({'color': color})
         }
 
         let $startExpButton = $('#startExperimentButton')
@@ -603,12 +603,6 @@
 
         $("#clearOutputButton").click(function (e) {
             $("#record-output").empty()
-        })
-
-        $("#animalSummary").click(function (e) {
-            $.get('/animal_summary', function (data) {
-                appendOutput(data)
-            })
         })
 
         function isMediaExperiment(i) {

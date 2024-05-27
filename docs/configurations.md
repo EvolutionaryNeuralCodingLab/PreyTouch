@@ -10,6 +10,9 @@ in PreyTocuh UI:
 1. **cameras** - Specify all the cameras in the system. From this window
 you can also scan the cameras in the system (only FLIR and Allied-Vision),
 and also add a new camera using a simple form.
+2. **periphery** - Specify all the peripheral devices 
+3. **predict**
+4. **agent**
 
 ### cam_config.yaml
 ```yaml
