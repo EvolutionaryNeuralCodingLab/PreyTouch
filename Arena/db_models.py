@@ -374,12 +374,13 @@ class ORM:
 
     @commit_func
     def commit_temperature(self, temps):
-            with self.session() as s:
-                for sensor_name, temp in temps.items():
-                    t = Temperature(time=datetime.now(), value=temp, block_id=self.cache.get(cc.CURRENT_BLOCK_DB_INDEX),
-                                    arena=config.ARENA_NAME, sensor=sensor_name)
-                    s.add(t)
-                s.commit()
+        self.cache.set(cc.TEMPERATURE, json.dumps(temps))
+        with self.session() as s:
+            for sensor_name, temp in temps.items():
+                t = Temperature(time=datetime.now(), value=temp, block_id=self.cache.get(cc.CURRENT_BLOCK_DB_INDEX),
+                                arena=config.ARENA_NAME, sensor=sensor_name)
+                s.add(t)
+            s.commit()
 
     def get_temperature(self):
         """return the last temperature value from the last 2 minutes, if none return None"""
@@ -588,6 +589,7 @@ class ORM:
                                                   Strike.arena == config.ARENA_NAME))
             if animal_id:
                 strks = strks.filter_by(animal_id=animal_id)
+                
         return {'hit': strks.filter_by(is_hit=True).count(), 'miss': strks.filter_by(is_hit=False).count()}
 
     def today_summary(self):

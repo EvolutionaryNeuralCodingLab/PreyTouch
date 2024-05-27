@@ -74,13 +74,13 @@ def check():
     res['experiment_name'] = cache.get_current_experiment()
     res['block_id'] = cache.get(cc.EXPERIMENT_BLOCK_ID)
     res['open_app_host'] = cache.get(cc.OPEN_APP_HOST)
+    res['temperature'] = json.loads(cache.get(cc.TEMPERATURE) or "{}")
     if not config.DISABLE_DB and not config.IS_ANALYSIS_ONLY:
-        res['temperature'] = arena_mgr.orm.get_temperature()
         res['n_strikes'] = sum(arena_mgr.orm.get_today_strikes().values())
         rewards_dict = arena_mgr.orm.get_today_rewards()
         res['n_rewards'] = f'{rewards_dict["auto"]} ({rewards_dict["manual"]})'
     else:
-        res.update({'temperature': None, 'n_strikes': 0, 'n_rewards': 0})
+        res.update({'n_strikes': 0, 'n_rewards': 0})
     
     res['cached_experiments'] = sorted([c.stem for c in Path(config.CACHED_EXPERIMENTS_DIR).glob('*.json')])
     res['cam_trigger_state'] = cache.get(cc.CAM_TRIGGER_STATE)
