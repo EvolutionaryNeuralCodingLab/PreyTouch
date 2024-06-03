@@ -312,9 +312,10 @@ class Block:
         # check engagement of the animal
         self.check_engagement_level()
         # start cameras for experiment with their predictors and set the output dir for videos
-        self.periphery.cam_trigger(0)  # turn off trigger
+        if config.CAM_TRIGGER_DELAY_AROUND_BLOCK:
+            self.periphery.cam_trigger(0)  # turn off trigger
+            self.logger.info('trigger is off')
         t0 = time.time()
-        self.logger.info('trigger is off')
         self.turn_cameras('on')
         # screencast
         if config.IS_RECORD_SCREEN_IN_EXPERIMENT:
@@ -323,35 +324,44 @@ class Block:
         for cam_name in self.cameras.keys():
             output_dir = mkdir(f'{self.block_path}/videos')
             self.cache.set_cam_output_dir(cam_name, output_dir)
-        while time.time()-t0 < 8:
-            time.sleep(0.05)
-        self.periphery.cam_trigger(1)  # turn trigger on
-        self.logger.info(f'Trigger was off for {time.time() - t0:.2f} sec')
-        time.sleep(1)
-        self.periphery.switch(config.IR_LIGHT_NAME, 1)
-        time.sleep(1)
-        self.periphery.switch(config.IR_LIGHT_NAME, 0)
+
+        if config.CAM_TRIGGER_DELAY_AROUND_BLOCK:
+            while time.time() - t0 < config.CAM_TRIGGER_DELAY_AROUND_BLOCK:
+                time.sleep(0.05)
+            self.periphery.cam_trigger(1)  # turn trigger on
+            self.logger.info(f'Trigger was off for {time.time() - t0:.2f} sec')
+
+        if config.IR_TOGGLE_DELAY_AROUND_BLOCK:
+            time.sleep(1)
+            self.periphery.switch(config.IR_LIGHT_NAME, 1)
+            time.sleep(config.IR_TOGGLE_DELAY_AROUND_BLOCK)
+            self.periphery.switch(config.IR_LIGHT_NAME, 0)
 
     def end_block(self):
-        self.periphery.switch(config.IR_LIGHT_NAME, 1)
-        time.sleep(1)
-        self.periphery.switch(config.IR_LIGHT_NAME, 0)
-        time.sleep(1)
-        self.periphery.cam_trigger(0)
+        if config.IR_TOGGLE_DELAY_AROUND_BLOCK:
+            self.periphery.switch(config.IR_LIGHT_NAME, 1)
+            time.sleep(config.IR_TOGGLE_DELAY_AROUND_BLOCK)
+            self.periphery.switch(config.IR_LIGHT_NAME, 0)
+            time.sleep(1)
+
         t0 = time.time()
-        self.logger.info('trigger is off')
-        time.sleep(8)
+        if config.CAM_TRIGGER_DELAY_AROUND_BLOCK:
+            self.periphery.cam_trigger(0)
+            self.logger.info('trigger is off')
+            time.sleep(config.CAM_TRIGGER_DELAY_AROUND_BLOCK)
+
         self.cache.delete(cc.EXPERIMENT_BLOCK_ID)
         for cam_name in self.cameras.keys():
             self.cache.set_cam_output_dir(cam_name, '')
-        # self.hold_triggers()
-        # time.sleep(8)
+
         self.turn_cameras('off')
         self.cache.delete(cc.EXPERIMENT_BLOCK_PATH)
         if self.is_continuous_blank:
             self.cache.delete(cc.IS_BLANK_CONTINUOUS_RECORDING)
-        self.periphery.cam_trigger(1)
-        self.logger.info(f'Trigger was off for {time.time() - t0:.2f} sec')
+
+        if config.CAM_TRIGGER_DELAY_AROUND_BLOCK:
+            self.periphery.cam_trigger(1)
+            self.logger.info(f'Trigger was off for {time.time() - t0:.2f} sec')
 
     def turn_cameras(self, required_state):
         """Turn on cameras if needed, and load the experiment predictors"""

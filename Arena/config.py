@@ -168,6 +168,8 @@ STRIKE_ANALYSIS_TIME = env('STRIKE_ANALYSIS_TIME', '06:30', group='Scheduler', d
 DAILY_SUMMARY_TIME = env('DAILY_SUMMARY_TIME', '20:00', group='Scheduler', desc='Time of the day to send the daily summary in telegram', validator='hour_validator')
 
 # Experiments
+CAM_TRIGGER_DELAY_AROUND_BLOCK = env.int('CAM_TRIGGER_DELAY_AROUND_BLOCK', 8, group='Experiments', desc='The trigger delay in seconds before and after a block in an experiment. If 0, no delay is used')
+IR_TOGGLE_DELAY_AROUND_BLOCK = env.int('IR_TOGGLE_DELAY_AROUND_BLOCK', 1, group='Experiments', desc='The IR toggle delay in seconds before and after a block in an experiment. If 0, no delay is used')
 IS_RECORD_SCREEN_IN_EXPERIMENT = env.bool('IS_RECORD_SCREEN_IN_EXPERIMENT', False, group='Experiments', desc='Whether to record the screen in the experiment. Notice it has high CPU usage!')
 EXTRA_TIME_RECORDING = env.int('EXTRA_TIME_RECORDING', 30, group='Experiments', desc='Extra time in seconds before and after the experiment in which no trials are on and only the cameras record')
 TIME_BETWEEN_BLOCKS = env.int('TIME_BETWEEN_BLOCKS', 300, group='Experiments', desc='Time in seconds between blocks in an experiment')
