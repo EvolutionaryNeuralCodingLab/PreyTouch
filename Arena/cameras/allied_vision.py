@@ -19,6 +19,8 @@ class AlliedVisionCamera(Camera):
             cam.ExposureTime.set(self.cam_config['exposure'])
             cam.DeviceLinkThroughputLimit.set(4e8)
             self.logger.debug(f'Throughput: {cam.DeviceLinkThroughputLimit.get():.0e}')
+            if self.cam_config.get('reverse_y'):
+                cam.ReverseY.set('true')
             if self.cam_config.get('pixel_format'):
                 cam.set_pixel_format(getattr(vimba.PixelFormat, self.cam_config['pixel_format']))
             if self.cam_config.get('fps') is None:
@@ -40,8 +42,8 @@ class AlliedVisionCamera(Camera):
 
             cam.AcquisitionMode.set('Continuous')
             self.logger.debug('Finish configuration')
-        except Exception:
-            self.logger.exception(f"Exception while configuring camera: ")
+        except Exception as exc:
+            self.logger.error(f"Exception while configuring camera: {exc}")
 
     def _run(self):
         try:
@@ -90,8 +92,8 @@ class AlliedVisionCamera(Camera):
                             self.logger.warning(f'Queue is still full after waiting {waiting_time}')
                             self.last_queue_warning_time = time.time()
                         break
-        except Exception:
-            self.logger.exception(f"Exception while getting image from alliedVision camera: ")
+        except Exception as exc:
+            self.logger.error(f"Exception while getting image from alliedVision camera: {exc}")
         finally:
             cam.queue_frame(frame)
 

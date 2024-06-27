@@ -28,7 +28,7 @@ def run_command(cmd, is_debug=True):
 DISPLAY = f'DISPLAY="{config.APP_SCREEN}"'
 
 
-def turn_display_on(board='holes', is_test=False):
+def turn_display_on(board='holes', is_test=False, logger=None):
     if config.DISABLE_APP_SCREEN:
         return
     touch_device_id = get_hdmi_xinput_id()
@@ -38,7 +38,7 @@ def turn_display_on(board='holes', is_test=False):
     if not is_test:
         cmds = [
             'pkill chrome || true',  # kill all existing chrome processes
-            f'{DISPLAY} xrandr --output HDMI-0 --auto --right-of DP-4' +
+            f'{DISPLAY} xrandr --output HDMI-0 --auto --right-of DP-0' +
             (' --rotate inverted' if config.IS_SCREEN_INVERTED else ''),  # turn touch screen on
             f'{DISPLAY} xinput enable {touch_device_id}',  # enable touch
             f'{DISPLAY} xinput map-to-output {touch_device_id} HDMI-0',
@@ -49,10 +49,12 @@ def turn_display_on(board='holes', is_test=False):
         cmds += [
             f'scripts/start_pogona_hunter.sh {board} {config.SCREEN_RESOLUTION} {screen} {config.SCREEN_DISPLACEMENT} --kiosk'
         ]
+    if logger is not None:
+        logger.debug(f'Turning display {DISPLAY} on')
     return os.system(' && '.join(cmds))
 
 
-def turn_display_off(app_only=False):
+def turn_display_off(app_only=False, logger=None):
     if config.DISABLE_APP_SCREEN:
         return
     touch_device_id = get_hdmi_xinput_id()
@@ -62,6 +64,8 @@ def turn_display_off(app_only=False):
             f'{DISPLAY} xrandr --output HDMI-0 --off',  # turn touchscreen off
             f'{DISPLAY} xinput disable {touch_device_id}',  # disable touch
         ]
+    if logger is not None:
+        logger.debug(f'Turning display {DISPLAY} off')
     return os.system(' && '.join(cmds))
 
 
