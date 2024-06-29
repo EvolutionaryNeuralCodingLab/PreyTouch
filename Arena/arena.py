@@ -293,7 +293,7 @@ class ImageSink(ArenaProcess):
 
     @property
     def writing_fps(self):
-        wf = self.cam_config.get('writing_fps')
+        wf = self.cam_config.get('writing_fps') or self.cam_config.get('fps')
         return int(wf) if wf is not None else None
 
 
