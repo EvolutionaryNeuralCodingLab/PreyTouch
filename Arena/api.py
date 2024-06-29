@@ -448,6 +448,7 @@ def reload_app():
 def init_bugs():
     if request.method == 'POST':
         cache.publish_command('init_bugs', request.data.decode())
+        arena_mgr.logger.info(f'Start bugs with: {request.data.decode()}')
     return Response('ok')
 
 
