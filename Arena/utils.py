@@ -1,4 +1,4 @@
-import os
+import os, sys
 import re
 import requests
 import json
@@ -25,10 +25,12 @@ def run_command(cmd, is_debug=True):
     yield stdout
 
 
-DISPLAY = f'DISPLAY="{config.ARENA_DISPLAY}"'
+DISPLAY = f'DISPLAY="{config.APP_SCREEN}"'
 
 
-def turn_display_on(board='holes', is_test=False):
+def turn_display_on(board='holes', is_test=False, logger=None):
+    if config.DISABLE_APP_SCREEN:
+        return
     touch_device_id = get_hdmi_xinput_id()
     screen = config.APP_SCREEN if not is_test else config.TEST_SCREEN
 
@@ -36,7 +38,7 @@ def turn_display_on(board='holes', is_test=False):
     if not is_test:
         cmds = [
             'pkill chrome || true',  # kill all existing chrome processes
-            f'{DISPLAY} xrandr --output HDMI-0 --auto --right-of DP-4' +
+            f'{DISPLAY} xrandr --output HDMI-0 --auto --right-of DP-0' +
             (' --rotate inverted' if config.IS_SCREEN_INVERTED else ''),  # turn touch screen on
             f'{DISPLAY} xinput enable {touch_device_id}',  # enable touch
             f'{DISPLAY} xinput map-to-output {touch_device_id} HDMI-0',
@@ -47,10 +49,14 @@ def turn_display_on(board='holes', is_test=False):
         cmds += [
             f'scripts/start_pogona_hunter.sh {board} {config.SCREEN_RESOLUTION} {screen} {config.SCREEN_DISPLACEMENT} --kiosk'
         ]
+    if logger is not None:
+        logger.debug(f'Turning display {DISPLAY} on')
     return os.system(' && '.join(cmds))
 
 
-def turn_display_off(app_only=False):
+def turn_display_off(app_only=False, logger=None):
+    if config.DISABLE_APP_SCREEN:
+        return
     touch_device_id = get_hdmi_xinput_id()
     cmds = ['pkill chrome || true']
     if not app_only:
@@ -58,11 +64,13 @@ def turn_display_off(app_only=False):
             f'{DISPLAY} xrandr --output HDMI-0 --off',  # turn touchscreen off
             f'{DISPLAY} xinput disable {touch_device_id}',  # disable touch
         ]
+    if logger is not None:
+        logger.debug(f'Turning display {DISPLAY} off')
     return os.system(' && '.join(cmds))
 
 
 def get_hdmi_xinput_id():
-    out = next(run_command(f'DISPLAY="{config.ARENA_DISPLAY}" xinput | grep -i "{config.TOUCH_SCREEN_NAME}"')).decode()
+    out = next(run_command(f'DISPLAY="{config.APP_SCREEN}" xinput | grep -i "{config.TOUCH_SCREEN_NAME}"')).decode()
     m = re.search(r'id=(\d+)', out)
     if m:
         return m.group(1)
@@ -120,9 +128,9 @@ class Serializer:
     """Serializer for connecting the TTL Arduino"""
     def __init__(self, logger=None):
         self.logger = logger
-        self.device_id = config.SERIAL_PORT_TEMP
+        self.device_id = '/dev/ttyACM0'
         self.find_temperature_sensor_device()
-        self.ser = serial.Serial(self.device_id, config.SERIAL_BAUD, timeout=1)
+        self.ser = serial.Serial(self.device_id, 9600, timeout=1)
         time.sleep(0.5)
 
     def read_line(self):
@@ -169,34 +177,36 @@ def run_in_thread(func):
 
 def get_sys_metrics():
     gpu_usage, cpu_usage, memory_usage, storage = None, None, None, None
-    try:
-        cmd = 'nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits'
-        res = next(run_command(cmd)).decode().replace(' ', '').replace('\n', '')
-        res = [int(x) for x in res.split(',')]
-        gpu_usage = res[0] / res[1]
-    except Exception:
-        pass
-    try:
-        # cmd = "cat /proc/stat |grep cpu |tail -1|awk '{print ($5*100)/($2+$3+$4+$5+$6+$7+$8+$9+$10)}'|awk '{print 100-$1}'"
-        cmd = "awk '{u=$2+$4; t=$2+$4+$5; if (NR==1){u1=u; t1=t;} else print ($2+$4-u1) * 100 / (t-t1); }' <(grep 'cpu ' /proc/stat) <(sleep 1;grep 'cpu ' /proc/stat)"
-        res = next(run_command(cmd)).decode().replace(' ', '').replace('\n', '')
-        cpu_usage = float(res)
-    except Exception:
-        pass
-    try:
-        cmd = "free -mt | grep Total"
-        res = next(run_command(cmd)).decode()
-        m = re.search(r'Total:\s+(?P<total>\d+)\s+(?P<used>\d+)\s+(?P<free>\d+)', res)
-        memory_usage = int(m.group('used')) / int(m.group('total'))
-    except Exception:
-        pass
-    try:
-        cmd = 'df -h /data | grep -oP "\d+%"'
-        res = next(run_command(cmd)).decode()
-        if res and isinstance(res, str):
-            storage = float(res.replace('%', ''))
-    except Exception:
-        pass
+    if sys.platform == 'linux':
+        try:
+            if config.IS_GPU:
+                cmd = 'nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits'
+                res = next(run_command(cmd)).decode().replace(' ', '').replace('\n', '')
+                res = [int(x) for x in res.split(',')]
+                gpu_usage = res[0] / res[1]
+        except Exception:
+            pass
+        try:
+            # cmd = "cat /proc/stat |grep cpu |tail -1|awk '{print ($5*100)/($2+$3+$4+$5+$6+$7+$8+$9+$10)}'|awk '{print 100-$1}'"
+            cmd = "awk '{u=$2+$4; t=$2+$4+$5; if (NR==1){u1=u; t1=t;} else print ($2+$4-u1) * 100 / (t-t1); }' <(grep 'cpu ' /proc/stat) <(sleep 1;grep 'cpu ' /proc/stat)"
+            res = next(run_command(cmd)).decode().replace(' ', '').replace('\n', '')
+            cpu_usage = float(res)
+        except Exception:
+            pass
+        try:
+            cmd = "free -mt | grep Total"
+            res = next(run_command(cmd)).decode()
+            m = re.search(r'Total:\s+(?P<total>\d+)\s+(?P<used>\d+)\s+(?P<free>\d+)', res)
+            memory_usage = int(m.group('used')) / int(m.group('total'))
+        except Exception:
+            pass
+        try:
+            cmd = 'df -h / | grep -oP "\d+%"'
+            res = next(run_command(cmd)).decode()
+            if res and isinstance(res, str):
+                storage = float(res.replace('%', ''))
+        except Exception:
+            pass
     return {'gpu_usage': gpu_usage, 'cpu_usage': cpu_usage, 'memory_usage': memory_usage, 'storage': storage}
 
 
@@ -337,10 +347,11 @@ def timeit(func):
 
 def get_psycho_files():
     files = {}
-    for p in Path(config.PSYCHO_FOLDER).glob('*'):
-        if not p.is_dir():
-            continue
-        main_file = p / f'{p.name}.py'
-        if main_file.exists():
-            files[p.name] = p
+    if config.PSYCHO_FOLDER and Path(config.PSYCHO_FOLDER).exists():
+        for p in Path(config.PSYCHO_FOLDER).glob('*'):
+            if not p.is_dir():
+                continue
+            main_file = p / f'{p.name}.py'
+            if main_file.exists():
+                files[p.name] = p
     return files

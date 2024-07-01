@@ -50,9 +50,18 @@ def logger_thread(q: mp.Queue, stop_event: mp.Event):
     def _logger_thread():
         logger = get_logger('logger_thread')
 
-        while not stop_event.is_set():
-            record = q.get()
-            logger.handle(record)
+        def _is_set():
+            try:
+                return stop_event.is_set()
+            except Exception:
+                return True
+
+        while not _is_set():
+            try:
+                record = q.get(timeout=1)
+                logger.handle(record)
+            except Exception:
+                continue
 
     t = threading.Thread(target=_logger_thread)
     t.start()
@@ -123,12 +132,13 @@ class ArenaHandler(logging.StreamHandler):
         try:
             super().emit(record)
             msg = self.format(record)
-            if record.levelno >= logging.getLevelName(config.UI_LOGGING_LEVEL):
-                cache.publish(config.ui_console_channel, str(msg))
-            block_path = cache.get(cc.EXPERIMENT_BLOCK_PATH)
-            if block_path:
-                with open(f'{block_path}/block.log', 'a') as f:
-                    f.write(str(msg) + '\n')
+            if config.IS_USE_REDIS:
+                if record.levelno >= logging.getLevelName(config.UI_LOGGING_LEVEL):
+                    cache.publish(config.ui_console_channel, str(msg))
+                block_path = cache.get(cc.EXPERIMENT_BLOCK_PATH)
+                if block_path:
+                    with open(f'{block_path}/block.log', 'a') as f:
+                        f.write(str(msg) + '\n')
             self.flush()
         except (KeyboardInterrupt, SystemExit):
             raise

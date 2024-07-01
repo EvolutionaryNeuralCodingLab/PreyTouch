@@ -28,6 +28,20 @@
             }
         },
         {
+            "name": "Run PreyTouch API",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/Arena/api.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}/Arena",
+            "purpose":["debug-in-terminal"],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/Arena",
+                "PYTHONUNBUFFERED": "1",
+                "GENICAM_GENTL64_PATH": ":/data/PreyTouch/Arena/bin/Vimba_6_0/VimbaUSBTL/CTI/x86_64bit"
+            }
+        },
+        {
             "name": "Python: Flask",
             "type": "python",
             "request": "launch",

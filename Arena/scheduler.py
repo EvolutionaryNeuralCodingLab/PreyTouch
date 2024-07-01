@@ -20,16 +20,15 @@ try:
 except Exception:
     predict_tracking = None
 
-env = config.env
 TIME_TABLE = {
-    'cameras_on': (env('CAMERAS_ON_TIME', '07:00'), env('CAMERAS_OFF_TIME', '19:00')),
-    'run_pose': (env('POSE_ON_TIME', '19:30'), env('POSE_OFF_TIME', '03:00')),
-    'tracking_pose': (env('TRACKING_POSE_ON_TIME', '03:00'), env('TRACKING_POSE_OFF_TIME', '06:00')),
-    'lights_sunrise': env('LIGHTS_SUNRISE', '07:00'),
-    'lights_sunset': env('LIGHTS_SUNSET', '19:00'),
-    'dwh_commit_time': env('DWH_COMMIT_TIME', '07:00'),
-    'strike_analysis_time': env('STRIKE_ANALYSIS_TIME', '06:30'),
-    'daily_summary': env('DAILY_SUMMARY_TIME', '20:00')
+    'cameras_on': (config.CAMERAS_ON_TIME, config.CAMERAS_OFF_TIME),
+    'run_pose': (config.POSE_ON_TIME, config.POSE_OFF_TIME),
+    'tracking_pose': (config.TRACKING_POSE_ON_TIME, config.TRACKING_POSE_OFF_TIME),
+    'lights_sunrise': config.LIGHTS_SUNRISE,
+    'lights_sunset': config.LIGHTS_SUNSET,
+    'dwh_commit_time': config.DWH_COMMIT_TIME,
+    'strike_analysis_time': config.STRIKE_ANALYSIS_TIME,
+    'daily_summary': config.DAILY_SUMMARY_TIME
 }
 ALWAYS_ON_CAMERAS_RESTART_DURATION = 30 * 60  # seconds
 cache = RedisCache()
@@ -52,7 +51,8 @@ class Scheduler(threading.Thread):
         self.logger.debug('Scheduler started...')
         self.arena_mgr = arena_mgr
         self.periphery = PeripheryIntegrator()
-        self.agent = Agent()
+        if config.IS_AGENT_ENABLED:
+            self.agent = Agent()
         self.next_experiment_time = None
         self.dlc_on = multiprocessing.Event()
         self.dlc_errors_cache = []
@@ -67,7 +67,7 @@ class Scheduler(threading.Thread):
         t0 = None  # every minute
         t1 = None  # every 5 minutes
         t2 = None  # every 15 minutes
-        while not self.arena_mgr.arena_shutdown_event.is_set():
+        while not self.is_stop_set():
             if not t0 or time.time() - t0 >= 60:  # every minute
                 t0 = time.time()
                 self.current_animal_id = cache.get(cc.CURRENT_ANIMAL_ID)
@@ -112,13 +112,13 @@ class Scheduler(threading.Thread):
         for schedule_id, schedule_string in self.arena_mgr.schedules.items():
             m = re.search(r'(?P<date>.{16}) - (?P<name>.*)', schedule_string)
             if m:
-                schedule_date = datetime.strptime(m.group('date'), config.schedule_date_format)
+                schedule_date = datetime.strptime(m.group('date'), config.SCHEDULER_DATE_FORMAT)
                 if (schedule_date - datetime.now()).total_seconds() <= 0:
                     self.arena_mgr.start_cached_experiment(m.group('name'))
 
     @schedule_method
     def dwh_commit(self):
-        if self.is_in_range('dwh_commit_time') and config.IS_COMMIT_TO_DWH and not cache.get_current_experiment():
+        if self.is_in_range('dwh_commit_time') and config.DWH_HOST and not cache.get_current_experiment():
             if self.dwh_commit_tries >= config.DWH_N_TRIES:
                 self.dwh_commit_tries = 0
                 utils.send_telegram_message(f'Commit to DWH failed after {config.DWH_N_TRIES} times')
@@ -190,7 +190,7 @@ class Scheduler(threading.Thread):
                         cu.start()
 
     def stop_camera(self, cu):
-        if cu.is_on() and cu.time_on > config.camera_on_min_duration:
+        if cu.is_on() and cu.time_on > config.CAMERA_ON_MIN_DURATION:
             self.logger.info(f'stopping CU {cu.cam_name}')
             cu.stop()
 
@@ -224,7 +224,7 @@ class Scheduler(threading.Thread):
 
     @schedule_method
     def compress_videos(self):
-        if self.is_in_range('cameras_on') or not self.is_compression_thread_available():
+        if self.is_in_range('cameras_on') or not self.is_compression_thread_available() or config.DISABLE_DB:
             return
 
         videos = get_videos_ids_for_compression(sort_by_size=True)
@@ -269,6 +269,12 @@ class Scheduler(threading.Thread):
 
     def is_test_animal(self):
         return self.current_animal_id in ['test']
+
+    def is_stop_set(self):
+        try:
+            return self.arena_mgr.arena_shutdown_event.is_set()
+        except Exception:
+            return True
 
 
 def _run_pose_callback(dlc_on, errors_cache):

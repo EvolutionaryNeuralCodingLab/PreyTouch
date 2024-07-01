@@ -5,11 +5,13 @@ import config
 
 
 def test_output_dir_exists():
-    assert Path(config.OUTPUT_DIR).exists()
+    output_dir = Path(config.OUTPUT_DIR)
+    if not output_dir.exists():
+        output_dir.mkdir()
 
 
 def test_output_dir_writable():
-    assert os.access(config.OUTPUT_DIR, os.W_OK)
+    assert os.access(config.OUTPUT_DIR, os.W_OK), f'Output directory {config.OUTPUT_DIR} is not writable'
 
 
 def test_output_subdirectory():

@@ -601,8 +601,8 @@ def record(exposure=0, cameras=None, output=None, folder_prefix=None,
     :param cache: memory cache to be used by the cameras
     :param is_use_predictions: relevant for realtime camera only - using strike prediction
     """
-    if config.is_debug_mode:
-        return 'DEBUG MODE'
+    # if config.is_debug_mode:
+    #     return 'DEBUG MODE'
     assert all(k in config.acquire_stop_options for k in acquire_stop.keys())
     system = PySpin.System.GetInstance()
     cam_list = system.GetCameras()
@@ -615,7 +615,7 @@ def record(exposure=0, cameras=None, output=None, folder_prefix=None,
         folder_name = datetime_string()
         if folder_prefix:
             folder_name = f'{folder_prefix}_{folder_name}'
-        output = f"{config.recordings_output_dir}/{folder_name}"
+        output = f"{config.RECORDINGS_OUTPUT_DIR}/{folder_name}"
     output = mkdir(output)
 
     filtered = [(cam, acquire_stop, output, exposure, cache, log_stream, is_use_predictions) for cam in cam_list]

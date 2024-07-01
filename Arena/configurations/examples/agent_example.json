@@ -1,0 +1,129 @@
+{
+    "default_struct": {
+        "time_between_blocks": 180,
+        "extra_time_recording": 30,
+        "num_blocks": 1,
+        "is_identical_blocks": false,
+        "is_test": false,
+        "reward_bugs": null,
+        "background_color": "#e8eaf6",
+        "exit_hole": "random",
+        "reward_any_touch_prob": 0.1,
+        "cameras": {
+            "back": {
+                "is_use_predictions": true
+            },
+            "front": {
+                "is_use_predictions": true
+            }
+        },
+        "blocks": [
+            {
+                "num_trials": 10,
+                "trial_duration": 30,
+                "iti": 20,
+                "block_type": "bugs",
+                "notes": "created by agent",
+                "bug_speed": 5,
+                "movement_type": null,
+                "is_default_bug_size": true
+            }
+        ]
+    },
+    "times": {
+        "start_time": "09:00",
+        "end_time": "18:15",
+        "time_between_blocks": 60
+    },
+    "trials": {
+        "random_low_horizontal": {
+            "count": {
+                "key": "strikes",
+                "amount": 30,
+                "per": {
+                    "bug_speed": [
+                        2,
+                        4,
+                        6,
+                        8
+                    ]
+                }
+            },
+            "exit_hole": "random",
+            "bug_speed": "per_random",
+            "movement_type": "random_low_horizontal"
+        },
+        "circle": {
+            "count": {
+                "key": "strikes",
+                "amount": 20,
+                "per": {
+                    "bug_speed": [
+                        2,
+                        4,
+                        6,
+                        8
+                    ]
+                }
+            },
+            "exit_hole": "random",
+            "bug_speed": "per_random",
+            "reward_any_touch_prob": 0.2,
+            "movement_type": "circle"
+        },
+        "low_horizontal": {
+            "count": {
+                "key": "trials",
+                "amount": 100,
+                "per": {
+                    "exit_hole": [
+                        "bottomLeft",
+                        "bottomRight"
+                    ]
+                }
+            },
+            "exit_hole": "per_ordered",
+            "bug_speed": 6,
+            "movement_type": "low_horizontal",
+            "reward_any_touch_prob": 0,
+            "num_trials": 5
+        },
+        "low_horizontal_noise": {
+            "count": {
+                "key": "trials",
+                "amount": 100,
+                "per": {
+                    "exit_hole": [
+                        "bottomLeft",
+                        "bottomRight"
+                    ]
+                }
+            },
+            "exit_hole": "per_ordered",
+            "bug_speed": 6,
+            "movement_type": "low_horizontal_noise",
+            "reward_any_touch_prob": 0,
+            "num_trials": 5
+        },
+        "jump_up": {
+            "count": {
+                "key": "strikes",
+                "amount": 100
+            },
+            "exit_hole": "random",
+            "reward_any_touch_prob": 0,
+            "movement_type": "jump_up",
+            "bug_speed": 5
+        },
+        "rect_tunnel": {
+            "count": {
+                "key": "strikes",
+                "amount": 100
+            },
+            "exit_hole": "random",
+            "movement_type": "rect_tunnel",
+            "reward_any_touch_prob": 0,
+            "bug_speed": 5
+        }
+    }
+}

@@ -25,9 +25,9 @@ class DLCPose(Predictor):
             warnings.filterwarnings("ignore", category=UserWarning)
             from dlclive import DLCLive, Processor
         self.cam_name = cam_name
-        self.dlc_config = {}
-        self.load_dlc_config()
-        self.bodyparts = self.dlc_config['bodyparts'] + ['mid_ears']
+        self.bodyparts = self.pred_config['bodyparts']
+        if all(bp in self.bodyparts for bp in ['right_ear', 'left_ear']):
+            self.bodyparts.append('mid_ears')
         self.kp_colors = {k: COLORS[i] for i, k in enumerate(self.bodyparts)}
         self.processor = Processor()
         self.detector = DLCLive(self.model_path, processor=self.processor)
@@ -39,14 +39,19 @@ class DLCPose(Predictor):
         self.detector.init_inference(img)
         self.is_initialized = True
 
-    def predict(self, img, frame_id=0, is_use_threshold=False) -> pd.DataFrame:
+    def predict(self, img, frame_id=0, is_use_threshold=False, is_plot_preds=False) -> pd.DataFrame:
         pdf = self._predict(img, frame_id)
         for bodypart in self.bodyparts:
             df_ = pdf.loc[frame_id, bodypart]
             if is_use_threshold and df_['prob'] < self.threshold:
                 pdf.iloc[0][(bodypart, 'cam_x')] = None
                 pdf.iloc[0][(bodypart, 'cam_y')] = None
-        return pdf
+        if is_plot_preds:
+            img = self.plot_predictions(img, frame_id, pdf)
+        return pdf, img
+    
+    def close(self):
+        self.detector.close()
 
     def _predict(self, img, frame_id=0):
         self.init(img)
@@ -61,7 +66,8 @@ class DLCPose(Predictor):
     def create_pred_df(self, pred, frame_id) -> pd.DataFrame:
         cols = ['cam_x', 'cam_y', 'prob']
         zf = pd.DataFrame(pred, index=self.bodyparts[:-1], columns=cols)
-        zf.loc['mid_ears', :] = zf.loc[['left_ear', 'right_ear'], :].mean()
+        if 'mid_ears' in self.bodyparts:
+            zf.loc['mid_ears', :] = zf.loc[['left_ear', 'right_ear'], :].mean()
         zf = zf.loc[self.bodyparts, :]
         if zf.empty:
             return zf
@@ -78,6 +84,8 @@ class DLCPose(Predictor):
         if frame_id not in df.index:
             return
 
+        if len(frame.shape) == 2:
+            frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
         parts = parts2plot if parts2plot else df.columns.get_level_values(0).unique()
         for i, part in enumerate(parts):
             if not part:
@@ -104,10 +112,6 @@ class DLCPose(Predictor):
         color = tuple(int(COLORS[1][j:j + 2], 16) for j in (1, 3, 5))
         cv2.circle(frame, (cX, cY), 7, color, -1)
         return frame
-
-    def load_dlc_config(self):
-        config_path = Path(config.DLC_FOLDER) / 'config.yaml'
-        self.dlc_config = yaml.load(config_path.open(), Loader=yaml.FullLoader)
 
 
 # class DLCVideoCache:

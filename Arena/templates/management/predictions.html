@@ -1,0 +1,131 @@
+<div class="modal fade" id="predictionsModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog  modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Predictions</h3>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="undistortForm">
+                    
+                    <div class="col mb-3">
+                        <label class="form-check-label" for="pred-name">Predictor Name</label>
+                        <select class="form-control" id="pred-name">
+                            {% for pred_name in predictors %}
+                                <option value="{{pred_name}}">{{pred_name}}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="col mb-3">
+                        <label class="form-check-label" for="pred-file">Image File</label>
+                        <input type="file" class="form-control" id="pred-file" autocomplete="off" />
+                    </div>
+
+                    <div class="col mb-3">
+                        <label for="pred-is-calib" class="form-check-label">Use Calibration</label>
+                        <input id="pred-is-calib" type="checkbox" class="form-control-sm">
+                    </div>
+
+                    <div class="col mb-3" id="pred-cam-name-div">
+                        <label class="form-check-label" for="pred-cam-name">Camera Name</label>
+                        <input type="text" class="form-control" id="pred-cam-name" autocomplete="off" />
+                    </div>
+
+                    <div class="col mb-3" id="pred-date-div">
+                        <label class="form-check-label" for="pred-date">Image Date</label>
+                        <p style="margin-bottom: 0;font-size: 0.8em;">Must specify date for getting the right calibration</p>
+                        <input type="date" class="form-control" id="pred-date" autocomplete="off" />
+                    </div>
+
+                </form>
+                <pre id="predResults" class="scrollableHoriz"></pre>
+                <img id="predResultsImage" src="" alt="" style="width: 100%;">
+            </div>
+
+            <div class="modal-footer">
+                <button id="runPrediction" type="button" class="btn btn-primary" name="">Run</button>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script>
+
+    $("#pred-is-calib").change(() => {
+        let isChecked = $("#pred-is-calib").is(":checked")
+        if (isChecked) {
+            $("#pred-cam-name-div").show()
+            $("#pred-date-div").show()
+        } else {
+            $("#pred-cam-name-div").hide()
+            $("#pred-date-div").hide()
+        }
+    }).trigger('change')
+
+    async function getPredImage(isBlob=false) {
+        const fileElem = document.getElementById("pred-file")
+        let urls = {}
+        for (let i = 0; i < fileElem.files.length; i++) {
+            let u = fileElem.files[i]
+            if (isBlob) {
+                u = await blobToBase64(u)
+            } else {
+                u = URL.createObjectURL(u)
+            }
+            urls[fileElem.files[i].name] = u
+        }
+        return urls
+    }
+
+    $("#runPrediction").click(function(e) {
+        if ($("#pred-is-calib").is(":checked")) {
+            for (let c of ['pred-date', 'pred-cam-name']) {
+                if (!$(`#${c}`).val()) {
+                    window.alert(`You must specify ${c}`)
+                    return
+                }
+            }
+        }
+        getPredImage(true).then((urls) => {
+            let res = {'images': urls, 'pred_name': $("#pred-name").val(), 'image_date': $("#pred-date").val(), 'cam_name': $("#pred-cam-name").val()}
+            $.ajax({
+                url: `/run_predictions`,
+                type: "POST",
+                data: JSON.stringify(res),
+                contentType: "application/json",
+                success: function (data) {
+                    let bytestring = data['image']
+                    let image = bytestring.split('\'')[1]
+                    $("#predResultsImage").attr('src' , 'data:image/jpeg;base64,'+image)
+                    $("#predResults").text(data['result'])
+                },
+                error: function (data) {
+                    window.alert(data.responseText)
+                },
+                beforeSend: function () {
+                    $("#runPrediction").prop('disabled', true)
+                },
+                complete: function () {
+                    $("#runPrediction").prop('disabled', false)
+                }
+            })
+        })
+        
+    })
+</script>
+
+<style>
+    .scrollableHoriz {
+        position: relative;
+        height: 100px;
+        margin-top: 1em;
+        box-sizing: border-box; /****** NEW *****/
+        overflow-y: hidden;  /****** NEW *****/
+        overflow-x: scroll; /****** NEW *****/
+    }
+
+</style>

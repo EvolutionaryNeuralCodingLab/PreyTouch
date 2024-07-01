@@ -374,12 +374,13 @@ class ORM:
 
     @commit_func
     def commit_temperature(self, temps):
-            with self.session() as s:
-                for sensor_name, temp in temps.items():
-                    t = Temperature(time=datetime.now(), value=temp, block_id=self.cache.get(cc.CURRENT_BLOCK_DB_INDEX),
-                                    arena=config.ARENA_NAME, sensor=sensor_name)
-                    s.add(t)
-                s.commit()
+        self.cache.set(cc.TEMPERATURE, json.dumps(temps))
+        with self.session() as s:
+            for sensor_name, temp in temps.items():
+                t = Temperature(time=datetime.now(), value=temp, block_id=self.cache.get(cc.CURRENT_BLOCK_DB_INDEX),
+                                arena=config.ARENA_NAME, sensor=sensor_name)
+                s.add(t)
+            s.commit()
 
     def get_temperature(self):
         """return the last temperature value from the last 2 minutes, if none return None"""
@@ -425,6 +426,9 @@ class ORM:
     def commit_video_frames(self, timestamps: list, video_id: int):
         with self.session() as s:
             video_model = s.query(Video).filter_by(id=video_id).first()
+            if video_model is None:
+                self.logger.warning(f'No video found in DB for frames timestamps commit; video id={video_id}')
+                return
             video_model.frames = {i: ts for i, ts in enumerate(timestamps)}
             video_model.num_frames = len(timestamps)
             video_model.calc_fps = 1 / np.diff(timestamps).mean()
@@ -527,7 +531,8 @@ class ORM:
                     if k in ANIMAL_SETTINGS_LISTS:
                         animal_dict[k] = v.split(',')
             else:
-                self.logger.error('No Animal was found')
+                if animal_id != 'test':
+                    self.logger.error('No Animal was found')
                 animal_dict = {}
         return animal_dict
 
@@ -582,13 +587,16 @@ class ORM:
         return {'manual': rewards.filter_by(is_manual=True).count(),
                 'auto': rewards.filter_by(is_manual=False).count()}
 
-    def get_today_strikes(self, animal_id=None) -> dict:
+    def get_today_strikes(self, animal_id=None) -> pd.DataFrame:
         with self.session() as s:
             strks = s.query(Strike).filter(and_(cast(Strike.time, Date) == date.today(),
                                                   Strike.arena == config.ARENA_NAME))
             if animal_id:
                 strks = strks.filter_by(animal_id=animal_id)
-        return {'hit': strks.filter_by(is_hit=True).count(), 'miss': strks.filter_by(is_hit=False).count()}
+
+        cols = ['id', 'time', 'is_hit', 'bug_type', 'x', 'y', 'bug_x', 'bug_y', 'bug_size', 'in_block_trial_id',
+                'is_climbing', 'analysis_error', 'block_id', 'trial_id', 'video_id']
+        return pd.DataFrame([{c: strk.__dict__.get(c) for c in cols} for strk in strks.all()])
 
     def today_summary(self):
         summary = {}
@@ -699,7 +707,7 @@ class DWH:
 
 
 def get_engine():
-    return create_engine(config.sqlalchemy_url, pool_size=10, max_overflow=20)
+    return create_engine(config.sqlalchemy_url, pool_size=20, max_overflow=30)
 
 
 def delete_duplicates(model, col):
@@ -725,7 +733,6 @@ def delete_duplicates(model, col):
             num_deleted += 1
         session.commit()
         print(f'Deleted {num_deleted} duplicates for {model.__name__}')
-
 
 
 if __name__ == '__main__':

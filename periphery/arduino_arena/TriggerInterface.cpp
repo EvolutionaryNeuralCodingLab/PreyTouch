@@ -68,35 +68,6 @@ TriggerInterface::TriggerInterface(JsonVariant conf)
   send_info(msg);
 }
 
-void TriggerInterface::run(JsonArray cmd) {
-  if (cmd[0] == "get") {
-    serializeValue();
-  }
-  else if (cmd[0] == "toggle") {
-    toggle();
-  }
-  else if (cmd[0] == "set") {
-    if (cmd.size() < 3) {
-      send_error("Missing set value");
-      return;
-    }
-
-    if (!cmd[2].is<int>()) {
-      send_error("Invalid set value");
-      return;
-    }
-
-    int v = cmd[2].as<int>();
-    set_value(v);
-  }
-  else if (cmd[0] == "set_fps") {
-
-  }
-  else {
-    send_error("Unknown command");
-  }
-}
-
 void TriggerInterface::loop() {
   if (value == 1) {
     unsigned long t = micros();

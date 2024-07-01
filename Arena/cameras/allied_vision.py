@@ -19,6 +19,8 @@ class AlliedVisionCamera(Camera):
             cam.ExposureTime.set(self.cam_config['exposure'])
             cam.DeviceLinkThroughputLimit.set(4e8)
             self.logger.debug(f'Throughput: {cam.DeviceLinkThroughputLimit.get():.0e}')
+            if self.cam_config.get('reverse_y'):
+                cam.ReverseY.set('true')
             if self.cam_config.get('pixel_format'):
                 cam.set_pixel_format(getattr(vimba.PixelFormat, self.cam_config['pixel_format']))
             if self.cam_config.get('fps') is None:
@@ -28,9 +30,8 @@ class AlliedVisionCamera(Camera):
                 cam.LineSelector.set('Line3')
                 cam.LineMode.set('Input')
                 cam.TriggerSource.set('Line3')
-
-                cam.TriggerMode.set('On')
                 cam.TriggerActivation.set('RisingEdge')
+                cam.TriggerMode.set('On')
                 self.logger.debug('configured trigger source')
             else:
                 cam.TriggerMode.set('Off')
@@ -40,8 +41,8 @@ class AlliedVisionCamera(Camera):
 
             cam.AcquisitionMode.set('Continuous')
             self.logger.debug('Finish configuration')
-        except Exception:
-            self.logger.exception(f"Exception while configuring camera: ")
+        except Exception as exc:
+            self.logger.error(f"Exception while configuring camera: {exc}")
 
     def _run(self):
         try:
@@ -79,6 +80,8 @@ class AlliedVisionCamera(Camera):
                 try:
                     img = frame.as_numpy_ndarray()
                     timestamp = frame.get_timestamp() / 1e9 + self.camera_time_delta
+                    if not self.is_color_cam():
+                        img = img.squeeze()
                     self.frames_queue.put(img, timestamp)
                     self.calc_fps(timestamp)
                     break
@@ -88,8 +91,8 @@ class AlliedVisionCamera(Camera):
                             self.logger.warning(f'Queue is still full after waiting {waiting_time}')
                             self.last_queue_warning_time = time.time()
                         break
-        except Exception:
-            self.logger.exception(f"Exception while getting image from alliedVision camera: ")
+        except Exception as exc:
+            self.logger.error(f"Exception while getting image from alliedVision camera: {exc}")
         finally:
             cam.queue_frame(frame)
 

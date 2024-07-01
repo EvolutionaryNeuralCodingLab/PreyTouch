@@ -29,8 +29,8 @@
                                 // named "node_modules" from 
                                 // the explore tree
         "**/.idea": true,
-        "pose_analysis": true,
-        "**/.archive": true
+        "**/__pycache__": true,
+        "**/.ipynb_checkpoints": true
     },
     "git.untrackedChanges": "separate",
     "sqltools.connections": [
@@ -44,5 +44,21 @@
             "username": "postgres"
         }
     ],
-    "python.terminal.executeInFileDir": true
+    "python.terminal.executeInFileDir": true,
+    "redisXplorer.config": {
+        "profiles": [
+            {
+                "name": "ArenaCache",
+                "host": "localhost",
+                "accessKey": "",
+                "filter": "*",
+                "port": "6379"
+            }
+        ],
+        "scanLimit": 200
+    },
+    "search.exclude": {
+        "**/.archive": true,
+        "**/*.ipynb": true
+    }
 }

@@ -8,7 +8,7 @@ output/*
 Arena/alembic/versions
 Arena/cached_experiments
 Arena/events
-Arena/.archive
+Arena/bin
 .env*
 *.weights
 *.avi
@@ -35,6 +35,7 @@ std*.txt
 .config
 
 Archive/
+.archive/
 Arena/calibration/*
 yolo_eval_frames
 yolo_fn_frames
@@ -45,7 +46,5 @@ notebooks/archive
 Arena/Prediction/Yolo4/darknet
 Arena/Prediction/Yolo4/libdarknet.so
 
-Arena/configurations/cam_config.yaml
-Arena/configurations/periphery_config.json
-Arena/configurations/predict_config.yaml
-Arena/configurations/agent_config.yaml
+Arena/configurations/*.json
+Arena/configurations/archive
