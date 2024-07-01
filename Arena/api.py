@@ -395,9 +395,9 @@ def arena_switch(name, state):
 @app.route('/display/<state>')
 def display(state):
     if state == 'off':
-        stdout = turn_display_off()
+        stdout = turn_display_off(logger=arena_mgr.logger)
     else:
-        stdout = turn_display_on()
+        stdout = turn_display_on(logger=arena_mgr.logger)
     return Response(stdout)
 
 
@@ -448,6 +448,7 @@ def reload_app():
 def init_bugs():
     if request.method == 'POST':
         cache.publish_command('init_bugs', request.data.decode())
+        arena_mgr.logger.info(f'Start bugs with: {request.data.decode()}')
     return Response('ok')
 
 
@@ -735,7 +736,7 @@ def start_app(queue):
     if not config.IS_ANALYSIS_ONLY:
         arena_mgr = ArenaManager()
         periphery_mgr = PeripheryIntegrator()
-        utils.turn_display_off()
+        utils.turn_display_off(logger=arena_mgr.logger)
         if arena_mgr.is_cam_trigger_setup() and not config.DISABLE_PERIPHERY:
             periphery_mgr.cam_trigger(1)
 

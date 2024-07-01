@@ -426,6 +426,9 @@ class ORM:
     def commit_video_frames(self, timestamps: list, video_id: int):
         with self.session() as s:
             video_model = s.query(Video).filter_by(id=video_id).first()
+            if video_model is None:
+                self.logger.warning(f'No video found in DB for frames timestamps commit; video id={video_id}')
+                return
             video_model.frames = {i: ts for i, ts in enumerate(timestamps)}
             video_model.num_frames = len(timestamps)
             video_model.calc_fps = 1 / np.diff(timestamps).mean()

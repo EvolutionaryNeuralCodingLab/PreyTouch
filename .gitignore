@@ -8,6 +8,7 @@ output/*
 Arena/alembic/versions
 Arena/cached_experiments
 Arena/events
+Arena/bin
 .env*
 *.weights
 *.avi

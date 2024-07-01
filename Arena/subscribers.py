@@ -1,5 +1,6 @@
 import re
 import json
+import redis
 import time
 import inspect
 import queue
@@ -91,26 +92,43 @@ class ExperimentLogger(Subscriber):
         self.config = config.experiment_metrics[self.name]
         self.orm = ORM()
 
+        self.ws = None
+        for _ in range(3):
+            try:
+                self.ws = connect(config.WEBSOCKET_URL)
+            except ConnectionRefusedError:
+                time.sleep(2)
+        if self.ws is None:
+            self.logger.error('Unable to connect to websocket server')
+
     def __str__(self):
         return f'{self.name}-Logger'
 
-    def _run(self, channel, data):
-        try:
-            payload = json.loads(data)
-            payload = self.convert_time_fields(payload)
-            self.payload_action(payload)
+    def run(self):
+        self.logger.debug(f'start listening using websockets on {self.channel}')
+        while not self.stop_event.is_set():
+            try:
+                message = self.ws.recv(timeout=1)
+                message_dict = json.loads(message)
+                if message_dict.get('channel') == self.channel:
+                    try:
+                        payload = json.loads(message_dict.get('payload', '{}'))
+                        payload = self.convert_time_fields(payload)
+                        self.payload_action(payload)
 
-            if self.config.get('is_write_csv'):
-                self.save_to_csv(payload)
-            if self.config.get('is_write_db'):
-                self.commit_to_db(payload)
-        except DoubleEvent:
-            pass
-        except BrokenPipeError:
-            print(f'{self.name} process is down!')
-            return
-        except Exception as exc:
-            self.logger.exception(f'Unable to parse log payload of {self.name}: {exc}')
+                        if self.config.get('is_write_csv'):
+                            self.save_to_csv(payload)
+                        if self.config.get('is_write_db'):
+                            self.commit_to_db(payload)
+                    except DoubleEvent:
+                        pass
+                    except BrokenPipeError:
+                        print(f'{self.name} process is down!')
+                        return
+                    except Exception as exc:
+                        self.logger.exception(f'Unable to parse log payload of {self.name}: {exc}')
+            except TimeoutError:
+                continue
 
     def payload_action(self, payload):
         pass
@@ -380,7 +398,7 @@ class WebSocketServer(mp.Process):
                 await asyncio.sleep(0.1)
 
 
-class WebSocketClient(Subscriber):
+class WebSocketPublisher(Subscriber):
     def __init__(self, stop_event: threading.Event, log_queue, **kwargs):
         logging.getLogger("websockets").addHandler(logging.NullHandler())
         logging.getLogger("websockets").propagate = False
@@ -409,8 +427,8 @@ def start_management_subscribers(arena_shutdown_event, log_queue, subs_dict):
     threads = dict()
     threads['websocket_server'] = WebSocketServer(arena_shutdown_event)
     threads['websocket_server'].start()
-    threads['websocket_client'] = WebSocketClient(arena_shutdown_event, log_queue)
-    threads['websocket_client'].start()
+    threads['websocket_publisher'] = WebSocketPublisher(arena_shutdown_event, log_queue)
+    threads['websocket_publisher'].start()
     for topic, callback in subs_dict.items():
         threads[topic] = Subscriber(arena_shutdown_event, log_queue,
                                     config.subscription_topics[topic], callback)

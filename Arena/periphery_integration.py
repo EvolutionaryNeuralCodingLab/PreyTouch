@@ -24,7 +24,7 @@ class PeripheryIntegrator:
         if self.periphery_config and config.ARENA_ARDUINO_NAME in self.periphery_config:
             self.devices = self.periphery_config[config.ARENA_ARDUINO_NAME]['interfaces']
         else:
-            self.devices = []
+            self.devices = {}
 
     def save_config_to_file(self):
         with open(config.configurations["periphery"][0], 'w') as f:
@@ -32,6 +32,11 @@ class PeripheryIntegrator:
 
     def switch(self, name, state):
         assert state in [0, 1]
+        if name not in self.toggles:
+            self.logger.warning(f'No toggle named {name}; abort switch command')
+            return
+        if self.devices[name].get('nc_toggle'):
+            state = int(not state)
         self.mqtt_publish(config.mqtt['publish_topic'], f'["set","{name}",{state}]')
 
     def cam_trigger(self, state):
@@ -93,11 +98,11 @@ class PeripheryIntegrator:
 
     @property
     def toggles(self) -> list:
-        return [dev['name'] for dev in self.devices if dev['type'] == 'line']
+        return [k for k, dev in self.devices.items() if dev['type'] == 'line']
 
     @property
     def feeders(self) -> list:
-        feeds = [(dev['name'], dev['order']) for dev in self.devices if dev['type'] == 'feeder']
+        feeds = [(k, dev['order']) for k, dev in self.devices.items() if dev['type'] == 'feeder']
         return [x[0] for x in sorted(feeds, key=lambda x: x[1])]
 
 
