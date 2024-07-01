@@ -528,7 +528,8 @@ class ORM:
                     if k in ANIMAL_SETTINGS_LISTS:
                         animal_dict[k] = v.split(',')
             else:
-                self.logger.error('No Animal was found')
+                if animal_id != 'test':
+                    self.logger.error('No Animal was found')
                 animal_dict = {}
         return animal_dict
 

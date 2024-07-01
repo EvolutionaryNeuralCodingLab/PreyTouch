@@ -28,9 +28,8 @@ class AlliedVisionCamera(Camera):
                 cam.LineSelector.set('Line3')
                 cam.LineMode.set('Input')
                 cam.TriggerSource.set('Line3')
-
-                cam.TriggerMode.set('On')
                 cam.TriggerActivation.set('RisingEdge')
+                cam.TriggerMode.set('On')
                 self.logger.debug('configured trigger source')
             else:
                 cam.TriggerMode.set('Off')

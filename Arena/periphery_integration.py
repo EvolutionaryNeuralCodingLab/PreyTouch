@@ -12,7 +12,6 @@ from db_models import ORM
 import config
 
 
-
 class PeripheryIntegrator:
     """class for communicating with reptilearn's arena.py"""
     def __init__(self):
@@ -22,8 +21,8 @@ class PeripheryIntegrator:
         self.mqtt_client = mqtt.Client()
         self.orm = ORM()
         self.periphery_config = config.load_configuration('periphery')
-        if self.periphery_config and 'arena' in self.periphery_config:
-            self.devices = self.periphery_config['arena']['interfaces']
+        if self.periphery_config and config.ARENA_ARDUINO_NAME in self.periphery_config:
+            self.devices = self.periphery_config[config.ARENA_ARDUINO_NAME]['interfaces']
         else:
             self.devices = []
 
@@ -45,7 +44,7 @@ class PeripheryIntegrator:
 
     def change_trigger_fps(self, new_fps):
         new_duration = round(1000 / new_fps)
-        trig_inters = self.periphery_config['camera trigger']['interfaces'][0]
+        trig_inters = self.periphery_config[config.CAM_TRIGGER_ARDUINO_NAME]['interfaces'][0]
         trig_inters['pulse_len'] = new_duration
         self.save_config_to_file()
         next(utils.run_command('cd ../docker && docker-compose restart periphery'))

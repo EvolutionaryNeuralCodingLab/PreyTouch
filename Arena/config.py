@@ -142,6 +142,8 @@ mqtt = {
 }
 IR_LIGHT_NAME = env('IR_LIGHT_NAME', '', group='Periphery', desc='Name of infrared light in periphery config')
 DAY_LIGHT_NAME = env('DAY_LIGHT_NAME', '', group='Periphery', desc='Name of LED lights in periphery config')
+CAM_TRIGGER_ARDUINO_NAME = env('CAM_TRIGGER_ARDUINO_NAME', 'camera trigger', group='Periphery', desc='name of the camera trigger arduino in the periphery config')
+ARENA_ARDUINO_NAME = env('ARENA_ARDUINO_NAME', 'arena', group='Periphery', desc='name of the arena arduino in the periphery config')
 
 # Calibration
 MIN_CALIBRATION_IMAGES = env.int('MIN_CALIBRATION_IMAGES', 7, group='Calibration', desc='Nuber of minimum calibration images per camera')

@@ -37,6 +37,8 @@ class Agent:
         if not self.trials:
             return
         self.animal_id = animal_id or self.cache.get(cc.CURRENT_ANIMAL_ID)
+        if self.animal_id == 'test':
+            return
         self.init_history()
         self.load_history()
         self.next_trial_name = self.get_next_trial_name()

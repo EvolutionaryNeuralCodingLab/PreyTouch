@@ -164,7 +164,7 @@
                     let expName = data['experiment_name']
                     let blockId = data['block_id']
                     let openAppHost = data['open_app_host']
-                    let tempString = (!data['temperature'] || !data['temperature'].length) ? '' : 'Temperature:'
+                    let tempString = jQuery.isEmptyObject(data['temperature']) ? '' : 'Temperature:'
                     for (let sensor in data['temperature']) {
                         tempString += `\n ${sensor}: ${data['temperature'][sensor] ? data['temperature'][sensor].toFixed(1) : "-"}ºC`
                     }
@@ -310,7 +310,7 @@
         // Get animal ID
         setTimeout(() => {
           $.get('/get_current_animal').done(data => {
-              console.log(data)
+console.log(data)
               AnimalIDFields.values = data
             })
         }, 1000)
