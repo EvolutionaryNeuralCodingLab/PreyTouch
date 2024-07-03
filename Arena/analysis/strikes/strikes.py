@@ -22,11 +22,12 @@ NUM_POSE_FRAMES_PER_STRIKE = 30
 
 class StrikeAnalyzer:
     def __init__(self, loader: Loader = None, payload: dict = None, pose_df: pd.DataFrame = None,
-                 bug_traj: pd.DataFrame = None, is_y_pd=False):
+                 bug_traj: pd.DataFrame = None, is_y_pd=False, smooth_kernel=37):
         self.loader = loader
         self.payload = payload
         self.pose_df = pose_df
         self.bug_traj = bug_traj
+        self.smooth_kernel = smooth_kernel
         self.is_y_pd = is_y_pd  # if True, prediction distance is calculated by dy and not euclidean
         self.check_arguments()
         self.strike_position = (self.payload.get('x'), self.payload.get('y'))
@@ -43,7 +44,8 @@ class StrikeAnalyzer:
                 # smoothing of x and y
                 for c in ['x', 'y']:
                     self.pose_df[f'orig_{c}'] = self.pose_df[c].copy()
-                    self.pose_df[c] = savgol_filter(self.pose_df[c], window_length=37, polyorder=0, mode='nearest')
+                    if self.smooth_kernel:
+                        self.pose_df[c] = savgol_filter(self.pose_df[c], window_length=self.smooth_kernel, polyorder=0, mode='nearest')
             if self.bug_traj is None:
                 self.bug_traj = self.loader.traj_df
 

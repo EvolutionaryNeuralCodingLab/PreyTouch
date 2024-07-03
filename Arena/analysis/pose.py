@@ -92,7 +92,7 @@ class ArenaPose:
         self.is_initialized = False
         self.example_writer = None
 
-    def init(self, img, caliber_only=False):
+    def init(self, img, caliber_only=False, image_date=None):
         """
         Initialize the pose estimator and caliber.
 
@@ -107,8 +107,8 @@ class ArenaPose:
         if not caliber_only:
             self.predictor.init(img)
         if self.cam_name:
-            self.caliber = CharucoEstimator(self.cam_name, is_debug=False)
-            self.caliber.init(img)
+            self.caliber = CharucoEstimator(self.cam_name, is_debug=True)
+            self.caliber.init(img, image_date=image_date)
             if not self.caliber.is_on:
                 raise Exception('Could not initiate caliber; closing ArenaPose')
         self.is_initialized = True
@@ -145,7 +145,7 @@ class ArenaPose:
         if video_path:
             if not re.match(r'\w+_\d{8}T\d{6}', Path(video_path).stem):
                 return
-            cam_name, vid_date = Path(video_path).stem.split('_')
+            vid_date = self.get_date_from_video(video_path)
         self.caliber.set_image_date_and_load(vid_date)
 
     def load(self, video_path=None, video_db_id=None, only_load=False, prefix=''):
@@ -188,7 +188,7 @@ class ArenaPose:
     def _load_from_local_files(self, video_path: Path, only_load=False, prefix=''):
         if isinstance(video_path, str):
             video_path = Path(video_path)
-        if not self.is_initialized:
+        if not only_load and not self.is_initialized:
             self.init_from_video(video_path, caliber_only=True)
         cache_path = self.get_predicted_cache_path(video_path)
         if cache_path.exists():
@@ -225,8 +225,9 @@ class ArenaPose:
         @return:
         """
         db_video_id, video_path = self.check_video_inputs(db_video_id, video_path)
+        is_tracking_vid = 'tracking' in video_path
         frames_times = self.load_frames_times(db_video_id, video_path)
-        bug_traj = self.load_bug_trajectory(db_video_id, video_path)
+        bug_traj = self.load_bug_trajectory(db_video_id, video_path, is_tracking_vid)
 
         pose_df = []
         cap = cv2.VideoCapture(video_path)
@@ -244,7 +245,7 @@ class ArenaPose:
                 self.change_aruco_markers(video_path=video_path)
 
             timestamp = frames_times.loc[frame_id, 'time'].timestamp()
-            pred_row = self.predictor.predict(frame, frame_id)
+            pred_row, _ = self.predictor.predict(frame, frame_id)
             pred_row = self.analyze_frame(timestamp, pred_row, db_video_id)
             pred_row = self.add_bug_traj(pred_row, bug_traj, timestamp)
             if is_create_example_video:
@@ -347,27 +348,38 @@ class ArenaPose:
             with self.orm.session() as s:
                 vid = s.query(Video).filter_by(id=db_video_id).first()
                 if vid.frames is None:
-                    raise MissingFile(f'unable to find frames_timestamps in DB for video_id: {db_video_id}')
-                frames_ts = pd.DataFrame(vid.frames.items(), columns=['frame_id', 'time']).set_index('frame_id')
+                    if 'tracking' in video_path:
+                        frames_ts = self._load_frames_times_from_file(video_path)
+                    else:
+                        raise MissingFile(f'unable to find frames_timestamps in DB for video_id: {db_video_id}')
+                else:
+                    frames_ts = pd.DataFrame(vid.frames.items(), columns=['frame_id', 'time']).set_index('frame_id')
         else:
-            frames_output_dir = Path(video_path).parent / config.FRAMES_TIMESTAMPS_DIR
-            csv_path = frames_output_dir / Path(video_path).with_suffix('.csv').name
-            if not csv_path.exists():
-                raise MissingFile(f'unable to find frames_timestamps in {csv_path}')
-            frames_ts = pd.read_csv(csv_path, names=['frame_id', 'time'], header=0).set_index('frame_id')
+            frames_ts = self._load_frames_times_from_file(video_path)
 
         frames_ts['time'] = pd.to_datetime(frames_ts.time, unit='s', utc=True).dt.tz_convert(
             'Asia/Jerusalem').dt.tz_localize(None)
         frames_ts.index = frames_ts.index.astype(int)
         return frames_ts
     
-    def load_bug_trajectory(self, db_video_id: int, video_path: str):
+    def _load_frames_times_from_file(self, video_path: str):
+        frames_output_dir = Path(video_path).parent / config.FRAMES_TIMESTAMPS_DIR
+        csv_path = frames_output_dir / Path(video_path).with_suffix('.csv').name
+        if not csv_path.exists():
+            raise MissingFile(f'unable to find frames_timestamps in {csv_path}')
+        return pd.read_csv(csv_path, names=['frame_id', 'time'], header=0).set_index('frame_id')
+
+    def load_bug_trajectory(self, db_video_id: int, video_path: str, is_tracking_vid=False):
+        if is_tracking_vid:
+            return pd.DataFrame(columns=['timestamp', 'bug_x', 'bug_y', 'trial_id'])
+        
         if self.is_use_db:
             bug_trajs = []
             with self.orm.session() as s:
                 vid = s.query(Video).filter_by(id=db_video_id).first()
                 if vid.block_id is None:
                     raise MissingFile(f'unable to find block_id in DB for video_id: {db_video_id}')
+                
                 blk = s.query(Block).filter_by(id=vid.block_id).first()
                 for tr in blk.trials:
                     if tr.bug_trajectory is not None:
@@ -465,6 +477,10 @@ class ArenaPose:
         preds_dir.mkdir(exist_ok=True)
         vid_name = Path(video_path).with_suffix('.parquet').name
         return preds_dir / f'{self.predictor.model_name}__{vid_name}'
+
+    def get_date_from_video(self, video_path):
+        _, vid_date = Path(video_path).stem.split('_')
+        return vid_date
 
     def is_moved(self, x, y):
         return not self.last_commit or distance.euclidean(self.last_commit[1:], (x, y)) < MOVE_MIN_DISTANCE
@@ -1190,13 +1206,16 @@ def run_predict(pred_name, images, cam_name='', image_date=None, is_base64=False
 
 
 class VideoPoseScanner:
-    def __init__(self, cam_name=config.NIGHT_POSE_CAMERA, is_use_db=True, model_path=None, animal_ids=None, is_replace_exp_dir=True):
+    def __init__(self, cam_name=config.NIGHT_POSE_CAMERA, is_use_db=True, model_path=None, animal_ids=None, is_replace_exp_dir=False,
+                 start_date=None, end_date=None):
         self.cam_name = cam_name
         self.is_use_db = is_use_db
         self.model_path = model_path
         if animal_ids and isinstance(animal_ids, str):
             animal_ids = [animal_ids]
         self.animal_ids = animal_ids
+        self.start_date = start_date
+        self.end_date = end_date
         self.is_replace_exp_dir = is_replace_exp_dir
         self.logger = get_logger('Video-Pose-Scanner')
         self.orm = ORM() if is_use_db else None
@@ -1245,7 +1264,12 @@ class VideoPoseScanner:
         # self.logger.info('Start scan of video predictions in the database')
         with self.orm.session() as s:
             pred_kwargs = {'predictions': None} if skip_committed else {}
-            vids = s.query(Video).filter_by(cam_name=self.cam_name, **pred_kwargs).all()
+            vids = s.query(Video).filter_by(cam_name=self.cam_name, **pred_kwargs)
+            if self.start_date is not None:
+                vids = vids.filter(Video.start_time >= self.start_date)
+            if self.end_date is not None:
+                vids = vids.filter(Video.start_time <= self.end_date)
+            vids = vids.all()
             videos = []
             for vid in vids:
                 if not vid.path.endswith('.mp4') or not vid.animal_id.startswith('PV') \
@@ -1382,14 +1406,31 @@ class VideoPoseScanner:
 
 if __name__ == '__main__':
     matplotlib.use('TkAgg')
+
+    # res = []
+    # orm = ORM()
+    # with orm.session() as s:
+    #     for exp in s.query(Experiment).filter_by(animal_id='PV99').all():
+    #         for blk in exp.blocks:
+    #             if blk.movement_type == 'low_horizontal':
+    #                 res.append({'block_id': blk.id, 'time': blk.start_time})
+    # res = pd.DataFrame(res)
+    # print(res.time.min())
+    # print(res.time.max())
+
+
     # DLCArenaPose('front').test_loaders(19)
     # print(get_videos_to_predict('PV148'))
     # commit_video_pred_to_db(animal_ids="PV163")
-    # VideoPoseScanner().fix_calibrations()
-    # VideoPoseScanner(cam_name='front').predict_all(max_videos=1, skip_committed=False)
+    # VideoPoseScanner(cam_name='front').fix_calibrations()
+    start, end = datetime.datetime.strptime('20230720', '%Y%m%d'), datetime.datetime.strptime('20230723', '%Y%m%d')
+    VideoPoseScanner(cam_name='top', is_use_db=True, animal_ids=['PV99'], 
+                     start_date=start, end_date=end).predict_all(skip_committed=True)
+    
+    # VideoPoseScanner(cam_name='front', is_use_db=True, animal_ids=['PV91', 'PV163']).predict_all(skip_committed=True)
     # VideoPoseScanner(animal_id='PV163').add_bug_trajectory(videos=[Path('/media/reptilearn4/experiments/PV163/20240201/block10/videos/front_20240201T173016.mp4')])
-    img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/Archive/front/20221205T093815_front.png', 0)
-    print(run_predict('pogona_head', [img]))
+    # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/Archive/front/20221205T093815_front.png', 0)
+    # print(run_predict('pogona_head', [img]))
     # DLCArenaPose('front', is_use_db=True).predict_frame(img)
     # plt.imshow(img)
     # plt.show()

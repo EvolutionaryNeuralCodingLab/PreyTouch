@@ -200,7 +200,7 @@ class CharucoEstimator:
     def __str__(self):
         return self.id_key
 
-    def init(self, img, img_shape=None, is_plot=False):
+    def init(self, img, img_shape=None, is_plot=False, image_date=None):
         try:
             if img_shape is None:
                 img_shape = img.shape[:2]
@@ -209,7 +209,7 @@ class CharucoEstimator:
                 if json.dumps(img_shape) != json.dumps(self.resize_dim):
                     raise Exception(f'Image size does not fit. expected: {tuple(self.resize_dim)}, received: {tuple(img_shape)}')
 
-            self.set_image_date_and_load(self.image_date)
+            self.set_image_date_and_load(image_date or self.image_date)
             self.state = 2
             if self.is_debug:
                 self.logger.info(f'started real-world-coordinates transformer for frames of shape: {img_shape}')

@@ -1,5 +1,6 @@
 import json
 import cv2
+import time
 from datetime import timedelta
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -29,13 +30,14 @@ from analysis.pose import DLCArenaPose
 
 
 class TrialPose:
-    def __init__(self, cam_name='back', orm=None, is_dwh=False, folder_name=None, output_dir=None):
+    def __init__(self, cam_name='back', orm=None, is_dwh=False, folder_name=None, output_dir=None, between_frames_delay=0.1):
         self.is_dwh = is_dwh
         self.cam_name = cam_name
         self.folder_name = folder_name
         self.output_dir = output_dir or f'{config.OUTPUT_DIR}/extracted_videos'
         self.orm = orm if orm is not None else ORM()
         self.animal_id = None  # extracted from DB
+        self.between_frames_delay = between_frames_delay
         self.dlc = DLCArenaPose('front', is_use_db=True, orm=self.orm, commit_bodypart=None)
     
     def play_trial(self, trial_id, is_save_video=False):
@@ -53,26 +55,32 @@ class TrialPose:
             if not Path(video_path).exists():
                 print(f'{video_path} does not exist')
                 continue
-
+            
+            print(video_path)
             cap = cv2.VideoCapture(video_path)
             start_frame, end_frame = self.get_start_end_frame(pf_, strike_id, sec_before, sec_after)
             cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
             fps = cap.get(cv2.CAP_PROP_FPS)
             for i in range(start_frame, end_frame + 1):
                 ret, frame = cap.read()
-                put_text(f'Angle={np.math.degrees(pf_.loc[i].angle):.0f}', frame, frame.shape[1]-250, 30)
-                frame = self.plot_on_frame(frame, i, pf_)
+                put_text(f'Frame: {i}', frame, 20, 60)
+                if i in pf_.index:
+                    put_text(f'Angle={np.math.degrees(pf_.loc[i].angle):.0f}', frame, frame.shape[1]-250, 30)
+                    put_text(f'Dev.Angle={pf_.loc[i].dev_angle:.0f}', frame, frame.shape[1]-250, 60)
+                    put_text(f'Bug_x={pf_.loc[i].bug_x:.0f}', frame, frame.shape[1]-250, 90)
+                # frame = self.plot_on_frame(frame, i, pf_)
                 if is_save_video:
                     example_path = self.get_save_path(trial_id, strike_id)
                     Path(example_path).parent.mkdir(parents=True, exist_ok=True)
-                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     self.dlc.write_to_example_video(frame, i, pd.DataFrame(pf_.loc[i]).transpose(), fps, example_path=example_path, is_plot_preds=False)
                 else:
-                    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+                    # frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
                     frame = cv2.resize(frame, None, None, fx=0.5, fy=0.5)
                     cv2.imshow(f'Trial {trial_id}', frame)
                     if cv2.waitKey(25) & 0xFF == ord('q'):
                         break
+                    time.sleep(self.between_frames_delay)
             self.dlc.close_example_writer()
             cv2.destroyAllWindows()
             cap.release()
@@ -180,10 +188,11 @@ class TrialPose:
         return pose_df
 
     def merge_all(self, pose_df, bug_trajs, strikes_list):
+        if 'bug_x' in pose_df.columns:
+            pose_df = pose_df.drop(columns=['bug_x', 'bug_y'])
         bug_trajs = bug_trajs.rename(columns={'x': 'bug_x', 'y': 'bug_y'})
         bug_trajs['time'] = pd.to_datetime(bug_trajs['time']).dt.tz_localize(None)
         bug_trajs = bug_trajs.sort_values(by='time')
-
         df = pd.merge_asof(left=pose_df, right=bug_trajs, left_on='time', right_on='time', 
                                 direction='nearest', tolerance=pd.Timedelta('100 ms'))
         df = df.dropna(subset='bug_x')
@@ -262,7 +271,7 @@ def get_trials_ids(animal_id, movement_type=None, orm=None):
 
 if __name__ == '__main__':
     # TrialPose(cam_name='back', is_dwh=True).play_strike(8615, is_save_video=True)
-    TrialPose(cam_name='back').extract_all_movement_type_strikes('PV91', 'accelerate', skip_created=True)
+    TrialPose(cam_name='back', is_dwh=True).play_trial(11185)
     # orm = ORM()
     # for tid in get_trials_ids('PV163', movement_type='accelerate', orm=orm):
     #     try:
