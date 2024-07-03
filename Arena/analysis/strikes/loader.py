@@ -11,7 +11,7 @@ import config
 from analysis.pose import ArenaPose
 from analysis.pose_utils import put_text
 from image_handlers.video_writers import ImageIOWriter
-from db_models import ORM, Block, Strike, Trial, Temperature
+from db_models import ORM, Block, Strike, Trial, Temperature, Experiment
 
 DEFAULT_OUTPUT_DIR = '/data/Pogona_Pursuit/output'
 
@@ -21,15 +21,17 @@ class MissingStrikeData(Exception):
 
 
 class Loader:
-    def __init__(self, strike_db_id, cam_name, is_load_pose=True, is_use_db=True, is_debug=True, orm=None,
-                 sec_before=3, sec_after=2):
-        self.strike_db_id = strike_db_id
+    def __init__(self, db_id, cam_name, is_load_pose=True, is_use_db=True, is_debug=True, orm=None,
+                 sec_before=3, sec_after=2, is_dwh=False, is_trial=False):
+        self.db_id = db_id
+        self.is_trial = is_trial
         self.cam_name = cam_name
         self.is_load_pose = is_load_pose
         self.is_use_db = is_use_db
         self.is_debug = is_debug
         self.sec_before = sec_before
         self.sec_after = sec_after
+        self.is_dwh = is_dwh
         self.orm = orm if orm is not None else ORM()
         self.frames_delta = None
         self.n_frames_back = None
@@ -37,7 +39,9 @@ class Loader:
         self.bug_traj_strike_id = None
         self.bug_traj_before_strike = None
         self.strike_frame_id = None
+        self.trial_frames_ids = (None, None)
         self.video_path = None
+        self.arena_name = None
         self.avg_temperature = None
         self.strike_video_writer = None
         self.dlc_pose = ArenaPose(cam_name, 'deeplabcut', is_use_db=is_use_db, orm=orm)
@@ -47,24 +51,31 @@ class Loader:
         self.load()
 
     def __str__(self):
-        return f'Strike-Loader:{self.strike_db_id}'
+        return f'Strike-Loader:{self.db_id}' if not self.is_trial else f'Trial-Loader:{self.db_id}'
 
     def load(self):
         with self.orm.session() as s:
-            n_tries = 3
-            for i in range(n_tries):
-                try:
-                    strk = s.query(Strike).filter_by(id=self.strike_db_id).first()
-                    break
-                except Exception as exc:
-                    time.sleep(0.2)
-                    if i >= n_tries - 1:
-                        raise exc
-            if strk is None:
-                raise MissingStrikeData(f'could not find strike id: {self.strike_db_id}')
+            if not self.is_trial:
+                n_tries = 3
+                for i in range(n_tries):
+                    try:
+                        strk = s.query(Strike).filter_by(id=self.db_id).first()
+                        break
+                    except Exception as exc:
+                        time.sleep(0.2)
+                        if i >= n_tries - 1:
+                            raise exc
+                if strk is None:
+                    raise MissingStrikeData(f'could not find strike id: {self.db_id}')
+                self.info = {k: v for k, v in strk.__dict__.items() if not k.startswith('_')}
+                trial_id = strk.trial_id
+            else:
+                trial_id, strk = self.db_id, None
 
-            self.info = {k: v for k, v in strk.__dict__.items() if not k.startswith('_')}
-            trial = s.query(Trial).filter_by(id=strk.trial_id).first()
+            trial = s.query(Trial).filter_by(id=trial_id).first()
+            blk = s.query(Block).filter_by(id=trial.block_id).first()
+            exp = s.query(Experiment).filter_by(id=blk.experiment_id).first()
+            self.arena_name = exp.arena
             if trial is None:
                 raise MissingStrikeData('No trial found in DB')
 
@@ -77,10 +88,10 @@ class Loader:
         if self.traj_df.empty:
             raise MissingStrikeData('traj_df is empty')
         self.traj_df['time'] = pd.to_datetime(self.traj_df.time).dt.tz_localize(None)
-        self.bug_traj_strike_id = (strk.time - self.traj_df.time).dt.total_seconds().abs().idxmin()
-
-        n = self.sec_before / self.traj_df['time'].diff().dt.total_seconds().mean()
-        self.bug_traj_before_strike = self.traj_df.loc[self.bug_traj_strike_id-n:self.bug_traj_strike_id].copy()
+        if not self.is_trial:
+            self.bug_traj_strike_id = (strk.time - self.traj_df.time).dt.total_seconds().abs().idxmin()
+            n = self.sec_before / self.traj_df['time'].diff().dt.total_seconds().mean()
+            self.bug_traj_before_strike = self.traj_df.loc[self.bug_traj_strike_id-n:self.bug_traj_strike_id].copy()
 
     def get_bug_traj_around_strike(self, sec_before=None, sec_after=None):
         if self.traj_df.empty:
@@ -100,11 +111,16 @@ class Loader:
             frames_times = self.load_frames_times(vid)
             # check whether strike's time is in the loaded frames_times
             if not frames_times.empty and \
-                    (frames_times.iloc[0].time <= strk.time <= frames_times.iloc[-1].time):
+                    (self.is_trial or (frames_times.iloc[0].time <= strk.time <= frames_times.iloc[-1].time)):
                 # if load pose isn't needed finish here
-                self.strike_frame_id = (strk.time - frames_times.time).dt.total_seconds().abs().idxmin()
-                if not self.is_use_db:
-                    self.set_video_path(vid)
+                if not self.is_trial:
+                    self.strike_frame_id = (strk.time - frames_times.time).dt.total_seconds().abs().idxmin()
+                else:
+                    times = [self.traj_df['time'].iloc[i] for i in [0, -1]]
+                    self.trial_frames_ids = [(t - frames_times.time).dt.total_seconds().abs().idxmin() for t in times]
+                # if not self.is_use_db:
+                self.set_video_path(vid)
+
                 if not self.is_load_pose:
                     self.frames_df = frames_times
                 # otherwise, load all pose data around strike frame
@@ -127,8 +143,13 @@ class Loader:
             pose_df = self.dlc_pose.load(video_path=self.video_path, only_load=True)
         else:
             pose_df = self.dlc_pose.load(video_db_id=vid.id)
-        first_frame = max(self.strike_frame_id - self.n_frames_back, pose_df.index[0])
-        last_frame = min(self.strike_frame_id + self.n_frames_forward, pose_df.index[-1])
+
+        if not self.is_trial:
+            first_frame = max(self.strike_frame_id - self.n_frames_back, pose_df.index[0])
+            last_frame = min(self.strike_frame_id + self.n_frames_forward, pose_df.index[-1])
+        else:
+            first_frame, last_frame = self.trial_frames_ids
+
         self.frames_df = pose_df.loc[first_frame:last_frame].copy()
         self.frames_df['time'] = pd.to_datetime(self.frames_df.time, unit='s')
 
@@ -137,10 +158,14 @@ class Loader:
         # fix for cases in which the analysis runs from other servers
         if DEFAULT_OUTPUT_DIR != config.OUTPUT_DIR and video_path.as_posix().startswith(DEFAULT_OUTPUT_DIR):
             video_path = Path(video_path.as_posix().replace(DEFAULT_OUTPUT_DIR, config.OUTPUT_DIR))
+        if self.is_dwh:
+            # TODO: move to config
+            video_path = Path(f'/media/sil2/Data/regev/experiments/{self.arena_name}/' + '/'.join(video_path.parts[-5:]))
         if not video_path.exists():
             if self.is_debug:
                 print(f'Video path does not exist: {video_path}')
-            raise Exception(f'Video path {video_path} does not exist')
+            if not self.is_use_db:  # raise an exception only if not on DB mode
+                raise Exception(f'Video path {video_path} does not exist')
         self.video_path = video_path
 
     def update_info_with_block_data(self, blk: Block):
@@ -182,10 +207,13 @@ class Loader:
         cap.release()
 
     def gen_frames_around_strike(self, cam_name=None, n_frames_back=None, n_frames_forward=None, center_frame=None, step=1):
-        n_frames_back, n_frames_forward = n_frames_back or self.n_frames_back, n_frames_forward or self.n_frames_forward
-        center_frame = center_frame or self.strike_frame_id
-        start_frame = center_frame - (n_frames_back * step)
-        frame_ids = [i for i in range(start_frame, start_frame + step * (n_frames_back + n_frames_forward), step)]
+        if self.is_trial:
+            frame_ids = [i for i in range(*self.trial_frames_ids, step)]
+        else:
+            n_frames_back, n_frames_forward = n_frames_back or self.n_frames_back, n_frames_forward or self.n_frames_forward
+            center_frame = center_frame or self.strike_frame_id
+            start_frame = center_frame - (n_frames_back * step)
+            frame_ids = [i for i in range(start_frame, start_frame + step * (n_frames_back + n_frames_forward), step)]
     
         video_path = self.video_path.as_posix()
         if cam_name is not None and cam_name != 'front':
@@ -217,38 +245,9 @@ class Loader:
     def get_bodypart_pose(self, bodypart):
         return pd.concat([pd.to_datetime(self.frames_df['time'], unit='s'), self.frames_df[bodypart]], axis=1)
 
-    # def load_tongues_out(self):
-    #     if not self.is_load_tongue:
-    #         return
-    #     toa = TongueOutAnalyzer(is_debug=self.is_debug)
-    #     cache_path = self.dlc_pose.get_predicted_cache_path(self.video_path).parent
-    #     cache_path /= f'{self}_{toa.identifier}_{self.n_frames_back}_{self.n_frames_forward}.pkl'
-    #     if cache_path.exists():
-    #         res = pd.read_pickle(cache_path)
-    #     else:
-    #         res = {}
-    #         for i, frame in self.gen_frames_around_strike():
-    #             label, _ = toa.tr.predict(frame)
-    #             res[i] = label == TONGUE_CLASS
-    #             # self.frames_df.loc[i, [TONGUE_COL]] = 1
-    #             # cv2.imwrite(f'{TONGUE_PREDICTED_DIR}/{self.video_path.stem}_{i}.jpg', frame)
-    #         res = pd.Series(res, name=TONGUE_COL)
-    #         res.to_pickle(cache_path.as_posix())
-    #
-    #     self.frames_df = self.frames_df.merge(res, left_index=True, right_index=True, how='left')
-
-    # def plot_strike_events(self, n_frames_back=100, n_frames_forward=20):
-    #     plt.figure()
-    #     plt.axvline(self.strike_frame_id, color='r')
-    #     start_frame = self.strike_frame_id - n_frames_back
-    #     end_frame = start_frame + n_frames_back + n_frames_forward
-    #     plt.xlim([start_frame, end_frame])
-    #     for i in range(start_frame, end_frame):
-    #         tongue_val = self.frames_df[TONGUE_COL][i]
-    #         if tongue_val == 1:
-    #             plt.axvline(i, linestyle='--', color='b')
-    #     plt.title(str(self))
-    #     plt.show()
+    def play_trial(self, cam_name=None, annotations=None, between_frames_delay=None, save_video=False):
+        if self.is_load_pose:
+            nose_df = self.frames_df['nose']
 
     def play_strike(self, cam_name=None, n_frames_back=None, n_frames_forward=None, annotations=None,
                     between_frames_delay=None, save_video=False):
@@ -290,7 +289,7 @@ class Loader:
         output_dir.mkdir(parents=True, exist_ok=True)
         if self.strike_video_writer is None:
             is_color = cam_name == 'back'
-            video_path = (output_dir / f'strike_{self.strike_db_id}_{cam_name}.mp4').as_posix()
+            video_path = (output_dir / f'strike_{self.db_id}_{cam_name}.mp4').as_posix()
             self.strike_video_writer = ImageIOWriter(frame, 30, None, cam_name, is_color, full_path=video_path)
         
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
@@ -298,11 +297,11 @@ class Loader:
 
     def get_block_info(self):
         with self.orm.session() as s:
-            strk = s.query(Strike).filter_by(id=self.strike_db_id).first()
+            strk = s.query(Strike).filter_by(id=self.db_id).first()
             blk = s.query(Block).filter_by(id=strk.block_id).first()
             return blk.__dict__
 
 
 if __name__ == "__main__":
-    ld = Loader(3547, 'front', is_use_db=False, sec_before=0.5, sec_after=0)
+    ld = Loader(4587, 'front', is_use_db=True, is_dwh=True, is_trial=True)
     ld.play_strike(cam_name='back')

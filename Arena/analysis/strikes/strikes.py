@@ -111,7 +111,7 @@ class StrikeAnalyzer:
         if only_save_to:
             path = Path(only_save_to)
             assert path.is_dir()
-            fig.savefig(path / f'{self.loader.strike_db_id}.jpg')
+            fig.savefig(path / f'{self.loader.db_id}.jpg')
             plt.close(fig)
         elif only_return:
             fig.canvas.draw()
