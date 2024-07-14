@@ -38,7 +38,7 @@ class Calibrator:
         self.newcameramtx = None
         self.resize_dim = resize_dim
         self.calib_images_date = None
-        self.current_undistort_folder = Path(config.CLIBRATION_DIR) / 'undistortion' / self.cam_name
+        self.current_undistort_folder = Path(config.CALIBRATION_DIR) / 'undistortion' / self.cam_name
         if not self.current_undistort_folder.exists():
             self.current_undistort_folder.mkdir(parents=True, exist_ok=True)
         self.load_calibration()  # load the latest undistortion calibration
@@ -147,7 +147,7 @@ class Calibrator:
             pickle.dump(self.calib_params, f)
 
     def get_calib_images(self, calib_dir=None):
-        calib_dir = Path(calib_dir) or (Path(config.CLIBRATION_DIR) / self.cam_name)
+        calib_dir = Path(calib_dir) or (Path(config.CALIBRATION_DIR) / self.cam_name)
         if not calib_dir.exists():
             raise CalibrationError(f'{calib_dir} not exist')
         img_files = list(calib_dir.glob('*.png'))
@@ -182,7 +182,7 @@ class CharucoEstimator:
         self.id_key = 'id'
         self.cached_params = ['homography']
 
-        self.current_realworld_folder = Path(config.CLIBRATION_DIR) / 'real_world' / self.cam_name
+        self.current_realworld_folder = Path(config.CALIBRATION_DIR) / 'real_world' / self.cam_name
         if not self.current_realworld_folder.exists():
             self.current_realworld_folder.mkdir(parents=True, exist_ok=True)
         self.calibrator = Calibrator(cam_name, resize_dim=resize_dim)

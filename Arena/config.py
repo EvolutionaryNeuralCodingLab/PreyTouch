@@ -30,7 +30,7 @@ IS_GPU = env.bool('IS_GPU', True, group='General', desc='Whether the system has 
 # Output Folders
 CAPTURE_IMAGES_DIR = env('CAPTURE_IMAGES_DIR', f'{OUTPUT_DIR}/captures', is_map=False)
 RECORDINGS_OUTPUT_DIR = env('RECORDINGS_OUTPUT_DIR', f'{OUTPUT_DIR}/recordings', is_map=False)
-CLIBRATION_DIR = env('CLIBRATION_DIR', f'{OUTPUT_DIR}/calibrations', is_map=False)
+CALIBRATION_DIR = env('CALIBRATION_DIR', f'{OUTPUT_DIR}/calibrations', is_map=False)
 EXPERIMENTS_DIR = env('EXPERIMENTS_DIR', f"{OUTPUT_DIR}/experiments", is_map=False)
 
 # Application
