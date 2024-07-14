@@ -56,6 +56,11 @@
                         </div>
                     </div>
 
+                    <div class="col mb-3">
+                        <label for="calib-is-rotated" class="form-check-label">Is Rotated Board</label>
+                        <input id="calib-is-rotated" type="checkbox" class="form-control-sm">
+                    </div>
+
                 </form>
             </div>
 
@@ -130,9 +135,12 @@
             if ((target === 'undistort') && (Object.entries(urls).length < Number("{{min_calib_images}}"))) {
                 window.alert("Must upload at least {{ min_calib_images }} images for undistortion")
                 return
-            } else if ((target === 'realworld') && (Object.entries(urls).length !== 1)) {
-                window.alert("Must upload 1 aruco image")
-                return
+            } else if (target === 'realworld') {
+                res['is_rotated'] = $("#calib-is-rotated").is(":checked")
+                if (Object.entries(urls).length !== 1) {
+                    window.alert("Must upload 1 aruco image")
+                    return   
+                }
             }
             $.ajax({
                 url: `/run_calibration/${target}`,

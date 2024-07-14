@@ -244,7 +244,7 @@ class ArenaPose:
                 self.change_aruco_markers(video_path=video_path)
 
             timestamp = frames_times.loc[frame_id, 'time'].timestamp()
-            pred_row = self.predictor.predict(frame, frame_id)
+            pred_row, _ = self.predictor.predict(frame, frame_id)
             pred_row = self.analyze_frame(timestamp, pred_row, db_video_id)
             pred_row = self.add_bug_traj(pred_row, bug_traj, timestamp)
             if is_create_example_video:
@@ -395,6 +395,8 @@ class ArenaPose:
 
         for col in ['bug_x', 'bug_y', 'trial_id']:
             if dt.min() < 0.03:  # in case the diff is bigger than 30 msec, it means that this frame is not with bug.
+                if col not in bug_traj.columns:
+                    continue
                 pred_row[(col, '')] = bug_traj.loc[dt.idxmin(), col]
                 if col == 'bug_x' and config.IS_SCREEN_CONFIGURED_FOR_POSE:
                     pred_row[('bug_x_cm', '')] = config.SCREEN_START_X_CM + (bug_traj.loc[dt.idxmin(), col] * config.SCREEN_PIX_CM)
@@ -1212,8 +1214,7 @@ class VideoPoseScanner:
             try:
                 if self.dlc.get_predicted_cache_path(video_path).exists():
                     continue
-                pose_df = self.dlc.predict_video(video_path=video_path, is_create_example_video=False, 
-                                                 prefix=f'({i+1}/{len(videos)}) ', is_tqdm=is_tqdm)
+                pose_df = self.predict_video(video_path, prefix=f'({i+1}/{len(videos)}) ', is_tqdm=is_tqdm)
                 success_count += 1
 
                 if self.is_use_db: # commit the video predictions to the database
@@ -1225,6 +1226,12 @@ class VideoPoseScanner:
             except Exception as exc:
                 self.print_cache(exc, errors_cache)
 
+    def predict_video(self, video_path, prefix='', is_tqdm=True):
+        pose_df = self.dlc.predict_video(video_path=video_path, is_create_example_video=False, 
+                                         prefix=prefix, is_tqdm=is_tqdm)
+        return pose_df
+        
+    
     def commit_video_prediction(self, video_path, pose_df):
         pose_df = pose_df.dropna(subset=[('nose', 'x')])
         animal_id_ = Path(video_path).parts[-5]
@@ -1381,15 +1388,16 @@ class VideoPoseScanner:
 
 
 if __name__ == '__main__':
-    matplotlib.use('TkAgg')
+    # matplotlib.use('TkAgg')
     # DLCArenaPose('front').test_loaders(19)
     # print(get_videos_to_predict('PV148'))
     # commit_video_pred_to_db(animal_ids="PV163")
     # VideoPoseScanner().fix_calibrations()
-    # VideoPoseScanner(cam_name='front').predict_all(max_videos=1, skip_committed=False)
+    # VideoPoseScanner(cam_name='top', animal_ids=['PV157'], is_use_db=False)
+    VideoPoseScanner(cam_name='top', animal_ids=['PV157'], is_use_db=False).predict_video('/data/Pogona_Pursuit/output/experiments/PV157/20240307/block2/videos/top_20240307T141316.mp4')
     # VideoPoseScanner(animal_id='PV163').add_bug_trajectory(videos=[Path('/media/reptilearn4/experiments/PV163/20240201/block10/videos/front_20240201T173016.mp4')])
-    img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/Archive/front/20221205T093815_front.png', 0)
-    print(run_predict('pogona_head', [img]))
+    # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/Archive/front/20221205T093815_front.png', 0)
+    # print(run_predict('pogona_head', [img]))
     # DLCArenaPose('front', is_use_db=True).predict_frame(img)
     # plt.imshow(img)
     # plt.show()

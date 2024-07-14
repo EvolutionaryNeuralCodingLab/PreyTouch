@@ -15,7 +15,7 @@ import utils
 from loggers import get_logger
 
 ARUCO_DICT = cv2.aruco.DICT_4X4_1000
-ARUCO_IDS = np.arange(240).tolist()
+ARUCO_IDS = np.arange(config.NUM_ARUCO_MARKERS).tolist()
 CHARUCO_COLS = 8
 DATE_FORMAT = '%Y%m%dT%H%M%S'
 
@@ -253,6 +253,8 @@ class CharucoEstimator:
             assert Path(image_path).exists(), f'Image path does not exist: {image_path}'
             self.markers_image_date = Path(image_path).stem.split('_')[0]
         else:
+            if isinstance(image_date, datetime):
+                image_date = image_date.strftime(DATE_FORMAT)
             self.markers_image_date = image_date
 
         frame = cv2.imread(image_path)
@@ -265,18 +267,20 @@ class CharucoEstimator:
             frame = cv2.cvtColor(frame.copy(), cv2.COLOR_GRAY2RGB)
         return frame, gray_frame
 
-    def find_aruco_markers(self, image_path, image_date=None, is_plot=True):
+    def find_aruco_markers(self, image_path, image_date=None, is_plot=True, is_rotated=False):
         frame, gray_frame = self.load_aruco_image(image_path, image_date)
         self.logger.info(f'Start Aruco marker detection for image size: {frame.shape}')
         # detect Charuco markers
         marker_corners, marker_ids, rejected = cv2.aruco.detectMarkers(gray_frame, self.arucoDict, parameters=self.arucoParams)
+        if marker_ids is None:
+            raise Exception('Could not find aruco markers')
         # sort markers ids
         marker_corners = [marker_corners[i] for i in marker_ids.ravel().argsort()]
         marker_ids.sort(axis=0)
         self.validate_detected_markers(marker_ids)
-        # create dataset for PnP using aruco top-left corner detections
-        image_points_2D = np.vstack([m[0][0] for m in marker_corners]).astype('float32')
-        real_world_points_3D = self.get_real_world_points(marker_ids).astype('float32')
+        # create dataset for PnP using aruco top-left (in regular and bottom-right in roatated board) corner detections
+        image_points_2D = np.vstack([m[0][0 if not is_rotated else 2] for m in marker_corners]).astype('float32')
+        real_world_points_3D = self.get_real_world_points(marker_ids, is_rotated=is_rotated).astype('float32')
         # estimate homography matrix
         self.homography = self.estimate_homography(image_points_2D, real_world_points_3D[:, :2])
         err_text = self.print_detection_error(image_points_2D, real_world_points_3D, marker_ids)
@@ -318,21 +322,23 @@ class CharucoEstimator:
         print(f'The following markers were not detected: {missing_aruco}')
 
     @staticmethod
-    def get_real_world_points(marker_ids, n=1000) -> pd.DataFrame:
+    def get_real_world_points(marker_ids, n=config.NUM_ARUCO_MARKERS, is_rotated=False) -> pd.DataFrame:
         df = []
-        is_even_row = True
+        is_even_row = not is_rotated  # regularilly 1st row is even, but if rotated it's odd
         col = 0
         row = 0
         aruco_outer_size = 2 * config.ARUCO_MARKER_SIZE
-        for i in range(n):
+        iter = range(n) if not is_rotated else range(n-1, -1, -1)
+        for i in iter:
             df.append({'marker_id': i, 'row': row, 'col': col,
-                        'x': (2 * col + 1 if row % 2 else 2 * col) * aruco_outer_size,
+                        'x': (2 * col + 1 if not is_even_row else 2 * col) * aruco_outer_size,
                         'y': row * aruco_outer_size})
             col += 1
             if (is_even_row and not (col % CHARUCO_COLS)) or (not is_even_row and not (col % (CHARUCO_COLS - 1))):
                 row += 1
                 is_even_row = not is_even_row
                 col = 0
+                
         df = pd.DataFrame(df).set_index('marker_id')
         df['z'] = 0
         df = df.loc[marker_ids.ravel()][['x', 'y', 'z']].values
@@ -346,8 +352,9 @@ class CharucoEstimator:
             cv2.circle(frame, top_left, 2, (255, 0, 255), 3)
             # real_x, real_y = real_world_points_3D[i, :2]
             # real_label = f'{marker_id} ({real_x:.1f},{real_y:.1f})'
-            # cv2.putText(frame, real_label, top_right, font, 1.5, (255, 255, 255), 7, line_type)
-            # cv2.putText(frame, real_label, top_right, font, 1.5, (255, 0, 255), 3, line_type)
+            real_label = f'{marker_id}'
+            cv2.putText(frame, real_label, top_right, font, 1.5, (255, 255, 255), 7, line_type)
+            cv2.putText(frame, real_label, top_right, font, 1.5, (255, 0, 255), 3, line_type)
         frame = self.plot_calibrated_line(frame)
         return frame
 

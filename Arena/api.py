@@ -339,7 +339,8 @@ def run_calibration(mode):
                 err_text = calib.calibrate_camera(img_dir=tmpdirname, calib_date=calib_date)
                 img = cv2.imread(calib.calib_results_image_path)
             else:
-                img, err_text = calib.find_aruco_markers(f'{tmpdirname}/{list(data["images"].keys())[0]}')
+                img, err_text = calib.find_aruco_markers(f'{tmpdirname}/{list(data["images"].keys())[0]}', image_date=calib_date,
+                                                         is_rotated=data['is_rotated'])
             
             img = Image.fromarray(img)
             rawBytes = io.BytesIO()
