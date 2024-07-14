@@ -50,6 +50,7 @@ class Trainer:
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model = None
         self.test_indices = None
+        self.chosen_metrics = None
         if self.model_path:
             self.load()
             self.dataset = None
@@ -113,6 +114,7 @@ class Trainer:
         chosen_fold_id = self.get_best_model()
         self.print(f'Chosen model is of Fold#{chosen_fold_id+1}')
         self.model.load_state_dict(self.history[chosen_fold_id]['model_state'])
+        self.chosen_metrics = self.history[chosen_fold_id]['metrics']
         if is_save:
             self.save_model()
         if is_plot:
