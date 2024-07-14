@@ -22,7 +22,7 @@ class PeripheryIntegrator:
         self.orm = ORM()
         self.periphery_config = config.load_configuration('periphery')
         if self.periphery_config and config.ARENA_ARDUINO_NAME in self.periphery_config:
-            self.devices = self.periphery_config[config.ARENA_ARDUINO_NAME]['interfaces']
+            self.devices = {d['name']: d for d in self.periphery_config[config.ARENA_ARDUINO_NAME]['interfaces']}
         else:
             self.devices = {}
 
