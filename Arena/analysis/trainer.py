@@ -20,14 +20,13 @@ from sklearn.model_selection import train_test_split, KFold
 from sklearn.metrics import explained_variance_score, roc_auc_score, balanced_accuracy_score, precision_score, \
     recall_score, confusion_matrix, PrecisionRecallDisplay, RocCurveDisplay
 
-SAVED_MODEL_DIR = '/data/Pogona_Pursuit/output/models'
-
 
 @dataclass
 class Trainer:
     model_path: str = None
     seed: int = 42
     is_debug: bool = True
+    save_model_dir: str = '/data/Pogona_Pursuit/output/models'
     batch_size: int = 16
     threshold: float = 0.8
     num_epochs: int = 30
@@ -181,7 +180,7 @@ class Trainer:
             self.test_indices = torch.load(model_path / self.test_indices_filename)
 
     def save_model(self):
-        dir_path = Path(f"{SAVED_MODEL_DIR}/{self.model_name}/{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+        dir_path = Path(f"{self.save_model_dir}/{self.model_name}/{datetime.now().strftime('%Y%m%d_%H%M%S')}")
         dir_path.mkdir(exist_ok=True, parents=True)
         torch.save(self.model.state_dict(), dir_path / 'model.pth')
         self.print(f'model saved to {dir_path}')
