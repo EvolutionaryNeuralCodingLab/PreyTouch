@@ -9,7 +9,7 @@ import torch
 import warnings
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from collections import Counter
 from tqdm.auto import tqdm
 import torch.optim as optim
@@ -17,6 +17,7 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader, Subset, SubsetRandomSampler
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import label_binarize
+from typing import List
 from sklearn.manifold import TSNE
 from sklearn.metrics import (explained_variance_score, roc_auc_score, balanced_accuracy_score, precision_score, \
     recall_score, confusion_matrix, PrecisionRecallDisplay, RocCurveDisplay, precision_recall_curve,
@@ -103,7 +104,7 @@ class LizardTrajDataSet(Dataset):
 
     def resample_trajs(self):
         min_count = self.y.value_counts().min()
-        self.samples = pd.DataFrame(self.y).groupby(self.target_name).apply(lambda x: x.sample(min_count)).index.get_level_values(1).values.tolist()
+        self.samples = pd.DataFrame(self.y).groupby(self.target_name).apply(lambda x: x.sample(min_count, random_state=0)).index.get_level_values(1).values.tolist()
         print(f'Resampling trajectories to {min_count} samples from each {self.target_name} class')
         self.X = self.X.query(f'strike_id in {self.samples}')
         self.y = self.y.loc[self.samples]
@@ -154,9 +155,9 @@ class TrajClassifier(ClassificationTrainer):
     is_hit: bool = False  # keep only hits
     animal_id: str = 'all'
     sub_section: tuple = None  # (start_sec {float}, length of samples after start_sec {int})
-    target_name = 'block_speed'
-    targets = [2, 4, 6, 8]
-    feature_names = ('x', 'y', 'speed')
+    target_name: str = 'block_speed'
+    targets: List = field(default_factory=lambda: [2, 4, 6, 8])
+    feature_names: List = field(default_factory=lambda: ['x', 'y', 'speed'])
     strike_index = None
 
     # def __post_init__(self):
@@ -173,6 +174,7 @@ class TrajClassifier(ClassificationTrainer):
     def get_dataset(self):
         strk_df, trajs = self.load_data()
         sdf = strk_df.copy()
+        sdf = sdf.query(f'{self.target_name} in {list(self.targets)}')
         if self.movement_type:
             sdf = sdf.query('movement_type==@self.movement_type')
         if self.animal_id and self.animal_id != 'all':
@@ -240,9 +242,9 @@ class TrajClassifier(ClassificationTrainer):
     def get_model_name(self):
         return f'traj_classifier_{self.animal_id}_{self.movement_type}'
 
-    def summary_plots(self, chosen_fold_id):
+    def summary_plots(self, history, chosen_fold_id):
         fig, axes = plt.subplots(2, 3, figsize=(15, 6))
-        self.plot_train_metrics(chosen_fold_id, axes[0, :])
+        self.plot_train_metrics(history, chosen_fold_id, axes[0, :])
         self.all_data_evaluation(axes=axes[1, :])
         fig.suptitle(f'{self.animal_id} {self.movement_type}', fontsize=20)
         fig.tight_layout()
@@ -306,7 +308,7 @@ class TrajClassifier(ClassificationTrainer):
             aucs[target] = roc_auc_score(y_true_binary[:, i], y_score[:, i])
         return aucs
         
-    
+
     def plot_precision_curve(self, y_true_binary, y_score, ax):
         for i, target in enumerate(self.targets):
             precision, recall, _ = precision_recall_curve(y_true_binary[:, i], y_score[:, i])
@@ -405,15 +407,16 @@ def animals_comparison():
     plot_comparison(filename)
 
 
-def hyperparameters_comparison(animal_id='PV91', movement_type='random_low_horizontal'):
+def hyperparameters_comparison(animal_id='PV91', movement_type='random_low_horizontal', is_resample=False,
+                               sub_section=(-2, 150)):
     from sklearn.model_selection import ParameterGrid
 
     res_df = []
-    grid = ParameterGrid(dict(dropout_prob=[0.1, 0.3, 0.4, 0.6], lstm_layers=[2, 4, 6], lstm_hidden_dim=[10, 30, 50, 100]))
+    grid = ParameterGrid(dict(dropout_prob=[0.1, 0.3, 0.4, 0.6], lstm_layers=[4, 6, 8], lstm_hidden_dim=[50, 100, 150]))
     for i, params in enumerate(grid):
         print(f'start loop {i+1}/{len(grid)}')
-        tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False,
-                            animal_id=animal_id, movement_type=movement_type, **params)
+        tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=sub_section,
+                            is_resample=is_resample, animal_id=animal_id, movement_type=movement_type, **params)
         tj.train(is_plot=False)
         best_i = np.argmin([x['score'] for x in tj.history])
         best_epoch = np.argmin(tj.history[best_i]['metrics']['val_loss'])
@@ -439,15 +442,15 @@ def plot_comparison(filename):
     
 
 if __name__ == '__main__':
-    # tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=(-2, -1),
+    # tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=(-2, 150),
     #                     animal_id='PV91', movement_type='random_low_horizontal')
     # tj.train(is_plot=True)
     # tj.check_hidden_states()
 
-    # hyperparameters_comparison()
+    hyperparameters_comparison(animal_id='all', movement_type='circle', is_resample=True)
     # animals_comparison()
     # plot_comparison('/Users/regev/PhD/msi/Pogona_Pursuit/output/datasets/trajectories/results_2024-06-24T16:43:58.880310.csv')
 
-    tj = TrajClassifier(model_path='/media/sil2/Data/regev/datasets/trajs/traj_classifier_PV95_random_low_horizontal/20240709_222848')
-    tj.all_data_evaluation()
+    # tj = TrajClassifier(model_path='/media/sil2/Data/regev/datasets/trajs/traj_classifier_PV95_random_low_horizontal/20240709_222848')
+    # tj.all_data_evaluation()
     # tj.check_hidden_states()

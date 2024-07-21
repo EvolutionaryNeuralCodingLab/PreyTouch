@@ -38,6 +38,7 @@ class Trainer:
     monitored_metric_algo: str = 'min'
     is_shuffle_dataset: bool = True
     cache_dir: Path = None
+    history = None
 
     def __post_init__(self):
         assert self.monitored_metric_algo in ['min', 'max'], f'monitored_metric_algo must be either "min" or "max"'
@@ -104,6 +105,7 @@ class Trainer:
             self.model.load_state_dict(f_best_model_)
             history.append({'model_state': f_best_model_, 'score': f_best_score_, 'metrics': f_metrics})
 
+        self.history = history
         chosen_fold_id = self.get_best_model(history)
         self.print(f'Chosen model is of Fold#{chosen_fold_id+1}')
         self.model.load_state_dict(history[chosen_fold_id]['model_state'])
@@ -286,11 +288,11 @@ class ClassificationTrainer(Trainer):
     def get_loss_fn(self):
         return nn.CrossEntropyLoss()
 
-    def predict_proba(self, y_pred: torch.Tensor):
+    def predict_proba(self, y_pred: torch.Tensor, is_all_probs=False):
         p = F.softmax(y_pred, dim=1)
         pmax, predicted = torch.max(p, dim=1)
         predicted[pmax < self.threshold] = self.no_prediction_index
-        return predicted, p[:, 1]
+        return predicted, p[:, 1] if not is_all_probs else p
 
     def evaluate(self, y_true: torch.Tensor, y_pred: torch.Tensor) -> dict:
         y_pred, y_score = self.predict_proba(y_pred)
