@@ -23,7 +23,7 @@ from sklearn.metrics import explained_variance_score, roc_auc_score, balanced_ac
 
 @dataclass
 class Trainer:
-    model_path: str = None
+    model_path: [str, Path] = None
     seed: int = 42
     is_debug: bool = True
     save_model_dir: str = '/data/Pogona_Pursuit/output/models'
@@ -181,14 +181,14 @@ class Trainer:
         if (model_path / self.test_indices_filename).exists():
             self.test_indices = torch.load(model_path / self.test_indices_filename)
 
-    def save_model(self):
-        dir_path = Path(f"{self.save_model_dir}/{self.model_name}/{datetime.now().strftime('%Y%m%d_%H%M%S')}")
-        dir_path.mkdir(exist_ok=True, parents=True)
-        torch.save(self.model.state_dict(), dir_path / 'model.pth')
-        self.print(f'model saved to {dir_path}')
-        self.cache_dir = dir_path
+    def save_model(self) -> Path:
+        self.model_path = Path(f"{self.save_model_dir}/{self.model_name}/{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+        self.model_path.mkdir(exist_ok=True, parents=True)
+        torch.save(self.model.state_dict(), self.model_path / 'model.pth')
+        self.print(f'model saved to {self.model_path}')
+        self.cache_dir = self.model_path
         if self.test_indices is not None:
-            torch.save(self.test_indices, dir_path / self.test_indices_filename)
+            torch.save(self.test_indices, self.model_path / self.test_indices_filename)
 
     def get_dataset(self):
         raise NotImplemented('Must create a method get_dataset')
@@ -292,7 +292,8 @@ class ClassificationTrainer(Trainer):
         p = F.softmax(y_pred, dim=1)
         pmax, predicted = torch.max(p, dim=1)
         predicted[pmax < self.threshold] = self.no_prediction_index
-        return predicted, p[:, 1] if not is_all_probs else p
+        p_ = p[:, 1] if len(p.shape) > 1 else p[1]
+        return predicted, p_ if not is_all_probs else p
 
     def evaluate(self, y_true: torch.Tensor, y_pred: torch.Tensor) -> dict:
         y_pred, y_score = self.predict_proba(y_pred)

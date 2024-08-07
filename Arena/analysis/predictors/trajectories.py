@@ -1,5 +1,6 @@
 import re
 import pickle
+import itertools
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,6 +11,7 @@ import warnings
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 from dataclasses import dataclass, field
+from typing import List
 from collections import Counter
 from tqdm.auto import tqdm
 import torch.optim as optim
@@ -17,13 +19,13 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader, Subset, SubsetRandomSampler
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import label_binarize
-from typing import List
 from sklearn.manifold import TSNE
 from sklearn.metrics import (explained_variance_score, roc_auc_score, balanced_accuracy_score, precision_score, \
-    recall_score, confusion_matrix, PrecisionRecallDisplay, RocCurveDisplay, precision_recall_curve,
+                             recall_score, confusion_matrix, PrecisionRecallDisplay, RocCurveDisplay, precision_recall_curve,
                              average_precision_score, roc_curve)
+from sklearn.decomposition import PCA
+from captum.attr import IntegratedGradients, LayerConductance, NeuronConductance
 from pathlib import Path
-import os
 from analysis.trainer import ClassificationTrainer
 
 TRAJ_DIR = '/media/sil2/Data/regev/datasets/trajs'
@@ -76,7 +78,7 @@ class LSTMWithAttention(nn.Module):
 
 class LizardTrajDataSet(Dataset):
     def __init__(self, strk_df, trajs, ids, variables, targets_values, is_standardize=True, target_name='block_speed',
-                 is_resample=True, sub_section=None):
+                 is_resample=True, sub_section=None, is_shuffled_target=False):
         self.samples = ids
         self.variables = variables
         self.targets = targets_values
@@ -92,6 +94,9 @@ class LizardTrajDataSet(Dataset):
         
         self.X = self.X.query(f'strike_id in {self.samples}')
         self.y = strk_df[target_name].loc[self.samples]
+        if is_shuffled_target:
+            print(f'Notice! Shuffling randomly the target values')
+            self.y = pd.Series(index=self.y.index, data=np.random.choice(self.y.unique(), len(self.y)))
                 
         if is_resample:
             self.resample_trajs()
@@ -156,8 +161,9 @@ class TrajClassifier(ClassificationTrainer):
     animal_id: str = 'all'
     sub_section: tuple = None  # (start_sec {float}, length of samples after start_sec {int})
     target_name: str = 'block_speed'
+    is_shuffled_target: bool = False  # shuffle the target randomly. Used to find baseline for attention.
     targets: List = field(default_factory=lambda: [2, 4, 6, 8])
-    feature_names: List = field(default_factory=lambda: ['x', 'y', 'speed'])
+    feature_names: List = field(default_factory=lambda: ['x', 'y', 'speed_x', 'speed_y'])
     strike_index = None
 
     # def __post_init__(self):
@@ -165,11 +171,27 @@ class TrajClassifier(ClassificationTrainer):
         # self.device = torch.device('mps')
 
     def load(self):
+        attrs_path = Path(self.model_path) / 'attrs.pkl'
+        if not attrs_path.exists():
+            print(f'No attrs file found. Loading from {self.model_path}')
+            s = Path(self.model_path).parts[-2]
+            m = re.search(r'traj_classifier_(?P<animal_id>\w+?)_(?P<movement_type>\w+)', s)
+            self.movement_type = m.group('movement_type')
+            self.animal_id = m.group('animal_id')
+        else:
+            with attrs_path.open('rb') as f:
+                attrs = pickle.load(f)
+                for k, v in attrs.items():
+                    if k in ['model_path']:
+                        continue
+                    setattr(self, k, v)
         super().load()
-        s = Path(self.model_path).parts[-2]
-        m = re.search(r'traj_classifier_(?P<animal_id>\w+?)_(?P<movement_type>\w+)', s)
-        self.movement_type = m.group('movement_type')
-        self.animal_id = m.group('animal_id')
+
+    def save_model(self):
+        super().save_model()
+        attrs_path = Path(self.model_path) / 'attrs.pkl'
+        with attrs_path.open('wb') as f:
+            pickle.dump(vars(self), f)
 
     def get_dataset(self):
         strk_df, trajs = self.load_data()
@@ -184,7 +206,8 @@ class TrajClassifier(ClassificationTrainer):
         strikes_ids = sdf.index.values.tolist()
             
         dataset = LizardTrajDataSet(strk_df, trajs, strikes_ids, self.feature_names, self.targets,
-                                    target_name=self.target_name, sub_section=self.sub_section, is_resample=self.is_resample)
+                                    target_name=self.target_name, sub_section=self.sub_section,
+                                    is_resample=self.is_resample, is_shuffled_target=self.is_shuffled_target)
         print(f'Traj classes count: {pd.Series(dataset.y).value_counts().sort_index().set_axis(self.targets).to_dict()}')
         
         # set strike index
@@ -235,8 +258,10 @@ class TrajClassifier(ClassificationTrainer):
             d = pickle.load(f)
         strk_df, trajs = d['strk_df'], d['trajs']
         for strike_id, xf in trajs.items():
-            xf['speed'] = np.sqrt(xf.x.diff() ** 2 + xf.y.diff() ** 2)
-            xf.speed.fillna(0, inplace=True)
+            xf['speed_x'] = xf.x.diff().fillna(0)
+            xf['speed_y'] = xf.y.diff().fillna(0)
+            # xf['speed'] = np.sqrt(xf.x.diff() ** 2 + xf.y.diff() ** 2)
+            # xf.speed.fillna(0, inplace=True)
         return strk_df, trajs
 
     def get_model_name(self):
@@ -307,7 +332,7 @@ class TrajClassifier(ClassificationTrainer):
         for i, target in enumerate(self.targets):
             aucs[target] = roc_auc_score(y_true_binary[:, i], y_score[:, i])
         return aucs
-        
+
 
     def plot_precision_curve(self, y_true_binary, y_score, ax):
         for i, target in enumerate(self.targets):
@@ -338,49 +363,60 @@ class TrajClassifier(ClassificationTrainer):
         ax.set_ylabel('Y Coordinate')
         ax.set_title('Attention Weights over Trajectory')
     
-    def check_hidden_states(self):
-        self.model.eval()
+    def check_hidden_states(self, cols=4):
         dataset = self.get_dataset()
 
+        rows = int(np.ceil((len(self.targets)+1) / cols))
+        fig, axes = plt.subplots(rows, cols, figsize=(18, 4*rows))
+        axes = axes.flatten()
+
+        self.visualize_features_importance(dataset, axes=axes[:len(self.targets)])
+
+        # run PCA to visualize targets embedding
+        self.model.eval()
         res, targets = [], []
         for x, y in tqdm(dataset):
             x = x.to(self.device).unsqueeze(0)
             outputs, w = self.model(x, is_weighted=True)
-            res.append(w.detach().numpy())
-            targets.append(y.item())
-
+            res.append(w.detach().cpu().numpy())
+            targets.append(self.targets[y.item()])
         res = np.vstack(res)
-        self.visualize_importances(dataset)
-
-        from sklearn.decomposition import PCA
         pca = PCA(n_components=2)
         X_embedded = pca.fit_transform(res)
-        plt.figure()
-        sns.scatterplot(x=X_embedded[:, 0], y=X_embedded[:, 1], hue=targets, palette="deep")
+        ax_pca = axes[len(self.targets)]
+        sns.scatterplot(x=X_embedded[:, 0], y=X_embedded[:, 1], hue=targets, palette="deep", ax=ax_pca)
+        ax_pca.set_title('PCA')
+        for ax in axes[len(self.targets)+1:]:
+            ax.axis('off')
+        fig.tight_layout()
+        fig.savefig((Path(self.model_path) / 'hidden_states.png'), dpi=200)
         plt.show()
 
-    def visualize_importances(self, dataset):
-        from captum.attr import IntegratedGradients, LayerConductance, NeuronConductance
+    def visualize_features_importance(self, dataset, axes=None):
+        self.model.train()
         ig = IntegratedGradients(self.model)
 
-        fig, axes = plt.subplots(len(self.targets), 1, figsize=(6, 3 * len(self.targets)))
-        for i, target in tqdm(enumerate(self.targets), desc='Visualize Importances', total=len(self.targets)):
+        if axes is None:
+            fig, axes = plt.subplots(len(self.targets), 1, figsize=(6, 3 * len(self.targets)))
+
+        for i, target in tqdm(enumerate(self.targets), desc='Visualize Feature Importance', total=len(self.targets)):
             aggregated_attributions = []
             for x, y in dataset:
                 attr = ig.attribute(x.to(self.device).unsqueeze(0), target=i)
                 aggregated_attributions.append(attr)
 
             aggregated_attributions = torch.cat(aggregated_attributions, dim=0)
-            importances = np.mean(aggregated_attributions.detach().numpy(), axis=0)
-            x_pos = np.arange(len(self.feature_names))
-
-            axes[i].bar(x_pos, importances[-1], align='center')
-            axes[i].set_xticks(x_pos, self.feature_names, wrap=True)
-            axes[i].set_xlabel('Features')
+            importance = np.mean(aggregated_attributions.cpu().detach().numpy(), axis=0)
+            imp = pd.Series(importance[-1])
+            idx = imp.abs().sort_values().index.tolist()
+            imp = imp.reindex(idx)
+            imp.index = [self.feature_names[i] for i in imp.index]
+            imp.plot.barh(ax=axes[i])
+            max_x = np.abs(importance[-1]).max()
+            axes[i].set_xlim([-max_x, max_x])
+            axes[i].set_ylabel('Features')
             axes[i].set_title(f'{target}cm/sec')
-
-        fig.tight_layout()
-        plt.show()
+            axes[i].axvline(0, color='black')
 
 
 def animals_comparison():
@@ -429,6 +465,31 @@ def hyperparameters_comparison(animal_id='PV91', movement_type='random_low_horiz
     res_df.to_csv(filename)
 
 
+def find_best_features(movement_type='random_low_horizontal', lstm_layers=4, dropout_prob=0.3, lstm_hidden_dim=50,
+                       is_resample=False):
+    all_features = ['x', 'y', 'prob', 'speed_x', 'speed_y', 'angle']
+    res_df = []
+    for L in range(1, len(all_features) + 1):
+        for feature_names in itertools.combinations(all_features, L):
+            print(f'Start training with features {feature_names}')
+            try:
+                tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=(-2, 150),
+                                    is_resample=is_resample, is_hit=False,
+                                    feature_names=feature_names, animal_id='all', movement_type=movement_type,
+                                    lstm_layers=lstm_layers, dropout_prob=dropout_prob, lstm_hidden_dim=lstm_hidden_dim)
+                tj.train(is_plot=False)
+                best_i = np.argmin([x['score'] for x in tj.history])
+                best_epoch = np.argmin(tj.history[best_i]['metrics']['val_loss'])
+                for metric, l in tj.history[best_i]['metrics'].items():
+                    res_df.append({'features': feature_names, 'metric': metric, 'value': l[best_epoch]})
+            except Exception as exc:
+                print(f'Error in feature names: {feature_names}; {exc}')
+
+    res_df = pd.DataFrame(res_df)
+    filename = f'{TRAJ_DIR}/features_results_{datetime.now().isoformat()}.csv'
+    res_df.to_csv(filename)
+
+
 def plot_comparison(filename):
     df = pd.read_csv(filename, index_col=0)
     fig, axes = plt.subplots(2, 1, figsize=(8, 8))
@@ -442,15 +503,17 @@ def plot_comparison(filename):
     
 
 if __name__ == '__main__':
-    # tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=(-2, 150),
-    #                     animal_id='PV91', movement_type='random_low_horizontal')
+    # tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=(-2, 150), is_resample=False,
+    #                     animal_id='all', movement_type='random_low_horizontal', is_hit=False, lstm_layers=4,
+    #                     dropout_prob=0.3, lstm_hidden_dim=50, is_shuffled_target=True)
     # tj.train(is_plot=True)
     # tj.check_hidden_states()
 
-    hyperparameters_comparison(animal_id='all', movement_type='circle', is_resample=True)
+    find_best_features(movement_type='circle', lstm_layers=6, dropout_prob=0.5, is_resample=True)
+    # hyperparameters_comparison(animal_id='all', movement_type='circle', is_resample=True)
     # animals_comparison()
     # plot_comparison('/Users/regev/PhD/msi/Pogona_Pursuit/output/datasets/trajectories/results_2024-06-24T16:43:58.880310.csv')
 
-    # tj = TrajClassifier(model_path='/media/sil2/Data/regev/datasets/trajs/traj_classifier_PV95_random_low_horizontal/20240709_222848')
-    # tj.all_data_evaluation()
+    # tj = TrajClassifier(
+    #     model_path='/media/sil2/Data/regev/datasets/trajs/traj_classifier_all_random_low_horizontal/20240722_105828')
     # tj.check_hidden_states()
