@@ -1,5 +1,19 @@
 ## Configurations
 
+All system configurations can be shown and edited from the "Arena Configurations" panel.
+To open this panel, you can click the cog icon (⚙) on the top-left side of PreyTouch UI.
+![Image](/docs/images/arena_configurations.png)
+
+## Configuration Files
+There are 4 JSON configuration files in the system, that can be edited 
+in PreyTocuh UI:
+1. **cameras** - Specify all the cameras in the system. From this window
+you can also scan the cameras in the system (only FLIR and Allied-Vision),
+and also add a new camera using a simple form.
+2. **periphery** - Specify all the peripheral devices 
+3. **predict**
+4. **agent**
+
 ### cam_config.yaml
 ```yaml
 front: # camera name

@@ -170,18 +170,6 @@ if __name__ == "__main__":
         format="[%(levelname)s] - %(asctime)s: %(message)s",
     )
 
-    # load arena config
-    arena_conf = None
-    try:
-        with open(config.arena_config_path, "r") as f:
-            arena_conf = json.load(f)
-    except json.JSONDecodeError as e:
-        logger.exception(f"While decoding {config.arena_config_path}:")
-        raise e
-
-    if type(arena_conf) is not dict:
-        raise ValueError("The arena config json root is expected to be an object.")
-
     if args.list_ports:
         ports = list_ports.comports()
         print("Available serial ports:\n")
@@ -196,6 +184,18 @@ if __name__ == "__main__":
         ports = list_ports.comports()
         print(json.dumps([{"device": p.device, "description": p.description, "serial_number": p.serial_number} for p in ports if p.serial_number is not None]))
         sys.exit(0)
+
+    # load arena config
+    arena_conf = None
+    try:
+        with open(config.arena_config_path, "r") as f:
+            arena_conf = json.load(f)
+    except json.JSONDecodeError as e:
+        logger.exception(f"While decoding {config.arena_config_path}:")
+        raise e
+
+    if type(arena_conf) is not dict:
+        raise ValueError("The arena config json root is expected to be an object.")
 
     if args.upload is None or len(args.upload) > 0:
         upload_ret = upload_program(logger, arena_conf, args.upload)

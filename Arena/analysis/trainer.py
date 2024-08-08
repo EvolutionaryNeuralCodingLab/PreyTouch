@@ -16,7 +16,7 @@ import seaborn as sns
 from pathlib import Path
 from tqdm.auto import tqdm
 from datetime import datetime
-from sklearn.model_selection import train_test_split, KFold
+from sklearn.model_selection import train_test_split, KFold, StratifiedKFold
 from sklearn.metrics import explained_variance_score, roc_auc_score, balanced_accuracy_score, precision_score, \
     recall_score, confusion_matrix, PrecisionRecallDisplay, RocCurveDisplay
 
@@ -36,7 +36,9 @@ class Trainer:
     weight_decay: float = 1e-2
     monitored_metric: str = 'val_loss'
     monitored_metric_algo: str = 'min'
+    num_loader_workers: int = 6
     is_shuffle_dataset: bool = True
+    save_model_dir: str = SAVED_MODEL_DIR
     cache_dir: Path = None
     history = None
 
@@ -47,6 +49,7 @@ class Trainer:
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model = None
         self.test_indices = None
+        self.chosen_metrics = None
         if self.model_path:
             self.load()
             self.dataset = None
@@ -69,8 +72,8 @@ class Trainer:
 
     def train(self, is_plot=False, is_save=True):
         self.print(f"Start train for model {self.model_name}. Train will be running on {self.device} device")
-        history = []
-        splits = KFold(n_splits=self.kfolds, shuffle=True, random_state=self.seed)
+        self.history = []
+        splits = StratifiedKFold(n_splits=self.kfolds, shuffle=True, random_state=self.seed)
         if self.test_size:
             train_ds, test_ds = torch.utils.data.random_split(self.dataset, [1-self.test_size, self.test_size])
             indices = train_ds.indices
@@ -80,7 +83,9 @@ class Trainer:
 
         if self.is_shuffle_dataset:
             indices = np.random.permutation(indices)
-        for fold, (train_idx, val_idx) in enumerate(splits.split(indices)):
+
+        y_vals = pd.Series(self.dataset.y).sort_index().values
+        for fold, (train_idx, val_idx) in enumerate(splits.split(indices, y_vals)):
             f_best_score_, f_best_model_, f_metrics = None, None, dict()
             self.model = self.get_model()
             self.model.to(self.device)
@@ -96,23 +101,24 @@ class Trainer:
                     score = epoch_metrics[self.monitored_metric]
                     if scheduler is not None:
                         scheduler.step(score)
-                    pbar.desc = f'FOLD-#{fold+1}  {self.monitored_metric}={score:.2f} (best={f_best_score_ or 0:.2f})'
+                    pbar.desc = f'FOLD-#{fold+1} ({len(train_idx)},{len(val_idx)})  {self.monitored_metric}={score:.2f} (best={f_best_score_ or 0:.2f})'
                     for k, v in epoch_metrics.items():
                         f_metrics.setdefault(k, []).append(v)
                     if not f_best_score_ or self.is_better_score_(score, f_best_score_):
                         f_best_score_ = score
                         f_best_model_ = self.model.state_dict()
             self.model.load_state_dict(f_best_model_)
-            history.append({'model_state': f_best_model_, 'score': f_best_score_, 'metrics': f_metrics})
-
+            self.history.append({'model_state': f_best_model_, 'score': f_best_score_, 'metrics': f_metrics})
+        
         self.history = history
         chosen_fold_id = self.get_best_model(history)
         self.print(f'Chosen model is of Fold#{chosen_fold_id+1}')
-        self.model.load_state_dict(history[chosen_fold_id]['model_state'])
+        self.model.load_state_dict(self.history[chosen_fold_id]['model_state'])
+        self.chosen_metrics = self.history[chosen_fold_id]['metrics']
         if is_save:
             self.save_model()
         if is_plot:
-            self.summary_plots(history, chosen_fold_id)
+            self.summary_plots(chosen_fold_id)
         return self
 
     def train_epoch(self, train_loader, optimizer, loss_fn):
@@ -157,7 +163,7 @@ class Trainer:
         return x.to(self.device).float(), y.to(self.device).float()
 
     def get_training_loaders(self, train_idx=None, val_idx=None):
-        params = {'batch_size': self.batch_size, 'num_workers': 6, 'drop_last': True}
+        params = {'batch_size': self.batch_size, 'num_workers': self.num_loader_workers, 'drop_last': True}
         if train_idx is not None:
             train_sampler = SubsetRandomSampler(train_idx)
             val_sampler = SubsetRandomSampler(val_idx)
@@ -178,6 +184,7 @@ class Trainer:
         self.model.to(self.device)
         self.print(f'model {self.model_name} load from: {model_path}')
         self.cache_dir = model_path.parent
+        self.history = torch.load(model_path / 'history.pth')
         if (model_path / self.test_indices_filename).exists():
             self.test_indices = torch.load(model_path / self.test_indices_filename)
 
@@ -187,6 +194,7 @@ class Trainer:
         torch.save(self.model.state_dict(), self.model_path / 'model.pth')
         self.print(f'model saved to {self.model_path}')
         self.cache_dir = self.model_path
+
         if self.test_indices is not None:
             torch.save(self.test_indices, self.model_path / self.test_indices_filename)
 
@@ -211,9 +219,9 @@ class Trainer:
         else:
             return score > best_so_far
 
-    def get_best_model(self, history):
+    def get_best_model(self):
         algo = np.argmin if self.monitored_metric_algo == 'min' else np.argmax
-        return int(algo([h['score'] for h in history]))
+        return int(algo([h['score'] for h in self.history]))
 
     def print_dataset_info(self, datasets: dict):
         for key, dataset in datasets.items():
@@ -222,16 +230,16 @@ class Trainer:
             text = ', '.join(f'{k}: {v}' for k, v in s.iteritems())
             self.print(f'{key} dataset distribution: {text}')
 
-    def summary_plots(self, history, chosen_fold_id):
+    def summary_plots(self, chosen_fold_id):
         fig, axes = plt.subplots(2, 3, figsize=(25, 4))
-        self.plot_train_metrics(history, chosen_fold_id, axes[0, :])
+        self.plot_train_metrics(chosen_fold_id, axes[0, :])
         self.all_data_evaluation(axes=axes[1, :])
         if self.cache_dir:
             fig.savefig(self.cache_dir / 'summary_plots.jpg')
         plt.show()
 
-    def plot_train_metrics(self, history, chosen_fold_id, axes=None):
-        chosen_metrics = history[chosen_fold_id]['metrics']
+    def plot_train_metrics(self, chosen_fold_id, axes=None):
+        chosen_metrics = self.history[chosen_fold_id]['metrics']
         # Loss of chosen model
         epochs = np.arange(1, self.num_epochs + 1)
         axes[0].plot(epochs, chosen_metrics['train_loss'], color='k', label='train_loss')
@@ -246,7 +254,7 @@ class Trainer:
         axes[1].set_title('Validation Metrics')
         axes[1].legend()
         # Comparison of monitored metric
-        for i, h in enumerate(history):
+        for i, h in enumerate(self.history):
             axes[2].plot(h['metrics'][self.monitored_metric], label=f'FOLD-{i+1}', color='r' if i == chosen_fold_id else 'k')
         axes[2].set_title(f'Comparison of {self.monitored_metric} between folds')
         axes[2].legend()

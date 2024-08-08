@@ -11,17 +11,11 @@ from dlclive import DLCLive, Processor
 from dlclive.processor import KalmanFilterPredictor
 from matplotlib.colors import TABLEAU_COLORS, CSS4_COLORS
 
+import config
 from image_handlers.predictor_handlers import PredictHandler
 from utils import run_in_thread
 
 COLORS = list(TABLEAU_COLORS.values()) + list(CSS4_COLORS.values())
-DLC_FOLDER = '/media/sil2/Data/regev/pose_estimation/deeplabcut/projects/dlc_pogona_mini'
-EXPORTED_MODEL = DLC_FOLDER + '/exported-models/DLC_dlc_pogona_mini_resnet_50_iteration-2_shuffle-0/'
-# EXPORTED_MODEL = DLC_FOLDER + '/exported-models/DLC_dlc_pogona_mini_mobilenet_v2_1.0_iteration-2_shuffle-1/'
-# EXPORTED_MODEL = DLC_FOLDER + '/exported-models/DLC_dlc_pogona_mini_efficientnet-b2_iteration-2_shuffle-3'
-# EXPORTED_MODEL = DLC_FOLDER + '/exported-models/DLC_dlc_pogona_mini_resnet_101_iteration-2_shuffle-8'
-THRESHOLDS = {'nose': 0.55, 'right_ear': 0.55, 'left_ear': 0.55}
-RELEVANT_BODYPARTS = ['nose'] #, 'right_ear', 'left_ear']
 MIN_DISTANCE = 0.1  # cm
 MIN_COMMIT_DISTANCE = 0.5  # cm
 MAX_JUMP = 4  # cm. Maximum distance difference for 2 consecutive values.
@@ -31,18 +25,23 @@ PREDICTION_GRACE = 10  # number of preceded frames without prediction to be kept
 class DeepLabCut(PredictHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.dlc_config = {}
-        self.load_dlc_config()
-        self.bodyparts = self.dlc_config['bodyparts']
-        self.kp_colors = {k: COLORS[i] for i, k in enumerate(self.bodyparts)}
         # self.processor = KalmanFilterPredictor()
         self.processor = Processor()
-        self.detector = DLCLive(EXPORTED_MODEL, processor=self.processor)
+        pconfig = config.load_configuration('predict')
+
+
+        
+        self.bodyparts = config.DLC_BODYPARTS
+        self.kp_colors = {k: COLORS[i] for i, k in enumerate(self.bodyparts)}
+        if 'deeplabcut' not in pconfig:
+            raise Exception('Unable to load deeplabcut PredictHandler, since no deeplabcut configuration in predict_config')
+        self.detector = DLCLive(pconfig['deeplabcut']['model_path'], processor=self.processor)
+        self.threshold = pconfig['deeplabcut']['threshold']
         self.is_initialized = False
         self.head_angle = None
-        self.cam_coords = {k: None for k in RELEVANT_BODYPARTS}
-        self.positions = {k: None for k in RELEVANT_BODYPARTS}
-        self.grace_counters = {k: 0 for k in RELEVANT_BODYPARTS}
+        self.cam_coords = {k: None for k in self.bodyparts}
+        self.positions = {k: None for k in self.bodyparts}
+        self.grace_counters = {k: 0 for k in self.bodyparts}
         self.last_committed_pos = None
 
     def __str__(self):
@@ -80,10 +79,10 @@ class DeepLabCut(PredictHandler):
         return pos, img
 
     def create_pred_df(self, pred) -> pd.DataFrame:
-        zf = pd.DataFrame(pred, index=self.dlc_config['bodyparts'], columns=['cam_x', 'cam_y', 'prob'])
-        zf = zf.loc[RELEVANT_BODYPARTS, :]
-        for bodypart in RELEVANT_BODYPARTS:
-            if zf.loc[bodypart, 'prob'] < THRESHOLDS[bodypart]:
+        zf = pd.DataFrame(pred, index=self.bodyparts, columns=['cam_x', 'cam_y', 'prob'])
+        zf = zf.loc[self.bodyparts, :]
+        for bodypart in self.bodyparts:
+            if zf.loc[bodypart, 'prob'] < self.threshold:
                 zf.drop(bodypart, inplace=True)
         if zf.empty:
             return zf
@@ -232,7 +231,3 @@ class DeepLabCut(PredictHandler):
             frame = cv2.putText(frame, text, (20, 30), font, 1, color, 2, cv2.LINE_AA)
 
         return frame
-
-    def load_dlc_config(self):
-        config_path = Path(DLC_FOLDER) / 'config.yaml'
-        self.dlc_config = yaml.load(config_path.open(), Loader=yaml.FullLoader)

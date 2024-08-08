@@ -1,0 +1,213 @@
+<div class="modal fade" id="calibrationsModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog  modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Calibration</h3>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <button class="btn btn-primary mr-1" type="button" id="openModalUndistort">Undistort Camera</button>
+                <button class="btn btn-primary mr-1" type="button" id="openModalRealWorld">Real World Projection</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<div class="modal fade" id="loadCalibModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog  modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="reloadCalibTitle"></h3>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="undistortForm">
+
+                    <div class="col mb-3">
+                        <label class="form-check-label" for="calib-cam-name">Camera Name</label>
+                        <input type="text" class="form-control" id="calib-cam-name" autocomplete="off" />
+                    </div>
+
+                    <!-- <div class="col mb-3">
+                        <label class="form-check-label" for="calib-cam-name">Camera Name</label>
+                        <select class="form-control" id="calib-cam-name">
+                            {% for cam_name in cameras %}
+                                <option value="{{cam_name}}">{{cam_name}}</option>
+                            {% endfor %}
+                        </select>
+                    </div> -->
+                    
+                    <div class="col mb-3">
+                        <label class="form-check-label" for="calib-date">Images Date</label>
+                        <p style="margin-bottom: 0;font-size: 0.8em;">Only videos that were recorded after this date and before the next calibration date will use this undistortion</p>
+                        <input type="date" class="form-control" id="calib-date" autocomplete="off" />
+                    </div>
+
+                    <div class="col mb-3">
+                        <label class="form-check-label" for="calib-cam-folder">Frames Folder</label>
+                        <input type="file" class="form-control" id="calib-cam-folder" multiple autocomplete="off" />
+                        <div id="fileList" class="scrollableDiv">
+                            <p>No files selected!</p>
+                        </div>
+                    </div>
+
+                    <div class="col mb-3">
+                        <label for="calib-is-rotated" class="form-check-label">Is Rotated Board</label>
+                        <input id="calib-is-rotated" type="checkbox" class="form-control-sm">
+                    </div>
+
+                </form>
+            </div>
+
+            <div class="modal-footer">
+                <button id="runCalibration" type="button" class="btn btn-primary" name="">Run</button>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+
+<div class="modal fade" id="calibResultsModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog  modal-xl" role="document">
+        <div class="modal-content">
+            <div class="modal-body">
+                <pre id="calibResultsText"></pre>
+                <img id="calibResultsImage" src="" alt="" style="width: 100%;">
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<script>
+    $("#openModalUndistort").click(() => {
+        $("#reloadCalibTitle").text('Camera Undistortion')
+        $("#loadCalibModal").modal("show")
+        $("#runCalibration").attr('name', 'undistort')
+    })
+
+    $("#openModalRealWorld").click(() => {
+        $("#reloadCalibTitle").text('Real-World Projection')
+        $("#loadCalibModal").modal("show")
+        $("#runCalibration").attr('name', 'realworld')
+    })
+
+    async function getUndistortImages(isBlob=false) {
+        const fileElem = document.getElementById("calib-cam-folder")
+        const fileList = document.getElementById("fileList")
+        let urls = {}
+        for (let i = 0; i < fileElem.files.length; i++) {
+            let u = fileElem.files[i]
+            if (isBlob) {
+                u = await blobToBase64(u)
+            } else {
+                u = URL.createObjectURL(u)
+            }
+            urls[fileElem.files[i].name] = u
+        }
+        return urls
+    }
+
+    function blobToBase64(blob) {
+        return new Promise((resolve, _) => {
+            const reader = new FileReader()
+            reader.onloadend = () => resolve(reader.result)
+            reader.readAsDataURL(blob)
+        })
+    }
+
+    $("#runCalibration").click(function(e) {
+        for (let c of ['calib-cam-name', 'calib-date']) {
+            if (!$(`#${c}`).val()) {
+                window.alert(`You must specify ${c}`)
+                return
+            }
+        }
+        const target = e.currentTarget.name
+        getUndistortImages(true).then((urls) => {
+            let res = {'images': urls, 'cam_name': $("#calib-cam-name").val(), 'date': $("#calib-date").val()}
+            if ((target === 'undistort') && (Object.entries(urls).length < Number("{{min_calib_images}}"))) {
+                window.alert("Must upload at least {{ min_calib_images }} images for undistortion")
+                return
+            } else if (target === 'realworld') {
+                res['is_rotated'] = $("#calib-is-rotated").is(":checked")
+                if (Object.entries(urls).length !== 1) {
+                    window.alert("Must upload 1 aruco image")
+                    return   
+                }
+            }
+            $.ajax({
+                url: `/run_calibration/${target}`,
+                type: "POST",
+                data: JSON.stringify(res),
+                contentType: "application/json",
+                success: function (data) {
+                    $("#calibResultsModal").modal('show')
+                    $("#loadCalibModal").modal('hide')
+                    $("#calibrationsModal").modal('hide')
+                    let bytestring = data['res']
+                    let image = bytestring.split('\'')[1]
+                    $("#calibResultsText").text(data['err_text'])
+                    $("#calibResultsImage").attr('src' , 'data:image/jpeg;base64,'+image)
+                },
+                error: function (data) {
+                    window.alert(data.responseText)
+                },
+                beforeSend: function () {
+                    $("#runCalibration").prop('disabled', true)
+                },
+                complete: function () {
+                    $("#runCalibration").prop('disabled', false)
+                }
+            })
+        })
+        
+    })
+
+    $("#calib-cam-folder").change(() => {
+        getUndistortImages().then((urls) => {
+            if (!Object.entries(urls).length) {
+                fileList.innerHTML = "<p>No files selected!</p>"
+            } else {
+                fileList.innerHTML = ""
+                const list = document.createElement("ul")
+                fileList.appendChild(list)
+                for (let [filename, url] of Object.entries(urls)) {
+                    const li = document.createElement("li")
+                    list.appendChild(li)
+
+                    const img = document.createElement("img")
+                    img.src = url
+                    img.height = 60
+                    img.onload = () => {
+                        URL.revokeObjectURL(img.src)
+                    }
+                    li.appendChild(img)
+                    const info = document.createElement("span")
+                    info.innerHTML = filename
+                    li.appendChild(info);
+                }
+            }
+        })
+    })
+    
+</script>
+
+<style>
+    .scrollableDiv {
+        position: relative;
+        height: 240px;
+        margin-top: 1em;
+        box-sizing: border-box; /****** NEW *****/
+        max-height: 240px;   /****** NEW *****/
+        overflow-y: scroll;  /****** NEW *****/
+        overflow-x: hidden; /****** NEW *****/
+    }
+
+</style>

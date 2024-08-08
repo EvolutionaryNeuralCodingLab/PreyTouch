@@ -10,6 +10,7 @@
             src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.11.0/umd/popper.min.js"></script>
     <link href="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/css/bootstrap4-toggle.min.css"
           rel="stylesheet">
+    <link href="{{ url_for('static', filename='main.css') }}" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/js/bootstrap4-toggle.min.js"></script>
     <link href="{{ url_for('static', filename='bootstrap-4.5.0/css/bootstrap.css')}}" rel="stylesheet">
     <script src="{{ url_for('static', filename='Bootstrap-4-Multi-Select-BsMultiSelect/dist/js/BsMultiSelect.js') }}"
@@ -22,11 +23,22 @@
     <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.0/moment.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tempusdominus-bootstrap-4/5.39.0/js/tempusdominus-bootstrap-4.min.js" integrity="sha512-k6/Bkb8Fxf/c1Tkyl39yJwcOZ1P4cRrJu77p83zJjN2Z55prbFHxPs9vN7q3l3+tSMGPDdoH51AEU8Vgo1cgAA==" crossorigin="anonymous"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tempusdominus-bootstrap-4/5.39.0/css/tempusdominus-bootstrap-4.min.css" integrity="sha512-3JRrEUwaCkFUBLK1N8HehwQgu8e23jTH4np5NHOmQOobuC4ROQxFwFgBLTnhcnQRMs84muMh0PnnwXlPq5MGjg==" crossorigin="anonymous" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsoneditor/10.0.2/jsoneditor.min.js" integrity="sha512-QoEa+2J/Sie4bjZNs546qH2o7pK246K7bPYqMOkIU2J7Hdj6axTsPqYbbr0SgQ7iSAomOSa922z+z6yNbECGJQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jsoneditor/10.0.2/jsoneditor.min.css" integrity="sha512-8G+Vb2+10BSrSo+wupdzJIylDLpGtEYniQhp0rsbTigPG7Onn2S08Ai/KEGlxN2Ncx9fGqVHtRehMuOjPb9f8g==" crossorigin="anonymous" referrerpolicy="no-referrer" />
 </head>
 
 <body>
 <div class="row">
     <div class="col-xl-7">
+        {% include "management/reboots.html" %}
+        {% include "management/calibrations.html" %}
+        {% include "management/predictions.html" %}
+        <button class="btn btn-lg"  data-toggle="modal" data-target="#rebootsModal" style="padding: 0">
+            <i class="fa fa-power-off fa-lg"></i>
+        </button>
+        <button class="btn btn-lg"  data-toggle="modal" data-target="#arenaConfig" style="padding: 0">
+            <i class="fa fa-cog fa-lg"></i>
+        </button>
         <h1 class="p-2" style="font-size: 4em; text-align: center; margin-bottom: 0; padding-bottom: 0 !important;">PreyTouch</h1>
         <h4 style="text-align: center; margin-bottom: 1em">{{arena_name}}</h4>
         <div class="row top-border bottom-border" id="all-panels" style="padding-bottom: 0">
@@ -62,10 +74,13 @@
         });
         let wsclient = new WebSocketClient('ws://127.0.0.1:6380', {
             reconnectEnabled: true,
-            reconnectInterval: 5000 // time to reconnect in milliseconds
+            reconnectInterval: 2000 // time to reconnect in milliseconds
         })
+        wsclient.onOpen = () => {
+          console.log('websockets connected')
+        }
         wsclient.onError = (event) => {
-            appendOutput('Error connecting to Redis', color='red')
+          console.log('websockets error')
         }
         wsclient.connect()
         wsclient.subscribe({
@@ -149,7 +164,7 @@
                     let expName = data['experiment_name']
                     let blockId = data['block_id']
                     let openAppHost = data['open_app_host']
-                    let tempString = 'Temperature:'
+                    let tempString = jQuery.isEmptyObject(data['temperature']) ? '' : 'Temperature:'
                     for (let sensor in data['temperature']) {
                         tempString += `\n ${sensor}: ${data['temperature'][sensor] ? data['temperature'][sensor].toFixed(1) : "-"}ºC`
                     }
@@ -164,8 +179,8 @@
                     $("#currentBlockID").text(expName ? `Block ID: ${blockId}` : '')
                     $("#openAppHostDiv").text(openAppHost ? `pogona hunter run on: ${openAppHost}` : 'No APP is running')
 
-                    $("#nStrikes").text(`Today Strikes Count: ${(data['n_strikes']).toFixed(0)}`)
-                    $("#nRewards").text(`Today Rewards Count: ${(data['n_rewards'])}`)
+                    // $("#nStrikes").text(`Today Strikes Count: ${(data['n_strikes']).toFixed(0)}`)
+                    // $("#nRewards").text(`Today Rewards Count: ${(data['n_rewards'])}`)
 
                     for (let feederName in data['reward_left']) {
                         let feederCount = data['reward_left'][feederName]
@@ -234,7 +249,7 @@
             } else if (!!maxValue && value > maxValue) {
                 color = 'red'
             }
-            $comp.text(`${text}: ${!!value ? value.toFixed(fixation): value}${units}`).css({'color': color})
+            $comp.text(`${text}: ${!!value ? value.toFixed(fixation): value}${value == null ? '' : units}`).css({'color': color})
         }
 
         let $startExpButton = $('#startExperimentButton')
@@ -295,7 +310,7 @@
         // Get animal ID
         setTimeout(() => {
           $.get('/get_current_animal').done(data => {
-              console.log(data)
+console.log(data)
               AnimalIDFields.values = data
             })
         }, 1000)
@@ -578,22 +593,16 @@
             })
         })
 
-        $("#calibrate").click(function (e) {
-            $.post(`/calibrate`, {camera: $("#selectStreamCamera").val()}).done( function (data) {
-                let bytestring = data['status']
-                let image = bytestring.split('\'')[1]
-                $("#stream_img").attr('src' , 'data:image/jpeg;base64,'+image)
-            })
-        })
+        // $("#calibrate").click(function (e) {
+        //     $.post(`/calibrate`, {camera: $("#selectStreamCamera").val()}).done( function (data) {
+        //         let bytestring = data['status']
+        //         let image = bytestring.split('\'')[1]
+        //         $("#stream_img").attr('src' , 'data:image/jpeg;base64,'+image)
+        //     })
+        // })
 
         $("#clearOutputButton").click(function (e) {
             $("#record-output").empty()
-        })
-
-        $("#animalSummary").click(function (e) {
-            $.get('/animal_summary', function (data) {
-                appendOutput(data)
-            })
         })
 
         function isMediaExperiment(i) {
