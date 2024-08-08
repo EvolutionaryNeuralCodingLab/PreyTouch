@@ -73,11 +73,12 @@ class ArenaPose:
 
     """
 
-    def __init__(self, cam_name, predictor, is_use_db=True, orm=None, model_path=None, commit_bodypart='head'):
+    def __init__(self, cam_name, predictor, is_use_db=True, orm=None, model_path=None, commit_bodypart='head', is_dwh=False):
         self.cam_name = cam_name
         self.predictor = predictor
         self.model_path = model_path
         self.is_use_db = is_use_db
+        self.is_dwh = is_dwh
         self.load_predictor()
         self.last_commit = None
         self.caliber = None
@@ -188,8 +189,8 @@ class ArenaPose:
     def _load_from_local_files(self, video_path: Path, only_load=False, prefix=''):
         if isinstance(video_path, str):
             video_path = Path(video_path)
-        if not self.is_initialized:
-            self.init_from_video(video_path, caliber_only=True)
+        # if not self.is_initialized:
+        #     self.init_from_video(video_path, caliber_only=True)
         cache_path = self.get_predicted_cache_path(video_path)
         if cache_path.exists():
             pose_df = pd.read_parquet(cache_path)
@@ -715,6 +716,8 @@ class SpatialAnalyzer:
                         continue
 
                     group_name = self._get_split_values(exp, blk)
+                    if self.split_by and not group_name:
+                        continue
                     for vid in blk.videos:
                         if self.cam_name and vid.cam_name != self.cam_name:
                             continue
@@ -740,6 +743,8 @@ class SpatialAnalyzer:
                 val = getattr(exp, c, None)
             else:
                 raise Exception(f'bad target for {c}: {self.splits_table[c]}')
+            if val is None:
+                continue
             s.append(f"{c}={val}")
         return ','.join(s)
 
@@ -868,7 +873,7 @@ class SpatialAnalyzer:
 
             blocks_ids = sorted(set([t[0] for t in trajs.keys() if t[2] == single_animal]))
             x = np.linspace(0, 1, len(blocks_ids))
-            cmap = matplotlib.colormaps['coolwarm']
+            cmap = plt.get_cmap('coolwarm')
             cmap_mat = cmap(x)[:, :3] #.astype(int)
 
             x_values = {}
@@ -1401,6 +1406,8 @@ if __name__ == '__main__':
     # DLCArenaPose('front', is_use_db=True).predict_frame(img)
     # plt.imshow(img)
     # plt.show()
+    sa = SpatialAnalyzer(animal_ids=None, movement_type='low_horizontal', start_date='2023-04-18',
+                         split_by=['exit_hole'], bodypart='nose', is_use_db=True, excluded_animals=['PV85'])
     # load_pose_from_videos('PV80', 'front', is_exit_agg=True) #, day='20221211')h
     # SpatialAnalyzer(animal_ids=['PV91'], bodypart='nose', is_use_db=True).plot_spatial_hist('PV91')
     # SpatialAnalyzer(movement_type='low_horizontal', split_by=['exit_hole'], bodypart='nose').find_crosses(y_value=5)
