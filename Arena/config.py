@@ -213,7 +213,7 @@ IS_RECORD_SCREEN_IN_EXPERIMENT = env.bool('IS_RECORD_SCREEN_IN_EXPERIMENT', True
 extra_time_recording = env.int('EXTRA_TIME_RECORDING', 30)
 time_between_blocks = env.int('time_between_blocks', 300)
 experiments_timeout = env.int('EXPERIMENTS_TIMEOUT', 60 * 60)
-reward_timeout = env.int('reward_timeout', 10)
+reward_timeout = env.int('reward_timeout', 2)
 MAX_DAILY_REWARD = env.int('MAX_DAILY_REWARD', 40)
 experiment_cache_path = env('experiment_cache_path', 'cached_experiments')
 MAX_DURATION_CONT_BLANK = env.int('MAX_DURATION_CONT_BLANK', 48*3600)
@@ -260,6 +260,9 @@ DLC_FOLDER = env('DLC_FOLDER', f'{OUTPUT_DIR}/models/deeplabcut')
 PSYCHO_FOLDER = env('PSYCHO_FOLDER', '/data/Pogona_Pursuit/psycho_files')
 PSYCHO_PYTHON_INTERPRETER = env('PSYCHO_PYTHON_INTERPRETER', '/home/regev/anaconda3/envs/psycho/bin/python')
 
+# LightSTIM
+LIGHT_STIM_SERIAL = env('LIGHT_STIM_SERIAL', None)
+LIGHT_STIM_BAUD = env('LIGHT_STIM_BAUD', 115200)
 
 class UserEnv:
     pass

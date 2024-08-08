@@ -10,6 +10,8 @@ from cache import RedisCache, CacheColumns as cc
 from loggers import get_logger
 from db_models import ORM
 import config
+import serial
+from serial.tools import list_ports
 
 
 CONFIG_PATH = 'configurations/periphery_config.json'
@@ -195,6 +197,46 @@ class ArenaListener(MQTTListener):
         return
 
 
+class LightSTIM:
+    def __init__(self):
+        self.port = None
+        self.logger = get_logger('lightSTIM')
+        if config.LIGHT_STIM_SERIAL:
+            for p in list_ports.comports():
+                if p.serial_number == config.LIGHT_STIM_SERIAL:
+                    self.port = p.device
+                    break
+            if not self.port:
+                self.logger.warning(f'could not find lightSTIM arduino with serial: {config.LIGHT_STIM_SERIAL}') 
+        else:
+            self.logger.warning(f'LIGHT_STIM_PORT is not configured, cannot run lightSTIM command')        
+    
+    def run_stim_command(self, stim_cmd):
+        if self.port is None:
+            self.logger.warning(f'cannot run stim light command, no port found') 
+            return
+        
+        ser = serial.Serial(self.port, config.LIGHT_STIM_BAUD, timeout=1)
+        time.sleep(1)
+        self.logger.info(f'Start LightSTIM command: "{stim_cmd}"')
+        ser.write((stim_cmd + '\r\n').encode('ascii'))
+        ser.close()
+        
+    def stop_stim(self):
+        if self.port is None:
+            self.logger.warning(f'cannot run stop stim light, no port found') 
+            return
+
+        ser = serial.Serial(self.port, config.LIGHT_STIM_BAUD, timeout=1)
+        time.sleep(1)
+        self.logger.info(f'Stop LightSTIM')
+        ser.write('STOP\r\n'.encode('ascii'))
+        ser.close()
+        
+        
+    
+    
+    
 if __name__ == "__main__":
     def hc_callback(payload):
         print(payload)

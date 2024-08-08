@@ -22,7 +22,7 @@ from experiment import ExperimentCache
 from arena import ArenaManager
 from loggers import init_logger_config, create_arena_handler
 from calibration import CharucoEstimator
-from periphery_integration import PeripheryIntegrator
+from periphery_integration import PeripheryIntegrator, LightSTIM
 from agent import Agent
 import matplotlib
 matplotlib.use('Agg')
@@ -149,6 +149,25 @@ def commit_schedule():
         data['every'] = int(data['every'])
         arena_mgr.orm.commit_multiple_schedules(**data)
         arena_mgr.update_upcoming_schedules()
+    return Response('ok')
+
+
+@app.route('/commit_light_stim', methods=['POST'])
+def commit_light_stim():
+    data = dict(request.form)
+    if not data.get('start_date'):
+        arena_mgr.logger.error('please enter start_date for STIM schedule')
+    else:
+        data['start_date'] = datetime.strptime(data['start_date'], '%d/%m/%Y %H:%M')
+        data['every'] = int(data['every'])
+        arena_mgr.orm.commit_multiple_schedules(**data)
+        arena_mgr.update_upcoming_schedules()
+    return Response('ok')
+
+
+@app.route('/stop_light_stim', methods=['GET'])
+def stop_light_stim():
+    LightSTIM().stop_stim()
     return Response('ok')
 
 
