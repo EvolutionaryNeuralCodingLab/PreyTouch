@@ -47,10 +47,10 @@ class Conf:
             env_type = func.__name__
             env_val = getattr(_env, env_type)(env_name, default_value, **kwargs)
             if is_map:
-                self.env_map[env_name] = {'value': env_val, 'type': env_type, 'default': default_value, 'group': group, 'desc': desc, 'validator': validator, 
+                self.env_map[env_name] = {'value': env_val, 'type': env_type, 'default': default_value, 'group': group, 'desc': desc, 'validator': validator,
                                           'is_changed': env_val != default_value}
             return env_val
-        
+
         return wrapper
 
     def set_in_env_file(self, key, map):
@@ -96,14 +96,14 @@ class Conf:
                 value = eval(value)
             except Exception as e:
                 raise Exception(f'value received: {value}, expected type: {map["type"]}')
-            
+
             if map['type'] == 'list':
                 assert isinstance(value, list), f'value received: {value}, expected type: list'
             elif map['type'] in ['int', 'float']:
                 assert isinstance(value, (int, float)), f'value received: {value}, expected type: number'
             elif map['type'] == 'bool':
                 assert isinstance(value, bool), f'value received: {value}, expected type: boolean'
-            
+
         map['value'] = value
         self.set_in_env_file(key, map)
 
@@ -141,7 +141,7 @@ class Validator:
             return
         cam_config = load_configuration('cameras')
         assert cam_name in cam_config, f'Camera {cam_name} does not exist'
-    
+
     def predict_model_exist(pred_name):
         if not pred_name:
             return

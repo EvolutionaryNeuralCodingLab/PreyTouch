@@ -38,6 +38,7 @@ cache: RedisCache = None
 arena_mgr: ArenaManager = None
 periphery_mgr: PeripheryIntegrator = None
 queue_app: mp.Queue = None
+config_envs = config.env.get_all_from_cache()
 
 
 @app.route('/')
@@ -61,7 +62,7 @@ def index():
     return render_template('index.html', cameras=cameras, exposure=config.DEFAULT_EXPOSURE, arena_name=config.ARENA_NAME,
                            config=app_config, log_channel=config.ui_console_channel, reward_types=config.reward_types,
                            experiment_types=config.experiment_types, media_files=list_media(), min_calib_images=config.MIN_CALIBRATION_IMAGES,
-                           blank_rec_types=config.blank_rec_types, config_envs=config.env.get_all_from_cache(), predictors=predictors,
+                           blank_rec_types=config.blank_rec_types, config_envs=config_envs, predictors=predictors,
                            max_blocks=config.api_max_blocks_to_show, toggels=toggels, psycho_files=get_psycho_files(),
                            extra_time_recording=config.EXTRA_TIME_RECORDING, feeders=feeders, configurations=confs,
                            is_light_stim=config.LIGHT_STIM_SERIAL is not None,

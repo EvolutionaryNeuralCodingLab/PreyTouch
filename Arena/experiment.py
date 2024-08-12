@@ -176,7 +176,7 @@ class Experiment:
             app_config = json.load(f)
 
         block_type = self.blocks[0].block_type
-        if block_type in ['psycho', 'blank']:
+        if block_type in ['psycho', 'blank', 'media']:
             return block_type
         curr_mt = self.blocks[0].movement_type
         curr_board = None
