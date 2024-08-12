@@ -19,6 +19,7 @@ from datetime import datetime
 from sklearn.model_selection import train_test_split, KFold, StratifiedKFold
 from sklearn.metrics import explained_variance_score, roc_auc_score, balanced_accuracy_score, precision_score, \
     recall_score, confusion_matrix, PrecisionRecallDisplay, RocCurveDisplay
+import config
 
 
 @dataclass
@@ -26,7 +27,7 @@ class Trainer:
     model_path: [str, Path] = None
     seed: int = 42
     is_debug: bool = True
-    save_model_dir: str = '/data/Pogona_Pursuit/output/models'
+    save_model_dir: str = config.OUTPUT_DIR + '/models'
     batch_size: int = 16
     threshold: float = 0.8
     num_epochs: int = 30
@@ -38,7 +39,6 @@ class Trainer:
     monitored_metric_algo: str = 'min'
     num_loader_workers: int = 6
     is_shuffle_dataset: bool = True
-    save_model_dir: str = SAVED_MODEL_DIR
     cache_dir: Path = None
     history = None
 
