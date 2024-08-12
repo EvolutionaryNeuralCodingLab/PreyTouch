@@ -86,7 +86,7 @@ class Trainer:
 
         y_vals = pd.Series(self.dataset.y).sort_index().values
         for fold, (train_idx, val_idx) in enumerate(splits.split(indices, y_vals)):
-            f_best_score_, f_best_model_, f_metrics = None, None, dict()
+            f_best_score_, f_best_model_, f_metrics, best_history = None, None, dict(), None
             self.model = self.get_model()
             self.model.to(self.device)
             loss_fn = self.get_loss_fn()
@@ -109,9 +109,8 @@ class Trainer:
                         f_best_model_ = self.model.state_dict()
             self.model.load_state_dict(f_best_model_)
             self.history.append({'model_state': f_best_model_, 'score': f_best_score_, 'metrics': f_metrics})
-        
-        self.history = history
-        chosen_fold_id = self.get_best_model(history)
+
+        chosen_fold_id = self.get_best_model()
         self.print(f'Chosen model is of Fold#{chosen_fold_id+1}')
         self.model.load_state_dict(self.history[chosen_fold_id]['model_state'])
         self.chosen_metrics = self.history[chosen_fold_id]['metrics']

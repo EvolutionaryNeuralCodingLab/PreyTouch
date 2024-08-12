@@ -87,24 +87,24 @@ class LizardTrajDataSet(Dataset):
         # concatenate the trjaectories into a single dataframe
         self.X = pd.concat([t for t in trajs.values()], axis=0).sort_values(by=['strike_id', 'time']).reset_index(
             drop=True)
-        # standarize the data over all trajectory observations 
+        # standarize the data over all trajectory observations
         if is_standardize:
             for col in variables:
                 self.X[col] = (self.X[col] - self.X[col].mean()) / self.X[col].std()
-        
+
         self.X = self.X.query(f'strike_id in {self.samples}')
         self.y = strk_df[target_name].loc[self.samples]
         if is_shuffled_target:
             print(f'Notice! Shuffling randomly the target values')
             self.y = pd.Series(index=self.y.index, data=np.random.choice(self.y.unique(), len(self.y)))
-                
+
         if is_resample:
             self.resample_trajs()
         if self.X.empty:
             raise ValueError('No samples in the dataset')
         if sub_section:
             self.extract_subsection()
-            
+
         self.y = self.y.map(lambda x: targets_values.index(x)).to_dict()
 
     def resample_trajs(self):
@@ -128,16 +128,16 @@ class LizardTrajDataSet(Dataset):
         return sample
 
     def extract_subsection(self):
-        
+
         def _sample(group):
             # Find the index of the closest value
-            closest_idx = (group['total_sec'] - self.sub_section[0]).abs().idxmin()    
+            closest_idx = (group['total_sec'] - self.sub_section[0]).abs().idxmin()
             # Get the position of the closest index in the group
             closest_position = group.index.get_loc(closest_idx)
             # Get the indexes to sample: from the closest position to closest position + n
             sample_indexes = group.iloc[closest_position:closest_position + self.sub_section[1] + 1].index
             return group.loc[sample_indexes]
-            
+
         self.X = self.X.groupby('strike_id', group_keys=False).apply(_sample)
 
 
@@ -204,18 +204,18 @@ class TrajClassifier(ClassificationTrainer):
         if self.is_hit:
             sdf = sdf.query('is_hit')
         strikes_ids = sdf.index.values.tolist()
-            
+
         dataset = LizardTrajDataSet(strk_df, trajs, strikes_ids, self.feature_names, self.targets,
                                     target_name=self.target_name, sub_section=self.sub_section,
                                     is_resample=self.is_resample, is_shuffled_target=self.is_shuffled_target)
         print(f'Traj classes count: {pd.Series(dataset.y).value_counts().sort_index().set_axis(self.targets).to_dict()}')
-        
+
         # set strike index
         example_strike_id = dataset.X.strike_id.unique()[0]
         tf = dataset.X.query(f'strike_id=={example_strike_id}').sort_values(by='time').reset_index()
         row = strk_df.loc[example_strike_id]
         self.strike_index = (tf.time - row.time).dt.total_seconds().abs().idxmin()
-        
+
         # find the right kfolds size
         for n in range(self.kfolds, 1, -1):
             if (len(dataset) / n) > self.batch_size:
@@ -267,9 +267,9 @@ class TrajClassifier(ClassificationTrainer):
     def get_model_name(self):
         return f'traj_classifier_{self.animal_id}_{self.movement_type}'
 
-    def summary_plots(self, history, chosen_fold_id):
+    def summary_plots(self, chosen_fold_id):
         fig, axes = plt.subplots(2, 3, figsize=(15, 6))
-        self.plot_train_metrics(history, chosen_fold_id, axes[0, :])
+        self.plot_train_metrics(chosen_fold_id, axes[0, :])
         self.all_data_evaluation(axes=axes[1, :])
         fig.suptitle(f'{self.animal_id} {self.movement_type}', fontsize=20)
         fig.tight_layout()
@@ -325,7 +325,7 @@ class TrajClassifier(ClassificationTrainer):
             label, prob = self.predict_proba(outputs, is_all_probs=True)
             y_true.append(y.item())
             y_score.append(prob.detach().cpu().numpy())
-        
+
         y_true, y_score = np.vstack(y_true), np.vstack(y_score)
         y_true_binary = label_binarize(y_true, classes=np.arange(len(self.targets)))
         aucs = {}
@@ -362,7 +362,7 @@ class TrajClassifier(ClassificationTrainer):
         ax.set_xlabel('X Coordinate')
         ax.set_ylabel('Y Coordinate')
         ax.set_title('Attention Weights over Trajectory')
-    
+
     def check_hidden_states(self, cols=4):
         dataset = self.get_dataset()
 
@@ -500,7 +500,33 @@ def plot_comparison(filename):
 
     fig.tight_layout()
     plt.show()
-    
+
+
+def find_optimal_span():
+    res_df = []
+    for t_start in np.arange(-3, 2, 0.5):
+        for span_sec in [60, 90, 120, 150, 180, 210]:
+            if (t_start + (span_sec / 60)) > 3:
+                continue
+            print(f'Start training with t_start: {t_start}, span_sec: {span_sec}')
+            try:
+                tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=(t_start, span_sec),
+                                    is_resample=False,
+                                    feature_names=['x', 'y', 'speed_x', 'speed_y'],
+                                    animal_id='all', movement_type='random_low_horizontal', is_hit=False, lstm_layers=4,
+                                    dropout_prob=0.3, lstm_hidden_dim=50)
+                tj.train(is_plot=False)
+                best_i = np.argmin([x['score'] for x in tj.history])
+                best_epoch = np.argmin(tj.history[best_i]['metrics']['val_loss'])
+                for metric, l in tj.history[best_i]['metrics'].items():
+                    res_df.append({'t_start': t_start, 'span_sec': span_sec, 'metric': metric, 'value': l[best_epoch]})
+            except Exception as exc:
+                print(f'Error in t_start: {t_start}, span_sec: {span_sec}; {exc}')
+
+    res_df = pd.DataFrame(res_df)
+    filename = f'{TRAJ_DIR}/optimal_span_{datetime.now().isoformat()}.csv'
+    res_df.to_csv(filename)
+
 
 if __name__ == '__main__':
     # tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=(-2, 150), is_resample=False,
@@ -509,7 +535,8 @@ if __name__ == '__main__':
     # tj.train(is_plot=True)
     # tj.check_hidden_states()
 
-    find_best_features(movement_type='circle', lstm_layers=6, dropout_prob=0.5, is_resample=True)
+    find_optimal_span()
+    # find_best_features(movement_type='circle', lstm_layers=6, dropout_prob=0.5, is_resample=True)
     # hyperparameters_comparison(animal_id='all', movement_type='circle', is_resample=True)
     # animals_comparison()
     # plot_comparison('/Users/regev/PhD/msi/Pogona_Pursuit/output/datasets/trajectories/results_2024-06-24T16:43:58.880310.csv')
