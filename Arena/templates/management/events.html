@@ -55,6 +55,12 @@
     <div class="row mb-2">
         <button data-toggle="modal" data-target="#predictionsModal" class="btn btn-sm btn-primary mx-auto">Predict</button>
     </div>
+    {% if is_light_stim %}
+    <div class="row mb-2">
+        <button id="light_stim_btn" type="button" class="btn btn-sm btn-primary mx-auto" data-toggle="modal"
+            data-target="#lightStimModal">Lights STIM</button>
+    </div>
+    {% endif %}
 </div>
 
 
@@ -141,6 +147,69 @@
 </div>
 
 
+<!-- STIM Modal -->
+<div class="modal fade" id="lightStimModal" tabindex="-1" role="dialog"
+     aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Light Stimulations</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group row pr-3">
+                    <label for="lightStimType" class="col col-form-label">Stimulation Type:</label>
+                    <div class="col">
+                        <select id="lightStimType" class="form-control col">
+                            <option value="1">Single Stimulus</option>
+                            <option value="2">Bursts of Stimulus</option>
+                            <option value="3">Typical Stimuli</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group row pr-3">
+                    <label for="lightStimTrialCount" class="col col-form-label">Trial Count:</label>
+                    <div class="col">
+                        <input type="number" class="form-control" id="lightStimTrialCount" value="70" required>
+                    </div>
+                </div>
+
+                <div class="form-group row pr-3">
+                    <label for="lightStimITI" class="col col-form-label">ITI:</label>
+                    <div class="col">
+                        <input type="number" class="form-control" id="lightStimITI" value="120000" required>
+                    </div>
+                </div>
+
+                <div class="form-group row pr-3">
+                    <label for="lightStimISI" class="col col-form-label">ISI:</label>
+                    <div class="col">
+                        <input type="number" class="form-control" id="lightStimISI" value="5000" required>
+                    </div>
+                </div>
+
+                <div class="form-group row pr-3">
+                    <div class="col input-group date" id="stim-datetimepicker1" data-target-input="nearest">
+                        <input type="text" class="form-control datetimepicker-input" data-target="#stim-datetimepicker1" autocomplete="off" />
+                        <div class="input-group-append" data-target="#stim-datetimepicker1" data-toggle="datetimepicker">
+                            <div class="input-group-text"><i class="fa fa-calendar"></i></div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+            <div class="modal-footer">
+                <button id="stpoStimButton" type="button" class="btn btn-outline-danger">Stop</button>
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                <button id="saveStimButton" type="button" class="btn btn-primary">Run</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
     {% for name in toggels %}
         $("#{{ name }}-on").click(function (e) {
@@ -151,6 +220,10 @@
         })
     {% endfor %}
 
+    $('#stim-datetimepicker1').datetimepicker({
+            format: "DD/MM/YYYY HH:mm",
+            todayHighlight: true
+    })
     $("#display_on").click(function (e) {
         $.get('/display/on')
     })
@@ -229,6 +302,24 @@
     $("#media_stop").click(function () {
         $.get('/stop_media', (data) => {
         })
+    })
+
+    $("#saveStimButton").click(() => {
+        let stimType = $("#lightStimType").val()
+        let trialCount = Number($("#lightStimTrialCount").val())
+        let ITI = Number($("#lightStimITI").val())
+        let ISI = Number($("#lightStimISI").val())
+        $.post('/commit_light_stim', {
+                start_date: $("#stim-datetimepicker1").data().date,
+                experiment_name: `LightSTIM:RUN ${stimType} ${trialCount} ${ITI} ${ISI}`,
+                every: 0,
+                end_date: null
+        })
+        $("#lightStimModal").modal('toggle');
+    })
+
+    $("#stpoStimButton").click(() => {
+        $.get('/stop_light_stim')
     })
 
 </script>

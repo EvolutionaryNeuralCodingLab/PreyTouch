@@ -60,7 +60,7 @@ experiment_metrics = {
     'trial_data': {
         'is_write_csv': True,
         'is_write_db': True,
-        'csv_file': {'bug_trajectory': 'bug_trajectory.csv', 
+        'csv_file': {'bug_trajectory': 'bug_trajectory.csv',
                      'video_frames': 'video_frames.csv',
                      'app_events': 'app_events.csv',
                      'trials_data': 'trials_data.csv'},
@@ -230,5 +230,9 @@ IS_SCREEN_CONFIGURED_FOR_POSE = (SCREEN_PIX_CM is not None) and (SCREEN_START_X_
 # PsychoPy
 PSYCHO_FOLDER = env('PSYCHO_FOLDER', None, group='PsychoPy', desc='Path to folder with psychopy files')
 PSYCHO_PYTHON_INTERPRETER = env('PSYCHO_PYTHON_INTERPRETER', None, group='PsychoPy', desc='Full path to the python interpreter that will be used to run psychopy')
+
+# Lights Stimulation
+LIGHT_STIM_SERIAL = env('LIGHT_STIM_SERIAL', None, group='LightSTIM', desc='Serial number of the lightSTIM arduino')
+LIGHT_STIM_BAUD = env('LIGHT_STIM_BAUD', 115200, group='LightSTIM', desc='lightSTIM arduino baud rate')
 
 cameras = load_configuration('cameras')

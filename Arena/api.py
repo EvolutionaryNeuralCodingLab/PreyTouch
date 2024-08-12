@@ -27,7 +27,7 @@ from experiment import ExperimentCache
 from arena import ArenaManager
 from loggers import init_logger_config, create_arena_handler
 from calibration import CharucoEstimator, Calibrator
-from periphery_integration import PeripheryIntegrator
+from periphery_integration import PeripheryIntegrator, LightSTIM
 from agent import Agent
 from analysis.pose import run_predict
 import matplotlib
@@ -64,6 +64,7 @@ def index():
                            blank_rec_types=config.blank_rec_types, config_envs=config.env.get_all_from_cache(), predictors=predictors,
                            max_blocks=config.api_max_blocks_to_show, toggels=toggels, psycho_files=get_psycho_files(),
                            extra_time_recording=config.EXTRA_TIME_RECORDING, feeders=feeders, configurations=confs,
+                           is_light_stim=config.LIGHT_STIM_SERIAL is not None,
                            acquire_stop={'num_frames': 'Num Frames', 'rec_time': 'Record Time [sec]'})
 
 
@@ -229,6 +230,25 @@ def animal_today_summary():
         return Response('Error loading animal summary', status=500)
 
 
+@app.route('/commit_light_stim', methods=['POST'])
+def commit_light_stim():
+    data = dict(request.form)
+    if not data.get('start_date'):
+        arena_mgr.logger.error('please enter start_date for STIM schedule')
+    else:
+        data['start_date'] = datetime.strptime(data['start_date'], '%d/%m/%Y %H:%M')
+        data['every'] = int(data['every'])
+        arena_mgr.orm.commit_multiple_schedules(**data)
+        arena_mgr.update_upcoming_schedules()
+    return Response('ok')
+
+
+@app.route('/stop_light_stim', methods=['GET'])
+def stop_light_stim():
+    LightSTIM().stop_stim()
+    return Response('ok')
+
+
 @app.route('/start_camera_unit', methods=['POST'])
 def start_camera_unit():
     cam_name = request.form['camera']
@@ -279,7 +299,7 @@ def update_arena_config():
         error_msg = f'Error in update_arena_config; {exc}'
         arena_mgr.logger.error(error_msg)
         return Response(error_msg, status=400)
-    
+
     return Response(f'updated {data["key"]} to {data["value"]}', status=200)
 
 
@@ -333,7 +353,7 @@ def run_calibration(mode):
                 img = base64.b64decode(imgdata)
                 img = np.array(Image.open(BytesIO(img)))
                 cv2.imwrite(f'{tmpdirname}/{img_name}', img)
-            
+
             calib_date = datetime.strptime(data['date'], '%Y-%m-%d')
             if mode == 'undistort':
                 err_text = calib.calibrate_camera(img_dir=tmpdirname, calib_date=calib_date)
@@ -341,7 +361,7 @@ def run_calibration(mode):
             else:
                 img, err_text = calib.find_aruco_markers(f'{tmpdirname}/{list(data["images"].keys())[0]}', image_date=calib_date,
                                                          is_rotated=data['is_rotated'])
-            
+
             img = Image.fromarray(img)
             rawBytes = io.BytesIO()
             img.save(rawBytes, "JPEG")
@@ -364,7 +384,7 @@ def run_predictions():
         res = run_predict(data['pred_name'], list(data['images'].values()), data.get('cam_name', ''), image_date, is_base64=True)
         if 'images' not in res or len(res['images']) == 0:
             return Response(f'Prediction returned nothing', status=500)
-        
+
         img, pdf = res['images'][0]
         img = Image.fromarray(img)
         rawBytes = io.BytesIO()
@@ -374,7 +394,7 @@ def run_predictions():
         return jsonify({'image': str(img_base64), 'result': pdf.to_string() if isinstance(pdf, (pd.Series, pd.DataFrame)) is not None else 'No prediction'})
     except ImportError as exc:
         return Response(f'Error in prediction; {exc}', status=500)
-    
+
 
 @app.route('/reward')
 def reward():
@@ -555,11 +575,11 @@ def reboot_service(service):
 def load_example_config(conf_name):
     if conf_name not in config.configurations:
         return Response(f'Configuration {conf_name} not found', status=404)
-    
+
     p = Path(f'configurations/examples/{conf_name}_example.json')
     if not p.exists():
         return Response(f'Example configuration file {p} not found', status=404)
-    
+
     with p.open('r') as f:
         data = json.load(f)
     return Response(json.dumps(data), status=200)

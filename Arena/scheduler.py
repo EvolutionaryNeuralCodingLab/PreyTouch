@@ -9,7 +9,7 @@ from loggers import get_logger
 import config
 from cache import RedisCache, CacheColumns as cc
 from compress_videos import get_videos_ids_for_compression, compress
-from periphery_integration import PeripheryIntegrator
+from periphery_integration import PeripheryIntegrator, LightSTIM
 from analysis.pose import VideoPoseScanner
 from analysis.strikes.strikes import StrikeScanner
 from db_models import DWH
@@ -114,7 +114,13 @@ class Scheduler(threading.Thread):
             if m:
                 schedule_date = datetime.strptime(m.group('date'), config.SCHEDULER_DATE_FORMAT)
                 if (schedule_date - datetime.now()).total_seconds() <= 0:
-                    self.arena_mgr.start_cached_experiment(m.group('name'))
+                    exp_name = m.group('name')
+                    # lights stimulation (in case the name starts with "LightSTIM:")
+                    if exp_name.startswith('LightSTIM'):
+                        stim_cmd = exp_name.replace('LightSTIM:', '')
+                        LightSTIM().run_stim_command(stim_cmd)
+                    else:  # otherwise, start the cached experiment
+                        self.arena_mgr.start_cached_experiment(m.group('name'))
 
     @schedule_method
     def dwh_commit(self):
