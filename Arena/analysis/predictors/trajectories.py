@@ -1,5 +1,6 @@
 import re
 import pickle
+import time
 import itertools
 import pandas as pd
 import numpy as np
@@ -22,7 +23,7 @@ from sklearn.preprocessing import label_binarize
 from sklearn.manifold import TSNE
 from sklearn.metrics import (explained_variance_score, roc_auc_score, balanced_accuracy_score, precision_score, \
                              recall_score, confusion_matrix, PrecisionRecallDisplay, RocCurveDisplay, precision_recall_curve,
-                             average_precision_score, roc_curve)
+                             average_precision_score, roc_curve, precision_recall_fscore_support, accuracy_score)
 from sklearn.decomposition import PCA
 from captum.attr import IntegratedGradients, LayerConductance, NeuronConductance
 from pathlib import Path
@@ -277,12 +278,7 @@ class TrajClassifier(ClassificationTrainer):
             fig.savefig(self.cache_dir / 'summary_plots.jpg')
         plt.show()
 
-    def all_data_evaluation(self, axes=None, is_test_set=False, **kwargs):
-        if axes is None:
-            fig, axes_ = plt.subplots(1, 3, figsize=(18, 4))
-        else:
-            axes_ = axes
-        assert len(axes_) == 3
+    def get_data_for_evaluation(self, is_test_set=False):
         self.model.eval()
         dataset = self.get_dataset()
         if is_test_set:
@@ -296,19 +292,34 @@ class TrajClassifier(ClassificationTrainer):
             y_true.append(y.item())
             y_pred.append(label.item())
             y_score.append(prob.detach().cpu().numpy())
+        y_true, y_pred, y_score = np.vstack(y_true), np.vstack(y_pred), np.vstack(y_score)
+        return y_true, y_pred, y_score, attns
 
+    def all_data_evaluation(self, axes=None, is_test_set=False, **kwargs):
+        if axes is None:
+            fig, axes_ = plt.subplots(1, 3, figsize=(18, 4))
+        else:
+            axes_ = axes
+        assert len(axes_) == 3
+
+        y_true, y_pred, y_score, attns = self.get_data_for_evaluation(is_test_set)
+        mean_att = []
         for bug_speed in self.targets:
             att = attns[bug_speed]
             att = np.vstack(att).mean(axis=0)
-            att[:5] = np.nan
-            axes_[2].plot(att, label=f'{bug_speed}cm/sec')
+            att[:8] = np.nan
+            mean_att.append(att)
+            axes_[2].plot(att, label=f'{bug_speed}cm/sec', alpha=0.4)
+        axes_[2].plot(np.vstack(mean_att).mean(axis=0), color='k')
         if self.strike_index:
             axes_[2].axvline(self.strike_index, color='k', linestyle='--')
         axes_[2].legend()
 
-        y_true, y_pred, y_score = np.vstack(y_true), np.vstack(y_pred), np.vstack(y_score)
         y_true_binary = label_binarize(y_true, classes=np.arange(len(self.targets)))
         self.plot_confusion_matrix(y_true, y_pred, ax=axes_[0])
+        acc = accuracy_score(y_true, y_pred)
+        precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='macro')
+        axes_[0].set_title(f'Accuracy: {acc:.2f}\nMacro precision:{precision:.2f}, recall:{recall:.2f}, f1:{f1:.2f}')
         # self.plot_precision_curve(y_true_binary, y_score, axes_[1])
         self.plot_roc_curve(y_true_binary, y_score, axes_[1])
         # PrecisionRecallDisplay.from_predictions(y_true, y_true, ax=axes_[1])
@@ -333,7 +344,6 @@ class TrajClassifier(ClassificationTrainer):
             aucs[target] = roc_auc_score(y_true_binary[:, i], y_score[:, i])
         return aucs
 
-
     def plot_precision_curve(self, y_true_binary, y_score, ax):
         for i, target in enumerate(self.targets):
             precision, recall, _ = precision_recall_curve(y_true_binary[:, i], y_score[:, i])
@@ -349,7 +359,9 @@ class TrajClassifier(ClassificationTrainer):
             auc = roc_auc_score(y_true_binary[:, i], y_score[:, i])
             display = RocCurveDisplay(fpr=fpr, tpr=tpr, roc_auc=auc)
             display.plot(ax=ax, name=str(target))  # plot_chance_level=True
-            ax.set_title("Micro-averaged over all classes")
+
+        micro_auc = roc_auc_score(y_true_binary, y_score, average="micro")
+        ax.set_title(f"Micro-averaged over all classes: {micro_auc:.2f}")
 
     def plot_attention_weights(self, attention_weights, trajectory, ax):
         # attention_weights: Tensor of shape (seq_length,)
@@ -520,6 +532,8 @@ def find_optimal_span():
                 best_epoch = np.argmin(tj.history[best_i]['metrics']['val_loss'])
                 for metric, l in tj.history[best_i]['metrics'].items():
                     res_df.append({'t_start': t_start, 'span_sec': span_sec, 'metric': metric, 'value': l[best_epoch]})
+                torch.cuda.empty_cache()
+                time.sleep(1)
             except Exception as exc:
                 print(f'Error in t_start: {t_start}, span_sec: {span_sec}; {exc}')
 

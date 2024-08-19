@@ -191,6 +191,7 @@ class Trainer:
         self.model_path = Path(f"{self.save_model_dir}/{self.model_name}/{datetime.now().strftime('%Y%m%d_%H%M%S')}")
         self.model_path.mkdir(exist_ok=True, parents=True)
         torch.save(self.model.state_dict(), self.model_path / 'model.pth')
+        torch.save(self.history, self.model_path / 'history.pth')
         self.print(f'model saved to {self.model_path}')
         self.cache_dir = self.model_path
 
