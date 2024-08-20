@@ -15,8 +15,6 @@ Arena/bin
 *.mp4
 *.pth
 *.pdf
-!/notebooks/arena_figures/**/*.pdf
-!/notebooks/figures/final_figures/**/*.pdf
 *.conv.74
 *.*~
 *.log
@@ -36,12 +34,16 @@ std*.txt
 
 Archive/
 .archive/
+Arean/.archive/
 Arena/calibration/*
 yolo_eval_frames
 yolo_fn_frames
 yolo_eval_labels
 experiment_plots
 notebooks/archive
+notebooks/arena_figures/
+notebooks/figures/
+
 
 Arena/Prediction/Yolo4/darknet
 Arena/Prediction/Yolo4/libdarknet.so
