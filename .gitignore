@@ -34,7 +34,7 @@ std*.txt
 
 Archive/
 .archive/
-Arean/.archive/
+Arena/.archive/
 Arena/calibration/*
 yolo_eval_frames
 yolo_fn_frames
