@@ -174,7 +174,7 @@ class TrajClassifier(ClassificationTrainer):
     def load(self):
         attrs_path = Path(self.model_path) / 'attrs.pkl'
         if not attrs_path.exists():
-            print(f'No attrs file found. Loading from {self.model_path}')
+            self.print(f'No attrs file found. Loading from {self.model_path}')
             s = Path(self.model_path).parts[-2]
             m = re.search(r'traj_classifier_(?P<animal_id>\w+?)_(?P<movement_type>\w+)', s)
             self.movement_type = m.group('movement_type')
@@ -183,7 +183,7 @@ class TrajClassifier(ClassificationTrainer):
             with attrs_path.open('rb') as f:
                 attrs = pickle.load(f)
                 for k, v in attrs.items():
-                    if k in ['model_path']:
+                    if k in ['model_path', 'is_debug']:
                         continue
                     setattr(self, k, v)
         super().load()
@@ -209,7 +209,7 @@ class TrajClassifier(ClassificationTrainer):
         dataset = LizardTrajDataSet(strk_df, trajs, strikes_ids, self.feature_names, self.targets,
                                     target_name=self.target_name, sub_section=self.sub_section,
                                     is_resample=self.is_resample, is_shuffled_target=self.is_shuffled_target)
-        print(f'Traj classes count: {pd.Series(dataset.y).value_counts().sort_index().set_axis(self.targets).to_dict()}')
+        self.print(f'Traj classes count: {pd.Series(dataset.y).value_counts().sort_index().set_axis(self.targets).to_dict()}')
 
         # set strike index
         example_strike_id = dataset.X.strike_id.unique()[0]
@@ -285,7 +285,7 @@ class TrajClassifier(ClassificationTrainer):
             dataset = Subset(dataset, self.test_indices)
         y_true, y_pred, y_score = [], [], []
         attns = {}
-        for x, y in tqdm(dataset):
+        for x, y in (tqdm(dataset) if self.is_debug else dataset):
             outputs, attention_weights = self.model(x.to(self.device).unsqueeze(0), is_attn=True)
             attns.setdefault(self.targets[y.item()], []).append(attention_weights.detach().cpu().numpy())
             label, prob = self.predict_proba(outputs, is_all_probs=True)
@@ -319,7 +319,7 @@ class TrajClassifier(ClassificationTrainer):
         self.plot_confusion_matrix(y_true, y_pred, ax=axes_[0])
         acc = accuracy_score(y_true, y_pred)
         precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='macro')
-        axes_[0].set_title(f'Accuracy: {acc:.2f}\nMacro precision:{precision:.2f}, recall:{recall:.2f}, f1:{f1:.2f}')
+        axes_[0].set_title(f'Accuracy: {acc:.2f}')
         # self.plot_precision_curve(y_true_binary, y_score, axes_[1])
         self.plot_roc_curve(y_true_binary, y_score, axes_[1])
         # PrecisionRecallDisplay.from_predictions(y_true, y_true, ax=axes_[1])
