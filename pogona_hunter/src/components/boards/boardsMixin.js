@@ -57,20 +57,6 @@ export default {
         this.$store.commit('reset_score')
         this.initBoard(!!options['isLogTrajectory'])
       },
-      'cmd/visual_app/hide_media': (payload) => {
-        if (this.isMedia) {
-          this.$socketClient.publish('log/metric/video_frames', JSON.stringify(this.$refs.mediaElement.framesLog))
-          this.isMedia = false
-        }
-        location.reload()
-      },
-      'cmd/visual_app/init_media': (options) => {
-        options = JSON.parse(options)
-        this.clearBoard()
-        this.mediaUrl = options.url
-        console.log(this.mediaUrl)
-        this.isMedia = true
-      },
       'cmd/visual_app/strike_predicted': (payload) => {
         console.log('received strike_predicted command')
         this.jumpBugs()
