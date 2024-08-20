@@ -41,9 +41,10 @@ export default {
     this.$socketClient.subscribe({
       'cmd/visual_app/hide_media': (payload) => {
         if (this.isMedia) {
-          this.$socketClient.publish('log/metric/video_frames', JSON.stringify(this.$refs.mediaElement.framesLog))
+          this.$socketClient.publish('log/metric/trial_data', JSON.stringify({video_frames: this.framesLog}))
           this.isMedia = false
         }
+        this.mediaUrl = ''
         location.reload()
       },
       'cmd/visual_app/init_media': (options) => {
