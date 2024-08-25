@@ -164,7 +164,7 @@ class TrajClassifier(ClassificationTrainer):
     target_name: str = 'block_speed'
     is_shuffled_target: bool = False  # shuffle the target randomly. Used to find baseline for attention.
     targets: List = field(default_factory=lambda: [2, 4, 6, 8])
-    feature_names: List = field(default_factory=lambda: ['x', 'y', 'speed_x', 'speed_y'])
+    feature_names: List = field(default_factory=lambda: ['x', 'y', 'speed'])
     strike_index = None
 
     # def __post_init__(self):
@@ -261,7 +261,7 @@ class TrajClassifier(ClassificationTrainer):
         for strike_id, xf in trajs.items():
             xf['speed_x'] = xf.x.diff().fillna(0)
             xf['speed_y'] = xf.y.diff().fillna(0)
-            # xf['speed'] = np.sqrt(xf.x.diff() ** 2 + xf.y.diff() ** 2)
+            xf['speed'] = np.sqrt(xf.x.diff() ** 2 + xf.y.diff() ** 2)
             # xf.speed.fillna(0, inplace=True)
         return strk_df, trajs
 
@@ -378,11 +378,12 @@ class TrajClassifier(ClassificationTrainer):
     def check_hidden_states(self, cols=4):
         dataset = self.get_dataset()
 
-        rows = int(np.ceil((len(self.targets)+1) / cols))
-        fig, axes = plt.subplots(rows, cols, figsize=(18, 4*rows))
+        # rows = int(np.ceil((len(self.targets)+1) / cols))
+        fig, axes = plt.subplots(1, 2, figsize=(6, 3))
         axes = axes.flatten()
 
-        self.visualize_features_importance(dataset, axes=axes[:len(self.targets)])
+        # self.visualize_features_importance(dataset, axes=axes[:len(self.targets)])
+        self.visualize_features_importance(dataset, ax=axes[0])
 
         # run PCA to visualize targets embedding
         self.model.eval()
@@ -395,7 +396,7 @@ class TrajClassifier(ClassificationTrainer):
         res = np.vstack(res)
         pca = PCA(n_components=2)
         X_embedded = pca.fit_transform(res)
-        ax_pca = axes[len(self.targets)]
+        ax_pca = axes[1]
         sns.scatterplot(x=X_embedded[:, 0], y=X_embedded[:, 1], hue=targets, palette="deep", ax=ax_pca)
         ax_pca.set_title('PCA')
         for ax in axes[len(self.targets)+1:]:
@@ -404,31 +405,53 @@ class TrajClassifier(ClassificationTrainer):
         fig.savefig((Path(self.model_path) / 'hidden_states.png'), dpi=200)
         plt.show()
 
-    def visualize_features_importance(self, dataset, axes=None):
-        self.model.train()
+    def visualize_features_importance(self, dataset, ax=None):
+        torch.backends.cudnn.enabled = False
+        self.model.eval()
         ig = IntegratedGradients(self.model)
 
-        if axes is None:
-            fig, axes = plt.subplots(len(self.targets), 1, figsize=(6, 3 * len(self.targets)))
+        if ax is None:
+            fig, axes = plt.subplots(1, len(self.targets), figsize=(18, 3))
 
-        for i, target in tqdm(enumerate(self.targets), desc='Visualize Feature Importance', total=len(self.targets)):
-            aggregated_attributions = []
-            for x, y in dataset:
-                attr = ig.attribute(x.to(self.device).unsqueeze(0), target=i)
-                aggregated_attributions.append(attr)
+        res = {}
+        aggregated_attributions = {}
+        for x, y in dataset:
+            input_ = x.to(self.device).unsqueeze(0)
+            baseline = torch.zeros(input_.shape).to(self.device)
+            attr, delta = ig.attribute(input_, baseline, target=y.item(), return_convergence_delta=True)
+            aggregated_attributions.setdefault(self.targets[y.item()], []).append(attr)
 
-            aggregated_attributions = torch.cat(aggregated_attributions, dim=0)
-            importance = np.mean(aggregated_attributions.cpu().detach().numpy(), axis=0)
+        for target, x in aggregated_attributions.items():
+            x = torch.cat(x, dim=0)
+            importance = np.mean(x.cpu().detach().numpy(), axis=0)
             imp = pd.Series(importance[-1])
-            idx = imp.abs().sort_values().index.tolist()
-            imp = imp.reindex(idx)
+            # idx = imp.sort_values().index.tolist()
+            # imp = imp.reindex(idx)
             imp.index = [self.feature_names[i] for i in imp.index]
-            imp.plot.barh(ax=axes[i])
             max_x = np.abs(importance[-1]).max()
-            axes[i].set_xlim([-max_x, max_x])
-            axes[i].set_ylabel('Features')
-            axes[i].set_title(f'{target}cm/sec')
-            axes[i].axvline(0, color='black')
+            res[target] = (imp, max_x)
+
+        max_x = max([x[1] for x in res.values()])
+        x = np.arange(len(self.feature_names))  # the label locations
+        width = 0.18  # the width of the bars
+        multiplier = 0
+        for i, target in enumerate(sorted(list(res.keys()))):
+            imp, _ = res[target]
+            offset = width * multiplier
+            rects = ax.bar(x + offset, imp.values, width, label=f'{target}cm/sec')
+            # ax.bar_label(rects, padding=3)
+            multiplier += 1
+
+        ax.axhline(0, color='k')
+        ax.set_xticks(x + width, self.feature_names)
+        ax.legend()
+        # for i, target in enumerate(sorted(list(res.keys()))):
+        #     imp, _ = res[target]
+        #     # imp.plot.barh(ax=axes[i])
+        #     axes[i].set_xlim([-max_x, max_x])
+        #     axes[i].set_ylabel('Features')
+        #     axes[i].set_title(f'{target}cm/sec')
+        #     axes[i].axvline(0, color='black')
 
 
 def animals_comparison():
@@ -456,15 +479,15 @@ def animals_comparison():
 
 
 def hyperparameters_comparison(animal_id='PV91', movement_type='random_low_horizontal', is_resample=False,
-                               sub_section=(-2, 150)):
+                               sub_section=(-2, 180), feature_names=('x', 'y', 'speed')):
     from sklearn.model_selection import ParameterGrid
 
     res_df = []
     grid = ParameterGrid(dict(dropout_prob=[0.1, 0.3, 0.4, 0.6], lstm_layers=[4, 6, 8], lstm_hidden_dim=[50, 100, 150]))
     for i, params in enumerate(grid):
         print(f'start loop {i+1}/{len(grid)}')
-        tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=sub_section,
-                            is_resample=is_resample, animal_id=animal_id, movement_type=movement_type, **params)
+        tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=sub_section, feature_names=feature_names,
+                            is_debug=False, is_resample=is_resample, animal_id=animal_id, movement_type=movement_type, **params)
         tj.train(is_plot=False)
         best_i = np.argmin([x['score'] for x in tj.history])
         best_epoch = np.argmin(tj.history[best_i]['metrics']['val_loss'])
@@ -472,8 +495,15 @@ def hyperparameters_comparison(animal_id='PV91', movement_type='random_low_horiz
             res_df.append({'metric': metric, 'value': l[best_epoch], 'animal_id': animal_id,
                            'movement_type': movement_type, **params})
 
+        y_true, y_pred, y_score, attns = tj.get_data_for_evaluation()
+        acc = accuracy_score(y_true, y_pred)
+        res_df.append({'metric': 'overall_accuracy', 'value': acc, 'animal_id': animal_id,
+                       'movement_type': movement_type, **params})
+        torch.cuda.empty_cache()
+        time.sleep(1)
+
     res_df = pd.DataFrame(res_df)
-    filename = f'{TRAJ_DIR}/hyperparameters_results_{datetime.now().isoformat()}.csv'
+    filename = f'{TRAJ_DIR}/hyperparameters_results_{animal_id}_{datetime.now().isoformat()}.csv'
     res_df.to_csv(filename)
 
 
@@ -549,9 +579,10 @@ if __name__ == '__main__':
     # tj.train(is_plot=True)
     # tj.check_hidden_states()
 
-    find_optimal_span()
+    # find_optimal_span()
     # find_best_features(movement_type='circle', lstm_layers=6, dropout_prob=0.5, is_resample=True)
-    # hyperparameters_comparison(animal_id='all', movement_type='circle', is_resample=True)
+    hyperparameters_comparison(animal_id='PV163')
+    hyperparameters_comparison(animal_id='PV99')
     # animals_comparison()
     # plot_comparison('/Users/regev/PhD/msi/Pogona_Pursuit/output/datasets/trajectories/results_2024-06-24T16:43:58.880310.csv')
 
