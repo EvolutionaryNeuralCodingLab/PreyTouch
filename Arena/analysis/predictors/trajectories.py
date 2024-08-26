@@ -255,7 +255,8 @@ class TrajClassifier(ClassificationTrainer):
         }
 
     def load_data(self):
-        with open(f'{self.dataset_path}/trajs_2s_after.pkl', 'rb') as f:
+        filename = 'trajs_2s_after' if self.animal_id not in ['PV80', 'PV42', 'PV85'] else 'trajs_2s_after_msi_regev'
+        with open(f'{self.dataset_path}/{filename}.pkl', 'rb') as f:
             d = pickle.load(f)
         strk_df, trajs = d['strk_df'], d['trajs']
         for strike_id, xf in trajs.items():
@@ -375,12 +376,11 @@ class TrajClassifier(ClassificationTrainer):
         ax.set_ylabel('Y Coordinate')
         ax.set_title('Attention Weights over Trajectory')
 
-    def check_hidden_states(self, cols=4):
+    def check_hidden_states(self, cols=4, axes=None, fig=None):
         dataset = self.get_dataset()
-
-        # rows = int(np.ceil((len(self.targets)+1) / cols))
-        fig, axes = plt.subplots(1, 2, figsize=(6, 3))
-        axes = axes.flatten()
+        if axes is None:
+            fig, axes = plt.subplots(1, 2, figsize=(6, 3))
+            axes = axes.flatten()
 
         # self.visualize_features_importance(dataset, axes=axes[:len(self.targets)])
         self.visualize_features_importance(dataset, ax=axes[0])
@@ -401,9 +401,10 @@ class TrajClassifier(ClassificationTrainer):
         ax_pca.set_title('PCA')
         for ax in axes[len(self.targets)+1:]:
             ax.axis('off')
-        fig.tight_layout()
-        fig.savefig((Path(self.model_path) / 'hidden_states.png'), dpi=200)
-        plt.show()
+        if fig is not None:
+            fig.tight_layout()
+            fig.savefig((Path(self.model_path) / 'hidden_states.png'), dpi=200)
+            plt.show()
 
     def visualize_features_importance(self, dataset, ax=None):
         torch.backends.cudnn.enabled = False
@@ -581,8 +582,9 @@ if __name__ == '__main__':
 
     # find_optimal_span()
     # find_best_features(movement_type='circle', lstm_layers=6, dropout_prob=0.5, is_resample=True)
-    hyperparameters_comparison(animal_id='PV163')
-    hyperparameters_comparison(animal_id='PV99')
+    hyperparameters_comparison(animal_id='PV80')
+    hyperparameters_comparison(animal_id='PV42')
+    hyperparameters_comparison(animal_id='PV85')
     # animals_comparison()
     # plot_comparison('/Users/regev/PhD/msi/Pogona_Pursuit/output/datasets/trajectories/results_2024-06-24T16:43:58.880310.csv')
 
