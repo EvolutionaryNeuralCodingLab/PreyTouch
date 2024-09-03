@@ -296,25 +296,30 @@ class TrajClassifier(ClassificationTrainer):
         y_true, y_pred, y_score = np.vstack(y_true), np.vstack(y_pred), np.vstack(y_score)
         return y_true, y_pred, y_score, attns
 
-    def all_data_evaluation(self, axes=None, is_test_set=False, **kwargs):
+    def all_data_evaluation(self, axes=None, is_test_set=False, is_plot_auc=True, **kwargs):
         if axes is None:
             fig, axes_ = plt.subplots(1, 3, figsize=(18, 4))
         else:
             axes_ = axes
-        assert len(axes_) == 3
+        assert len(axes_) == (3 if is_plot_auc else 2)
 
         y_true, y_pred, y_score, attns = self.get_data_for_evaluation(is_test_set)
         mean_att = []
+        att_id = 2 if is_plot_auc else 1
+        time_vector = self.sub_section[0] + np.arange(self.sub_section[1] + 1) * (1 / 60)
         for bug_speed in self.targets:
             att = attns[bug_speed]
             att = np.vstack(att).mean(axis=0)
             att[:8] = np.nan
             mean_att.append(att)
-            axes_[2].plot(att, label=f'{bug_speed}cm/sec', alpha=0.4)
-        axes_[2].plot(np.vstack(mean_att).mean(axis=0), color='k')
+            axes_[att_id].plot(time_vector, att, label=f'{bug_speed}cm/sec', alpha=0.4)
+
+        axes_[att_id].plot(time_vector, np.vstack(mean_att).mean(axis=0), color='k')
         if self.strike_index:
-            axes_[2].axvline(self.strike_index, color='k', linestyle='--')
-        axes_[2].legend()
+            axes_[att_id].axvline(0, color='k', linestyle='--')
+        axes_[att_id].set_xlabel('Time Around Strike [sec]')
+        axes_[att_id].set_ylabel('Attention values')
+        axes_[att_id].legend()
 
         y_true_binary = label_binarize(y_true, classes=np.arange(len(self.targets)))
         self.plot_confusion_matrix(y_true, y_pred, ax=axes_[0])
@@ -322,7 +327,8 @@ class TrajClassifier(ClassificationTrainer):
         precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='macro')
         axes_[0].set_title(f'Accuracy: {acc:.2f}')
         # self.plot_precision_curve(y_true_binary, y_score, axes_[1])
-        self.plot_roc_curve(y_true_binary, y_score, axes_[1])
+        if is_plot_auc:
+            self.plot_roc_curve(y_true_binary, y_score, axes_[1])
         # PrecisionRecallDisplay.from_predictions(y_true, y_true, ax=axes_[1])
         # RocCurveDisplay.from_predictions(y_true, y_score, ax=axes_[2])
         if axes is None:
@@ -376,14 +382,14 @@ class TrajClassifier(ClassificationTrainer):
         ax.set_ylabel('Y Coordinate')
         ax.set_title('Attention Weights over Trajectory')
 
-    def check_hidden_states(self, cols=4, axes=None, fig=None):
+    def check_hidden_states(self, cols=4, axes=None, fig=None, is_legend=True):
         dataset = self.get_dataset()
         if axes is None:
             fig, axes = plt.subplots(1, 2, figsize=(6, 3))
             axes = axes.flatten()
 
         # self.visualize_features_importance(dataset, axes=axes[:len(self.targets)])
-        self.visualize_features_importance(dataset, ax=axes[0])
+        self.visualize_features_importance(dataset, ax=axes[0], is_legend=is_legend)
 
         # run PCA to visualize targets embedding
         self.model.eval()
@@ -397,7 +403,7 @@ class TrajClassifier(ClassificationTrainer):
         pca = PCA(n_components=2)
         X_embedded = pca.fit_transform(res)
         ax_pca = axes[1]
-        sns.scatterplot(x=X_embedded[:, 0], y=X_embedded[:, 1], hue=targets, palette="deep", ax=ax_pca)
+        sns.scatterplot(x=X_embedded[:, 0], y=X_embedded[:, 1], hue=targets, palette="deep", ax=ax_pca, legend=is_legend)
         ax_pca.set_title('PCA')
         for ax in axes[len(self.targets)+1:]:
             ax.axis('off')
@@ -406,7 +412,7 @@ class TrajClassifier(ClassificationTrainer):
             fig.savefig((Path(self.model_path) / 'hidden_states.png'), dpi=200)
             plt.show()
 
-    def visualize_features_importance(self, dataset, ax=None):
+    def visualize_features_importance(self, dataset, ax=None, is_legend=True):
         torch.backends.cudnn.enabled = False
         self.model.eval()
         ig = IntegratedGradients(self.model)
@@ -444,15 +450,10 @@ class TrajClassifier(ClassificationTrainer):
             multiplier += 1
 
         ax.axhline(0, color='k')
-        ax.set_xticks(x + width, self.feature_names)
-        ax.legend()
-        # for i, target in enumerate(sorted(list(res.keys()))):
-        #     imp, _ = res[target]
-        #     # imp.plot.barh(ax=axes[i])
-        #     axes[i].set_xlim([-max_x, max_x])
-        #     axes[i].set_ylabel('Features')
-        #     axes[i].set_title(f'{target}cm/sec')
-        #     axes[i].axvline(0, color='black')
+        ax.set_xticks(x + width)
+        ax.set_xticklabels(self.feature_names)
+        if is_legend:
+            ax.legend()
 
 
 def animals_comparison():
@@ -499,13 +500,25 @@ def hyperparameters_comparison(animal_id='PV91', movement_type='random_low_horiz
         y_true, y_pred, y_score, attns = tj.get_data_for_evaluation()
         acc = accuracy_score(y_true, y_pred)
         res_df.append({'metric': 'overall_accuracy', 'value': acc, 'animal_id': animal_id,
-                       'movement_type': movement_type, **params})
+                       'movement_type': movement_type, 'model_path': tj.model_path, **params})
         torch.cuda.empty_cache()
         time.sleep(1)
 
     res_df = pd.DataFrame(res_df)
-    filename = f'{TRAJ_DIR}/hyperparameters_results_{animal_id}_{datetime.now().isoformat()}.csv'
+    filename = f'{TRAJ_DIR}/hyperparameters_results_{animal_id}_{movement_type}_{"_".join(feature_names)}_{datetime.now().isoformat()}.csv'
     res_df.to_csv(filename)
+
+    print('\n' + '#' * 50)
+    print(f'\nAnimal: {animal_id}, Movement: {movement_type}')
+    print(f'sub-section: {sub_section}, Features: {feature_names}')
+    for metric in ['overall_accuracy', 'accuracy']:
+        print(f'\nBest hyperparameters for {metric}:')
+        print(res_df.query(f'metric=="{metric}"').sort_values(by='value', ascending=False).iloc[:3][
+                  ['value', 'dropout_prob', 'lstm_hidden_dim', 'lstm_layers']])
+    best_model_path = res_df.query(f'metric=="overall_accuracy"').sort_values(by='value', ascending=False).iloc[
+        0].model_path
+    print(f'\nbest overall model path: {best_model_path}')
+    print('\n' + '#' * 50 + '\n')
 
 
 def find_best_features(movement_type='random_low_horizontal', lstm_layers=4, dropout_prob=0.3, lstm_hidden_dim=50,
@@ -582,9 +595,10 @@ if __name__ == '__main__':
 
     # find_optimal_span()
     # find_best_features(movement_type='circle', lstm_layers=6, dropout_prob=0.5, is_resample=True)
-    hyperparameters_comparison(animal_id='PV80')
-    hyperparameters_comparison(animal_id='PV42')
-    hyperparameters_comparison(animal_id='PV85')
+    for movement_type in ['random_low_horizontal', 'circle']:
+        for animal_id in ['PV91', 'PV163', 'PV99', 'PV80', 'PV42', 'PV85', 'all']:
+            hyperparameters_comparison(animal_id=animal_id, movement_type=movement_type,
+                                       feature_names=['x', 'y', 'speed'], sub_section=(-2, 120))
     # animals_comparison()
     # plot_comparison('/Users/regev/PhD/msi/Pogona_Pursuit/output/datasets/trajectories/results_2024-06-24T16:43:58.880310.csv')
 
