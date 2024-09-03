@@ -183,7 +183,8 @@ class Trainer:
         self.model.to(self.device)
         self.print(f'model {self.model_name} load from: {model_path}')
         self.cache_dir = model_path.parent
-        self.history = torch.load(model_path / 'history.pth')
+        if (model_path / 'history.pth').exists():
+            self.history = torch.load(model_path / 'history.pth')
         if (model_path / self.test_indices_filename).exists():
             self.test_indices = torch.load(model_path / self.test_indices_filename)
 
