@@ -15,7 +15,8 @@ export default {
     return {
       edgesPolicy: 'inside',
       framesUntilExitFromEntranceHole: 100,
-      accelerateMultiplier: 4
+      accelerateMultiplier: 4,
+      circularSpeed: null
     }
   },
   props: {
@@ -53,7 +54,7 @@ export default {
       return this.bugsSettings.exitHole === 'left'
     },
     isMoveInCircles: function () {
-      return this.bugsSettings.movementType === 'circle'
+      return this.bugsSettings.movementType === 'circle' || this.bugsSettings.movementType === 'circle_accelerate'
     },
     isHalfCircleMovement: function () {
       return this.bugsSettings.movementType === 'half_circle'
@@ -66,6 +67,9 @@ export default {
     },
     isJumpUpMovement: function () {
       return this.bugsSettings.movementType === 'jump_up'
+    },
+    isCircleAccelerateMovement: function () {
+      return this.bugsSettings.movementType === 'circle_accelerate'
     },
     isAccelerateMovement: function () {
       return this.bugsSettings.movementType === 'accelerate'
@@ -168,6 +172,7 @@ export default {
       this.frameCounter = 0
       switch (this.bugsSettings.movementType) {
         case 'circle':
+        case 'circle_accelerate':
           this.theta = this.isRightExit ? (Math.PI + (Math.PI / 5)) : (Math.PI + (2 * Math.PI / 3))
           this.r = (Math.abs(this.xTarget - this.x) / 5)
           this.r0 = [(this.x + this.xTarget) / 2, this.y / 2]
@@ -198,7 +203,7 @@ export default {
       }
     },
     circularMove() {
-      this.theta += Math.abs(this.currentSpeed) * Math.sqrt(2) / this.r
+      this.theta += Math.abs(this.vTheta) * Math.sqrt(2) / this.r
       this.x = this.r0[0] + (this.r * Math.cos(this.theta)) * (this.isCounterClockWise ? -1 : 1)
       this.y = this.r0[1] + this.r * Math.sin(this.theta)
     },
@@ -210,7 +215,7 @@ export default {
       this.y += this.dy
     },
     jump() {
-      if (!(this.isJumpUpMovement || this.isAccelerateMovement) || this.isDead || this.isJumped) {
+      if (!(this.isJumpUpMovement || this.isAccelerateMovement || this.isCircleAccelerateMovement) || this.isDead || this.isJumped) {
         return
       }
       this.isJumped = true
@@ -222,6 +227,8 @@ export default {
         this.y = newY
       } else if (this.isAccelerateMovement) {
         this.vx = this.vx * this.accelerateMultiplier
+      } else if (this.isCircleAccelerateMovement) {
+        this.vTheta = this.vTheta * this.accelerateMultiplier
       }
       console.log('jump')
       this.jumpTimeout()
@@ -279,6 +286,8 @@ export default {
           this.y = this.exitHolePos[1] + (this.currentBugSize / 2)
         } else if (this.isAccelerateMovement) {
           this.vx = this.vx / this.accelerateMultiplier
+        } else if (this.isCircleAccelerateMovement) {
+          this.vTheta = this.vTheta / this.accelerateMultiplier
         }
         this.setNextAngle(this.directionAngle)
         console.log(this.vx, this.dx, this.currentSpeed)
