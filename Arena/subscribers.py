@@ -434,9 +434,9 @@ def start_management_subscribers(arena_shutdown_event, log_queue, subs_dict):
                                     config.subscription_topics[topic], callback)
         threads[topic].start()
 
-    if config.IS_USE_REDIS:
-        threads['app_healthcheck'] = AppHealthCheck(arena_shutdown_event, log_queue)
-        threads['app_healthcheck'].start()
+    # if config.IS_USE_REDIS:
+    #     threads['app_healthcheck'] = AppHealthCheck(arena_shutdown_event, log_queue)
+    #     threads['app_healthcheck'].start()
     if not config.DISABLE_PERIPHERY:
         threads['temperature'] = TemperatureLogger(arena_shutdown_event, log_queue)
         threads['temperature'].start()
