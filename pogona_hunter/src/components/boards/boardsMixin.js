@@ -16,7 +16,7 @@ export default {
         iti: 5,
         bugTypes: ['cockroach'],
         rewardBugs: 'cockroach',
-        movementType: 'jump_up',
+        movementType: 'circle',
         speed: 0, // if 0 config default for bug will be used
         bugSize: 0, // if 0 config default for bug will be used
         bloodDuration: 2000,
