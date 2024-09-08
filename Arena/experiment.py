@@ -400,7 +400,7 @@ class Block:
                 for ep in exp_predictors:
                     is_on = False
                     t0 = time.time()
-                    while time.time() - t0 < 30:
+                    while time.time() - t0 < 60:
                         if ep in cu.processes and cu.processes[ep].is_on():
                             is_on = True
                             break
