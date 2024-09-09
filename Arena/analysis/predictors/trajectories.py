@@ -296,6 +296,23 @@ class TrajClassifier(ClassificationTrainer):
         y_true, y_pred, y_score = np.vstack(y_true), np.vstack(y_pred), np.vstack(y_score)
         return y_true, y_pred, y_score, attns
 
+    def plot_attention(self, ax, attns):
+        mean_att = []
+        time_vector = self.sub_section[0] + np.arange(self.sub_section[1] + 1) * (1 / 60)
+        for bug_speed in self.targets:
+            att = attns[bug_speed]
+            att = np.vstack(att).mean(axis=0)
+            att[:8] = np.nan
+            mean_att.append(att)
+            ax.plot(time_vector, att, label=f'{bug_speed}cm/sec', alpha=0.4)
+
+        ax.plot(time_vector, np.vstack(mean_att).mean(axis=0), color='k')
+        if self.strike_index:
+            ax.axvline(0, color='k', linestyle='--')
+        ax.set_xlabel('Time Around Strike [sec]')
+        ax.set_ylabel('Attention values')
+        ax.legend()
+
     def all_data_evaluation(self, axes=None, is_test_set=False, is_plot_auc=True, **kwargs):
         if axes is None:
             fig, axes_ = plt.subplots(1, 3, figsize=(18, 4))
@@ -304,22 +321,8 @@ class TrajClassifier(ClassificationTrainer):
         assert len(axes_) == (3 if is_plot_auc else 2)
 
         y_true, y_pred, y_score, attns = self.get_data_for_evaluation(is_test_set)
-        mean_att = []
         att_id = 2 if is_plot_auc else 1
-        time_vector = self.sub_section[0] + np.arange(self.sub_section[1] + 1) * (1 / 60)
-        for bug_speed in self.targets:
-            att = attns[bug_speed]
-            att = np.vstack(att).mean(axis=0)
-            att[:8] = np.nan
-            mean_att.append(att)
-            axes_[att_id].plot(time_vector, att, label=f'{bug_speed}cm/sec', alpha=0.4)
-
-        axes_[att_id].plot(time_vector, np.vstack(mean_att).mean(axis=0), color='k')
-        if self.strike_index:
-            axes_[att_id].axvline(0, color='k', linestyle='--')
-        axes_[att_id].set_xlabel('Time Around Strike [sec]')
-        axes_[att_id].set_ylabel('Attention values')
-        axes_[att_id].legend()
+        self.plot_attention(axes_[att_id], attns)
 
         y_true_binary = label_binarize(y_true, classes=np.arange(len(self.targets)))
         self.plot_confusion_matrix(y_true, y_pred, ax=axes_[0])
@@ -389,7 +392,7 @@ class TrajClassifier(ClassificationTrainer):
             axes = axes.flatten()
 
         # self.visualize_features_importance(dataset, axes=axes[:len(self.targets)])
-        self.visualize_features_importance(dataset, ax=axes[0], is_legend=is_legend)
+        importance_df = self.visualize_features_importance(dataset, ax=axes[0], is_legend=is_legend)
 
         # run PCA to visualize targets embedding
         self.model.eval()
@@ -411,14 +414,15 @@ class TrajClassifier(ClassificationTrainer):
             fig.tight_layout()
             fig.savefig((Path(self.model_path) / 'hidden_states.png'), dpi=200)
             plt.show()
+        return importance_df
 
-    def visualize_features_importance(self, dataset, ax=None, is_legend=True):
+    def visualize_features_importance(self, dataset, ax=None, is_legend=True, is_plot=True):
         torch.backends.cudnn.enabled = False
         self.model.eval()
         ig = IntegratedGradients(self.model)
 
-        if ax is None:
-            fig, axes = plt.subplots(1, len(self.targets), figsize=(18, 3))
+        if ax is None and is_plot:
+            fig, ax = plt.subplots(1, len(self.targets), figsize=(18, 3))
 
         res = {}
         aggregated_attributions = {}
@@ -428,6 +432,7 @@ class TrajClassifier(ClassificationTrainer):
             attr, delta = ig.attribute(input_, baseline, target=y.item(), return_convergence_delta=True)
             aggregated_attributions.setdefault(self.targets[y.item()], []).append(attr)
 
+        importance_df = []
         for target, x in aggregated_attributions.items():
             x = torch.cat(x, dim=0)
             importance = np.mean(x.cpu().detach().numpy(), axis=0)
@@ -435,25 +440,32 @@ class TrajClassifier(ClassificationTrainer):
             # idx = imp.sort_values().index.tolist()
             # imp = imp.reindex(idx)
             imp.index = [self.feature_names[i] for i in imp.index]
+            imp.name = target
+            importance_df.append(imp)
             max_x = np.abs(importance[-1]).max()
             res[target] = (imp, max_x)
 
+        importance_df = pd.DataFrame(importance_df)
+        res[10] = (importance_df.mean(), 0)
         max_x = max([x[1] for x in res.values()])
-        x = np.arange(len(self.feature_names))  # the label locations
-        width = 0.18  # the width of the bars
-        multiplier = 0
-        for i, target in enumerate(sorted(list(res.keys()))):
-            imp, _ = res[target]
-            offset = width * multiplier
-            rects = ax.bar(x + offset, imp.values, width, label=f'{target}cm/sec')
-            # ax.bar_label(rects, padding=3)
-            multiplier += 1
+        if is_plot:
+            x = np.arange(len(self.feature_names))  # the label locations
+            width = 0.18  # the width of the bars
+            multiplier = 0
+            for i, target in enumerate(sorted(list(res.keys()))):
+                imp, _ = res[target]
+                offset = width * multiplier
+                rects = ax.bar(x + offset, imp.values, width, label=f'{target}cm/sec' if target<10 else 'Average')
+                # ax.bar_label(rects, padding=3)
+                multiplier += 1
 
-        ax.axhline(0, color='k')
-        ax.set_xticks(x + width)
-        ax.set_xticklabels(self.feature_names)
-        if is_legend:
-            ax.legend()
+            ax.axhline(0, color='k')
+            ax.set_xticks(x + width)
+            ax.set_xticklabels(self.feature_names)
+            if is_legend:
+                ax.legend()
+
+        return importance_df
 
 
 def animals_comparison():
