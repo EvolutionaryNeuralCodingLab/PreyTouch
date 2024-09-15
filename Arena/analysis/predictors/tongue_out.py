@@ -13,6 +13,7 @@ from torchvision.datasets import ImageFolder
 from torchvision.transforms import Compose, ToTensor, Normalize, Resize, Lambda, Grayscale, ToPILImage
 from torchvision.transforms.functional import crop
 import matplotlib.pyplot as plt
+import time
 if Path('.').resolve().name != 'Arena':
     import os
     os.chdir('../..')
@@ -50,6 +51,13 @@ class TongueOutAnalyzer(Predictor):
         self.push_to_predictions_stack(label, timestamp)
         is_tongue = label == TONGUE_CLASS and prob >= self.pred_config.get('threshold')
         is_action = self.tongue_detected(orig_frame, timestamp) if is_tongue else False
+
+        # latency test
+        t0 = time.time()
+        if orig_frame[200:400, 400:600].mean() > 35:
+            is_action = True
+        time_taken = time.time() - t0
+
         return is_action, frame, prob
 
     def predict_strike(self, strike_db_id, sec_before=2, sec_after=2, cols=8, save_frames_above=None, is_plot=True):

@@ -16,7 +16,7 @@ export default {
         iti: 5,
         bugTypes: ['cockroach'],
         rewardBugs: 'cockroach',
-        movementType: 'circle',
+        movementType: 'jump_up',
         speed: 0, // if 0 config default for bug will be used
         bugSize: 0, // if 0 config default for bug will be used
         bloodDuration: 2000,
@@ -146,6 +146,12 @@ export default {
       }
     },
     jumpBugs() {
+      let origColor = this.bugsSettings.backgroundColor
+      this.bugsSettings.backgroundColor = '#000000'
+      let darkTimout = setTimeout(() => {
+          this.bugsSettings.backgroundColor = origColor
+          clearTimeout(darkTimout)
+        }, 500)
       if (this.$refs.bugChild) {
           this.$refs.bugChild.forEach(bug => bug.jump())
         }
