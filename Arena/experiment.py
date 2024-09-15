@@ -419,7 +419,7 @@ class Block:
             self.run_psycho()
 
         if not self.is_blank_block:
-            if self.is_latency_test:
+            if self.movement_type == 'jump_up':
                 self.logger.info(f'Latency Trial #{trial_id} started')
                 self.periphery.switch(config.IR_LIGHT_NAME, 1)
                 time.sleep(2)
@@ -589,10 +589,6 @@ class Block:
     @property
     def is_random_low_horizontal(self):
         return self.movement_type == 'random_low_horizontal'
-
-    @property
-    def is_latency_test(self):
-        return self.block_type == 'latency_test'
 
     @property
     def is_always_reward(self):
