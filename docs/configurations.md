@@ -71,6 +71,32 @@ tongue_out:
 ```
 
 ### agent_config.yaml
+#### default_struct (default experiment parameters)
+- time_between_blocks - time in seconds between consecutive blocks.
+- extra_time_recording - time in seconds before and after the experiment for extra recording. The cameras record, but no trials are starting.
+- num_blocks - Number of blocks in each experiment.
+- is_identical_blocks - in case there are multiple blocks, make them all identical.
+- is_test - test experiment, app is started on the configured TEST_SCREEN and no rewards are given.
+- reward_bugs - specify the bugs which trigger reward. If null, all bugs are being rewarded.
+- background_color - app background color in hex.
+- exit_hole: can be "left", "right" or "random"
+- reward_any_touch_prob - probability to get reward even if missed.
+- cameras - specify all the cameras as keys and put any needed camera argument below (see example)
+- blocks - default block parameters:
+  - num_trials - number of trials in each blocks
+  - trial_duration - default trial duration in seconds
+  - iti - inter trial interval in seconds
+  - block_type - bugs or media 
+  - notes - notes to be saved for the block
+  - bug_speed - default bug speed
+  - is_default_bug_size - use the default bug size, that specified in app the config
+  - bug_size - bug size in pixels
+#### times
+- start_time - Time for the agent to start setting experiments (format: "HH:MM").
+- end_time - End time for the agent (format: "HH:MM").
+- time_between_experiments - Time in minutes between scheduled experiments.
+#### trials
+#### Example
 ```yaml
 default_struct:
   time_between_blocks: 180
@@ -101,7 +127,7 @@ default_struct:
 times:
   start_time: "08:30"
   end_time: "18:00"
-  time_between_blocks: 60
+  time_between_experiments: 60
 
 trials:
   random_low_horizontal:

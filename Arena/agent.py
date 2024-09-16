@@ -86,7 +86,7 @@ class Agent:
         while dt <= end_dt:
             if dt >= now:
                 possible_times.append(dt)
-            dt += timedelta(minutes=self.times['time_between_blocks'])
+            dt += timedelta(minutes=self.times['time_between_experiments'])
         return possible_times
 
     def init_history(self):
@@ -183,7 +183,7 @@ class Agent:
         for k in main_keys:
             assert k in agent_config, f'{k} must be in agent config'
 
-        times_keys = ['start_time', 'end_time', 'time_between_blocks']
+        times_keys = ['start_time', 'end_time', 'time_between_experiments']
         for k in times_keys:
             assert k in agent_config['times'], f'{k} must be in times'
 

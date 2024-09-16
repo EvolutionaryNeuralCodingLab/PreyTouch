@@ -27,7 +27,7 @@ class TestAgentConfig:
     def test_times(self):
         if not self.agent_config:
             return
-        times_keys = ['start_time', 'end_time', 'time_between_blocks']
+        times_keys = ['start_time', 'end_time', 'time_between_experiments']
         tms = self.agent_config['times']
         for k in times_keys:
             assert k in tms, f'{k} must be in times dict'
