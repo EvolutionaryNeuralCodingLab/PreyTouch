@@ -2,7 +2,7 @@
 
 All system configurations can be shown and edited from the "Arena Configurations" panel.
 To open this panel, you can click the cog icon (⚙) on the top-left side of PreyTouch UI.
-![Image](/docs/images/arena_configurations.png)
+![Image](/images/arena_configurations.png)
 
 # Configuration Files
 There are 4 JSON configuration files in the system, that can be edited 
