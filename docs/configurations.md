@@ -1,10 +1,10 @@
-## Configurations
+# Configurations
 
 All system configurations can be shown and edited from the "Arena Configurations" panel.
 To open this panel, you can click the cog icon (⚙) on the top-left side of PreyTouch UI.
 ![Image](/docs/images/arena_configurations.png)
 
-## Configuration Files
+# Configuration Files
 There are 4 JSON configuration files in the system, that can be edited 
 in PreyTocuh UI:
 1. **cameras** - Specify all the cameras in the system. From this window
@@ -14,7 +14,7 @@ and also add a new camera using a simple form.
 3. **predict**
 4. **agent**
 
-### cam_config.json
+## cam_config
 - *camera name*
     - **id** - serial number of the camera
     - **module** - currently supported modules: flir, allied_vision
@@ -81,7 +81,7 @@ and also add a new camera using a simple form.
 }
 ```
 
-### predict_config.yaml
+## predict_config
 ```yaml
 deeplabcut:
   model_path: <model_path>
@@ -100,7 +100,7 @@ tongue_out:
   num_tongues_in_stack: 6  # number of predicted tongues in the prediction stack to trigger action
 ```
 
-### agent_config.yaml
+## agent_config
 #### default_struct (default experiment parameters)
 - time_between_blocks - time in seconds between consecutive blocks.
 - extra_time_recording - time in seconds before and after the experiment for extra recording. The cameras record, but no trials are starting.
