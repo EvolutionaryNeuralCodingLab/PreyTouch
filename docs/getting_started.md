@@ -17,7 +17,7 @@ However, you can simplify the process for adding a new camera by clicking the bu
 Notice that the system currently supports FLIR and Allied Vision cameras only. 
 Moreover, to add a new camera you'll need its serial number. This can easily be found by clicking the "Cam Scan" button.
 For more information on
-[adding a new camera to the system](docs/new_camera.md) and on the [cam_config](docs/configuraions.md###cam_config.json): 
+[adding a new camera to the system](docs/new_camera.md) and on the [cam_config](docs/configurations.md##cam_config): 
 
 ### Periphery
 Here you can configure all the peripheral devices, such as: Feeders, lights, temperature sensors or any switch 
