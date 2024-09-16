@@ -27,7 +27,7 @@ and also add a new camera using a simple form.
     - **writing_fps** - FPS for video writing, can be lower than camera's fps
     - **is_color** - set true, if the camera's frames are with 3 channels
     - **predictors** - specify real-time predictors
-      - *predictor name*
+      - *predictor name* (must be configured in predict_config)
         - **image_size** - image size provided to the predictor
         - **mode** - can be "experiment" (run only during experiments), "no_experiment" (run only when there's no experiment running) 
                 or "always" (run always).
@@ -80,134 +80,251 @@ and also add a new camera using a simple form.
     }
 }
 ```
+## periphery_config
+- *arduino name*
+  - **allow_get** - (bool) allow get status 
+  - **fqbn** - Fully Qualified Board Name
+  - **interfaces** - list of devices
+    - **name** - device name
+    - **pin** - single arduino pin 
+    - **pins** - list of pins
+    - **type** - can be line, feeder, dallas_temperature, trigger
+  - **serial_number** - Arduino serial number
+```json
+{
+    "arena": {
+        "allow_get": true,
+        "fqbn": "arduino:megaavr:nona4809",
+        "interfaces": [
+            {
+                "command": "dispense",
+                "name": "Feeder 1",
+                "pins": [
+                    10,
+                    9,
+                    8,
+                    7
+                ],
+                "type": "feeder",
+                "order": 1
+            },
+	        {
+		        "command": "dispense",
+                "name": "Feeder 2",
+                "pins": [
+                    14,
+                    15,
+                    16,
+         	        17
+                ],
+                "type": "feeder",
+                "order": 2
+	        },
+            {
+                "name": "day_lights",
+                "pin": 2,
+                "type": "line"
+            },
+            {
+                "name": "IR_lights",
+                "pin": 13,
+                "type": "line"
+            },
+            {
+                "name": "Temp",
+                "pin": 5,
+                "type": "dallas_temperature"
+            }
+        ],
+        "serial_number": "0E4273DD51534C5036202020FF072035"
+    },
+    "camera trigger": {
+        "allow_get": true,
+        "fqbn": "arduino:megaavr:nona4809",
+        "interfaces": [
+            {
+                "name": "Camera Trigger",
+                "pin": 12,
+                "pulse_len": 33,
+                "pulse_width": 0.7,
+                "serial_trigger": false,
+                "type": "trigger"
+            }
+        ],
+        "serial_number": "91CEA40751534C5036202020FF07444F"
+    }
+}
 
+```
 ## predict_config
-```yaml
-deeplabcut:
-  model_path: <model_path>
-  predictor_name: DLCPose
-  threshold: 0.7
-
-tongue_out:
-  model_path: <model_path>
-  dataset_path: <dataset_path>
-  save_predicted_path: <path_to_save_predicted_frames>
-  predictor_name: TongueOutAnalyzer
-  threshold: 0.7
-  image_size: [550, 1000]
-  prediction_stack_duration: 0.25  # sec
-  tongue_action_timeout: 0.5  # sec
-  num_tongues_in_stack: 6  # number of predicted tongues in the prediction stack to trigger action
+- _predictor name_
+  - **predictor name** - predictor class name
+  - **model_path** - path to model
+  - **threshold** - predictions thresholds
+  - all the rest are kwargs for the predictor class
+```json
+{
+    "deeplabcut": {
+        "predictor_name": "DLCPose",
+        "model_path": "/data/Pogona_Pursuit/output/models/deeplabcut/front_head_only_resnet_152",
+        "bodyparts": [
+            "nose",
+            "right_ear",
+            "left_ear"
+        ],
+        "threshold": 0.5
+    },
+    "pogona_head": {
+        "model_path": "",
+        "predictor_name": "PogonaHead",
+        "threshold": 0.5
+    },
+    "tongue_out": {
+        "model_path": "/data/Pogona_Pursuit/output/models/tongue_out/20230518_145847",
+        "dataset_path": "/data/Pogona_Pursuit/output/datasets/pogona_tongue/dataset",
+        "save_predicted_path": "/data/Pogona_Pursuit/output/datasets/pogona_tongue/predicted/tongues",
+        "predictor_name": "TongueOutAnalyzer",
+        "threshold": 0.7,
+        "image_size": [
+            550,
+            1000
+        ],
+        "prediction_stack_duration": 0.25,
+        "tongue_action_timeout": 0.5,
+        "num_tongues_in_stack": 6
+    }
+}
 ```
 
 ## agent_config
-#### default_struct (default experiment parameters)
-- time_between_blocks - time in seconds between consecutive blocks.
-- extra_time_recording - time in seconds before and after the experiment for extra recording. The cameras record, but no trials are starting.
-- num_blocks - Number of blocks in each experiment.
-- is_identical_blocks - in case there are multiple blocks, make them all identical.
-- is_test - test experiment, app is started on the configured TEST_SCREEN and no rewards are given.
-- reward_bugs - specify the bugs which trigger reward. If null, all bugs are being rewarded.
-- background_color - app background color in hex.
-- exit_hole: can be "left", "right" or "random"
-- reward_any_touch_prob - probability to get reward even if missed.
-- cameras - specify all the cameras as keys and put any needed camera argument below (see example)
-- blocks - default block parameters:
-  - num_trials - number of trials in each blocks
-  - trial_duration - default trial duration in seconds
-  - iti - inter trial interval in seconds
-  - block_type - bugs or media 
-  - notes - notes to be saved for the block
-  - bug_speed - default bug speed
-  - is_default_bug_size - use the default bug size, that specified in app the config
-  - bug_size - bug size in pixels
-#### times
-- start_time - Time for the agent to start setting experiments (format: "HH:MM").
-- end_time - End time for the agent (format: "HH:MM").
-- time_between_experiments - Time in minutes between scheduled experiments.
-#### trials
+- **default_struct** (default experiment parameters)
+  - **time_between_blocks** - time in seconds between consecutive blocks.
+  - **extra_time_recording** - time in seconds before and after the experiment for extra recording. The cameras record, but no trials are starting.
+  - **num_blocks** - Number of blocks in each experiment.
+  - **is_identical_blocks** - in case there are multiple blocks, make them all identical.
+  - **is_test** - test experiment, app is started on the configured TEST_SCREEN and no rewards are given.
+  - **reward_bugs** - specify the bugs which trigger reward. If null, all bugs are being rewarded.
+  - **background_color** - app background color in hex.
+  - **exit_hole**: can be "left", "right" or "random"
+  - **reward_any_touch_prob** - probability to get reward even if missed.
+  - **cameras** - specify all the cameras as keys and put any needed camera argument below (see example)
+  - **blocks** - default block parameters:
+    - **num_trials** - number of trials in each blocks
+    - **trial_duration** - default trial duration in seconds
+    - **iti** - inter trial interval in seconds
+    - **block_type** - bugs or media 
+    - **notes** - notes to be saved for the block
+    - **bug_speed** - default bug speed
+    - **is_default_bug_size** - use the default bug size, that specified in app the config
+    - **bug_size** - bug size in pixels
+- **times**
+  - **start_time** - Time for the agent to start setting experiments (format: "HH:MM").
+  - **end_time** - End time for the agent (format: "HH:MM").
+  - **time_between_experiments** - Time in minutes between scheduled experiments.
+- **trials**
+
 #### Example
-```yaml
-default_struct:
-  time_between_blocks: 180
-  extra_time_recording: 30
-  num_blocks: 1
-  is_identical_blocks: false
-  is_test: false
-  reward_bugs: null
-  background_color: "#e8eaf6"
-  exit_hole: "random"
-  reward_any_touch_prob: 0.1
-  cameras:
-    back:
-      is_use_predictions: true
-    front:
-      is_use_predictions: true
-  blocks:
-    - num_trials: 10
-      trial_duration: 30
-      iti: 20
-      block_type: bugs
-      notes: "created by agent"
-      bug_speed: 5
-      movement_type: null
-      is_default_bug_size: false
-      bug_size: 100
-
-times:
-  start_time: "08:30"
-  end_time: "18:00"
-  time_between_experiments: 60
-
-trials:
-  random_low_horizontal:
-    count:
-      key: strikes
-      amount: 30
-      per:
-        bug_speed: [2, 4, 6, 8]
-    exit_hole: random
-    bug_speed: per_random
-    movement_type: random_low_horizontal
-
-  jump_up:
-    count:
-      key: strikes
-      amount: 150
-    exit_hole: random
-    reward_any_touch_prob: 0
-    movement_type: jump_up
-    bug_speed: 5
-
-  rect_tunnel:
-    count:
-      key: strikes
-      amount: 100
-    exit_hole: random
-    movement_type: rect_tunnel
-    reward_any_touch_prob: 0
-    bug_speed: 5
-
-  circle:
-    count:
-      key: strikes
-      amount: 20
-      per:
-        bug_speed: [ 2, 4, 6, 8 ]
-    exit_hole: random
-    bug_speed: per_random
-    reward_any_touch_prob: 0.2
-    movement_type: circle
-
-  low_horizontal:
-    count:
-      key: trials
-      amount: 100
-      per:
-        exit_hole: [ 'left', 'right' ]
-    exit_hole: per_ordered
-    bug_speed: 6
-    movement_type: low_horizontal
-    reward_any_touch_prob: 0
-    num_trials: 5
+```json
+{
+    "default_struct": {
+        "time_between_blocks": 180,
+        "extra_time_recording": 30,
+        "num_blocks": 1,
+        "is_identical_blocks": false,
+        "is_test": false,
+        "reward_bugs": null,
+        "background_color": "#e8eaf6",
+        "exit_hole": "random",
+        "reward_any_touch_prob": 0.1,
+        "cameras": {
+            "back": {
+                "is_use_predictions": true
+            },
+            "front": {
+                "is_use_predictions": true
+            }
+        },
+        "blocks": [
+            {
+                "num_trials": 10,
+                "trial_duration": 30,
+                "iti": 20,
+                "block_type": "bugs",
+                "notes": "created by agent",
+                "bug_speed": 5,
+                "movement_type": null,
+                "is_default_bug_size": true
+            }
+        ]
+    },
+    "times": {
+        "start_time": "09:00",
+        "end_time": "18:15",
+        "time_between_blocks": 60
+    },
+    "trials": {
+        "random_low_horizontal": {
+            "count": {
+                "key": "strikes",
+                "amount": 40,
+                "per": {
+                    "bug_speed": [
+                        2,
+                        4,
+                        6,
+                        8
+                    ]
+                }
+            },
+            "exit_hole": "random",
+            "bug_speed": "per_random",
+            "movement_type": "random_low_horizontal"
+        },
+        "circle": {
+            "count": {
+                "key": "strikes",
+                "amount": 40,
+                "per": {
+                    "bug_speed": [
+                        2,
+                        4,
+                        6,
+                        8
+                    ]
+                }
+            },
+            "exit_hole": "random",
+            "bug_speed": "per_random",
+            "reward_any_touch_prob": 0.1,
+            "movement_type": "circle"
+        },
+        "circle_accelerate": {
+            "count": {
+                "key": "strikes",
+                "amount": 100
+            },
+            "exit_hole": "random",
+            "reward_any_touch_prob": 0.1,
+            "movement_type": "circle_accelerate",
+            "bug_speed": 4
+        },
+        "low_horizontal": {
+            "count": {
+                "key": "trials",
+                "amount": 200,
+                "per": {
+                    "exit_hole": [
+                        "bottomLeft",
+                        "bottomRight"
+                    ]
+                }
+            },
+            "exit_hole": "per_ordered",
+            "bug_speed": 6,
+            "movement_type": "low_horizontal",
+            "reward_any_touch_prob": 0,
+            "num_trials": 5
+        }
+    }
+}
 ```
