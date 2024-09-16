@@ -14,41 +14,71 @@ and also add a new camera using a simple form.
 3. **predict**
 4. **agent**
 
-### cam_config.yaml
-```yaml
-front: # camera name
-    # serial number of the camera
-    id: 19506475
-    # currently supported modules: flir, allied_vision
-    module: flir
-    # exposure in microseconds
-    exposure: 7000
-    # image size in pixels
-    image_size: [ 1080, 1440 ]
-    # leave blank. This is used by the video writing module.
-    output_dir:  
-    # if true, the scheduler tries to start the camera if off.
-    always_on: true 
-    # If set, the camera takes frames according to this value. 
-    fps: 60
-    # if set, camera takes frames according to trigger
-    trigger_source: Line3
-    # FPS for video writing, can be lower than camera's fps
-    writing_fps: 60
-    # set true, if the camera's frames are with 3 channels 
-    is_color: false
-    # specify real-time predictors
-    predictors:
-        tongue_out:  # predictor name
-            # image size provided to the predictor
-            image_size: [ 1080, 1440 ]
-            # can be "experiment" (run only during experiments), 
-            # "no_experiment" (run only when there's no experiment running) 
-            # or "always" (run always).
-            mode: experiment
-            # specify the specific movement types in which the predictor    
-            # is allowed to run.
-            movement_type: [ jump_up ]
+### cam_config.json
+- *camera name*
+    - **id** - serial number of the camera
+    - **module** - currently supported modules: flir, allied_vision
+    - **exposure** - exposure in microseconds
+    - **image_size** - image size in pixels
+    - **output_dir** - leave blank. This is used by the video writing module.
+    - **always_on** - if true, the scheduler tries to start the camera if off.
+    - **fps** - If set, the camera takes frames according to this value.
+    - **trigger_source** - if set, camera takes frames according to trigger
+    - **writing_fps** - FPS for video writing, can be lower than camera's fps
+    - **is_color** - set true, if the camera's frames are with 3 channels
+    - **predictors** - specify real-time predictors
+      - *predictor name*
+        - **image_size** - image size provided to the predictor
+        - **mode** - can be "experiment" (run only during experiments), "no_experiment" (run only when there's no experiment running) 
+                or "always" (run always).
+        - **movement_type** - specify the specific movement types in which the predictor is allowed to run.
+```json
+{
+    "front": {
+        "id": 19506475,
+        "module": "flir",
+        "exposure": 7000,
+        "image_size": [
+            1080,
+            1440
+        ],
+        "output_dir": null,
+        "always_on": true,
+        "fps": 60,
+        "writing_fps": 60,
+        "is_color": false,
+        "predictors": {
+            "tongue_out": {
+                "image_size": [
+                    1080,
+                    1440
+                ],
+                "mode": "experiment",
+                "movement_type": [
+                    "jump_up",
+                    "accelerate",
+                    "circle_accelerate"
+                ]
+            }
+        }
+    },
+    "top": {
+        "id": 19506455,
+        "module": "flir",
+        "exposure": 4000,
+        "image_size": [
+            1080,
+            1440
+        ],
+        "output_dir": null,
+        "always_on": true,
+        "fps": 10,
+        "writing_fps": 10,
+        "is_color": false,
+        "mode": "tracking",
+        "predictors": {}
+    }
+}
 ```
 
 ### predict_config.yaml
