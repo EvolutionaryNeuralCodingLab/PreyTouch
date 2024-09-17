@@ -12,7 +12,7 @@ Open-source software for prey catching experiments with a touch screen.
 - [Adding new Arduino](docs/new_arduino.md)
 - [Camera Calibration](docs/camera_calibration.md)
 - [Adding new bug to the application](docs/new_bug.md)
-- [Adding new bug trajectory](docs/new_bug_traj.md)
+- [Adding new bug movement](docs/new_bug_traj.md)
 - [Adding new DeepLabCut model](docs/adding_dlc.md)
 - [Adding custom detection model](docs/custom_detection_model.md)
 - [Configurations](docs/configurations.md)

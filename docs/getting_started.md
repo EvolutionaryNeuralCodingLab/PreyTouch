@@ -23,5 +23,8 @@ For more information on
 Here you can configure all the peripheral devices, such as: Feeders, lights, temperature sensors or any switch 
 that you want the system to manage.
 The control over peripheral devices is done through an Arduino. To scan the arduinos that are connected to the server, you can click the "Serial Scan" button.
-For an example of how the periphery config file should, check: 
+For an example of how to configure periphery config file [click here](configurations.md#periphery_config).
+
+After you finish configuring the peripheral devices you must upload the configuration to the Arduinos that are configured 
+in the periphery_config file.
 ## Animal Configurations
