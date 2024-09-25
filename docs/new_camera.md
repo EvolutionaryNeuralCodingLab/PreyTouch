@@ -2,10 +2,10 @@
 
 PreyTouch supports FLIR and AlliedVision cameras. In case you want to use a different camera, you have to build a custom camera class inside PreyTouch. Check below for how to add custom camera.
 
-Open the cam_config.yaml file
+Open the cam_config.json file
 
 ```console
-nano Arena/configurations/cam_config.yaml
+nano Arena/configurations/cam_config.json
 ```
 
 and insert a new camera section:

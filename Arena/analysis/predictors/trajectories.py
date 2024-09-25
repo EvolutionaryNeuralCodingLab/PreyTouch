@@ -255,15 +255,15 @@ class TrajClassifier(ClassificationTrainer):
         }
 
     def load_data(self):
-        filename = 'trajs_2s_after' if self.animal_id not in ['PV80', 'PV42', 'PV85'] else 'trajs_2s_after_msi_regev'
+        filename = 'trajs_10s_after' if self.animal_id not in ['PV80', 'PV42', 'PV85'] else 'trajs_10s_after_msi_regev'
         with open(f'{self.dataset_path}/{filename}.pkl', 'rb') as f:
             d = pickle.load(f)
         strk_df, trajs = d['strk_df'], d['trajs']
         for strike_id, xf in trajs.items():
-            xf['speed_x'] = xf.x.diff().fillna(0)
-            xf['speed_y'] = xf.y.diff().fillna(0)
+            xf['speed_x'] = xf.x.diff()
+            xf['speed_y'] = xf.y.diff()
             xf['speed'] = np.sqrt(xf.x.diff() ** 2 + xf.y.diff() ** 2)
-            # xf.speed.fillna(0, inplace=True)
+            trajs[strike_id] = xf.iloc[1:] # remove first row because it had NaN after speed calculation
         return strk_df, trajs
 
     def get_model_name(self):
@@ -558,6 +558,76 @@ def find_best_features(movement_type='random_low_horizontal', lstm_layers=4, dro
     res_df.to_csv(filename)
 
 
+def run_with_different_seeds(animal_id, movement_type, sub_section, feature_names, lstm_layers=4,
+                            dropout_prob=0.1, lstm_hidden_dim=100, n=10, is_run_feature_importance=True, is_plot=True,
+                             is_save=True):
+    res = {'metrics': [], 'attention': {}, 'feature_importance': []}
+    for s in range(n):
+        tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=sub_section,
+                            is_resample=False, feature_names=feature_names, seed=s, is_debug=False,
+                            animal_id=animal_id, movement_type=movement_type, is_hit=False, lstm_layers=lstm_layers,
+                            dropout_prob=dropout_prob, lstm_hidden_dim=lstm_hidden_dim)
+        tj.train(is_plot=False)
+        best_i = np.argmin([x['score'] for x in tj.history])
+        best_epoch = np.argmin(tj.history[best_i]['metrics']['val_loss'])
+        for metric, l in tj.history[best_i]['metrics'].items():
+            res['metrics'].append({'metric': metric, 'value': l[best_epoch], 'animal_id': animal_id,
+                                   'movement_type': movement_type})
+        y_true, y_pred, y_score, attns = tj.get_data_for_evaluation()
+        for bug_speed, a in attns.items():
+            res['attention'].setdefault(bug_speed, []).append(a)
+        res['metrics'].append({'metric': 'overall_accuracy', 'value': accuracy_score(y_true, y_pred),
+                               'animal_id': animal_id, 'movement_type': movement_type})
+        if is_run_feature_importance:
+            dataset = tj.get_dataset()
+            importance_df = tj.visualize_features_importance(dataset, is_plot=False)
+            res['feature_importance'].append(importance_df)
+
+        torch.cuda.empty_cache()
+        time.sleep(1)
+
+    res['metrics'] = pd.DataFrame(res['metrics'])
+    for bug_speed in res['attention'].keys():
+        res['attention'][bug_speed] = np.vstack(res['attention'][bug_speed])
+    importance = pd.concat(res['feature_importance']).reset_index().rename(columns={'index': 'bug_speed'})
+    imp = importance.groupby('bug_speed')
+    imp = imp.mean().merge(imp.std().rename(columns={k: f'{k}_std' for k in feature_names}), left_on='bug_speed', right_index=True)
+    res['feature_importance'] = imp
+
+    if is_plot:
+        fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(10, 4))
+
+        sns.barplot(data=res['metrics'], x='metric', y='value', ax=axes[0])
+        axes[0].set_xticks(axes[0].get_xticks(), axes[0].get_xticklabels(), rotation=45, ha='right')
+
+        offset = 0.1
+        for j, f in enumerate(feature_names):
+            for k, bug_speed in enumerate(imp.index):
+                axes[1].bar(j + k*offset, imp[f].loc[bug_speed], width=offset)
+                axes[1].errorbar(j + k*offset, imp[f].loc[bug_speed], yerr=imp[f'{f}_std'].loc[bug_speed], fmt="o", color="k")
+        axes[1].set_xticks(np.arange(len(feature_names)))
+        axes[1].set_xticklabels(feature_names)
+
+        mean_att = []
+        for bug_speed, a in res['attention'].items():
+            a_avg = a.mean(axis=0)
+            mean_att.append(a_avg)
+            print(a_avg)
+            axes[2].plot(a_avg.squeeze(), label=bug_speed, alpha=0.5)
+        axes[2].plot(np.vstack(mean_att).mean(axis=0), color='k', linewidth=2)
+
+        fig.tight_layout()
+        plt.show()
+
+    if is_save:
+        filename = f'{TRAJ_DIR}/different_seeds_{animal_id}_{movement_type}_{datetime.now().isoformat()}.pkl'
+        with open(filename, 'wb') as f:
+            pickle.dump(res, f)
+        print(f'Results saved to {filename}')
+
+    return res
+
+
 def plot_comparison(filename):
     df = pd.read_csv(filename, index_col=0)
     fig, axes = plt.subplots(2, 1, figsize=(8, 8))
@@ -570,32 +640,22 @@ def plot_comparison(filename):
     plt.show()
 
 
-def find_optimal_span():
-    res_df = []
-    for t_start in np.arange(-3, 2, 0.5):
-        for span_sec in [60, 90, 120, 150, 180, 210]:
-            if (t_start + (span_sec / 60)) > 3:
-                continue
-            print(f'Start training with t_start: {t_start}, span_sec: {span_sec}')
-            try:
-                tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=(t_start, span_sec),
-                                    is_resample=False,
-                                    feature_names=['x', 'y', 'speed_x', 'speed_y'],
-                                    animal_id='all', movement_type='random_low_horizontal', is_hit=False, lstm_layers=4,
-                                    dropout_prob=0.3, lstm_hidden_dim=50)
-                tj.train(is_plot=False)
-                best_i = np.argmin([x['score'] for x in tj.history])
-                best_epoch = np.argmin(tj.history[best_i]['metrics']['val_loss'])
-                for metric, l in tj.history[best_i]['metrics'].items():
-                    res_df.append({'t_start': t_start, 'span_sec': span_sec, 'metric': metric, 'value': l[best_epoch]})
-                torch.cuda.empty_cache()
-                time.sleep(1)
-            except Exception as exc:
-                print(f'Error in t_start: {t_start}, span_sec: {span_sec}; {exc}')
+def find_optimal_span(animal_id='PV42', movement_type='random_low_horizontal', dt=0.1, span=60, n_seeds=10):
+    all_res = []
+    for t_start in np.arange(-10, (10-(span/60))+dt, dt):
+        print(f'Start training with t_start: {t_start}')
+        try:
+            r = run_with_different_seeds(animal_id, movement_type, (t_start, span), ['x', 'y', 'speed'],
+                                     lstm_layers=4, dropout_prob=0.3, lstm_hidden_dim=100, n=n_seeds,
+                                     is_run_feature_importance=True, is_plot=False, is_save=False)
+            all_res.append(r)
+        except Exception as exc:
+            print(f'Error in t_start: {t_start}; {exc}')
 
-    res_df = pd.DataFrame(res_df)
-    filename = f'{TRAJ_DIR}/optimal_span_{datetime.now().isoformat()}.csv'
-    res_df.to_csv(filename)
+    filename = f'{TRAJ_DIR}/optimal_span_{datetime.now().isoformat()}.pkl'
+    with open(filename, 'wb') as f:
+        pickle.dump(all_res, f)
+    print(f'\nResults saved to: {filename}')
 
 
 if __name__ == '__main__':
@@ -604,13 +664,14 @@ if __name__ == '__main__':
     #                     dropout_prob=0.3, lstm_hidden_dim=50, is_shuffled_target=True)
     # tj.train(is_plot=True)
     # tj.check_hidden_states()
-
-    # find_optimal_span()
+    find_optimal_span(animal_id='PV91', movement_type='random_low_horizontal')
+    # run_with_different_seeds('PV91', 'random_low_horizontal', (-1, 60),
+    #                          ['x', 'y', 'speed'], n=10)
     # find_best_features(movement_type='circle', lstm_layers=6, dropout_prob=0.5, is_resample=True)
-    for movement_type in ['random_low_horizontal', 'circle']:
-        for animal_id in ['PV91', 'PV163', 'PV99', 'PV80', 'PV42', 'PV85', 'all']:
-            hyperparameters_comparison(animal_id=animal_id, movement_type=movement_type,
-                                       feature_names=['x', 'y', 'speed'], sub_section=(-2, 120))
+    # for movement_type in ['random_low_horizontal', 'circle']:
+    #     for animal_id in ['PV91', 'PV163', 'PV99', 'PV80', 'PV42', 'PV85', 'all']:
+    #         hyperparameters_comparison(animal_id=animal_id, movement_type=movement_type,
+    #                                    feature_names=['x', 'y', 'speed'], sub_section=(-2, 120))
     # animals_comparison()
     # plot_comparison('/Users/regev/PhD/msi/Pogona_Pursuit/output/datasets/trajectories/results_2024-06-24T16:43:58.880310.csv')
 
