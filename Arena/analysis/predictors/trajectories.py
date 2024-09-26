@@ -640,7 +640,7 @@ def plot_comparison(filename):
     plt.show()
 
 
-def find_optimal_span(animal_id='PV42', movement_type='random_low_horizontal', dt=0.1, span=60, n_seeds=10):
+def find_optimal_span(animal_id='PV42', movement_type='random_low_horizontal', dt=0.2, span=60, n_seeds=5):
     all_res = []
     for t_start in np.arange(-10, (10-(span/60))+dt, dt):
         print(f'Start training with t_start: {t_start}')
