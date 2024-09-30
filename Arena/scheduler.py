@@ -233,7 +233,7 @@ class Scheduler(threading.Thread):
         if self.is_in_range('cameras_on') or not self.is_compression_thread_available() or config.DISABLE_DB:
             return
 
-        videos = get_videos_ids_for_compression(sort_by_size=True)
+        videos = get_videos_ids_for_compression(self.arena_mgr.orm, sort_by_size=True)
         if not videos:
             return
 
@@ -242,7 +242,7 @@ class Scheduler(threading.Thread):
             vids_ = [v for v in videos if v not in currently_compressed_vids]
             if not vids_:
                 return
-            t = threading.Thread(target=compress, args=(vids_[0],))
+            t = threading.Thread(target=compress, args=(vids_[0], self.logger, self.arena_mgr.orm))
             t.start()
             self.compress_threads[t.name] = (t, vids_[0])
 
