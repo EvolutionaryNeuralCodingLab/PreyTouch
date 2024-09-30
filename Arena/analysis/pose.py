@@ -92,6 +92,7 @@ class ArenaPose:
         self.current_velocity = None
         self.is_initialized = False
         self.example_writer = None
+        self.logger = get_logger('ArenaPose')
 
     def init(self, img, caliber_only=False):
         """
@@ -238,6 +239,8 @@ class ArenaPose:
         fps = cap.get(cv2.CAP_PROP_FPS)
         self.start_new_session(fps)
         iters = range(n_frames)
+        if not is_tqdm:
+            self.logger.info(f'Start video prediction of {video_path}')
         for frame_id in (tqdm(iters, desc=f'{prefix}{Path(video_path).stem}') if is_tqdm else iters):
             ret, frame = cap.read()
             if not self.is_initialized:
@@ -258,6 +261,7 @@ class ArenaPose:
         pose_df = pd.concat(pose_df)
         if is_save_cache:
             self.save_predicted_video(pose_df, video_path)
+            self.logger.info(f'Video prediction of {video_path} was saved successfully')
         self.close_example_writer()
         return pose_df
 
@@ -1398,16 +1402,17 @@ if __name__ == '__main__':
     # print(get_videos_to_predict('PV148'))
     # commit_video_pred_to_db(animal_ids="PV163")
     # VideoPoseScanner().fix_calibrations()
+    VideoPoseScanner().predict_all(max_videos=20, is_tqdm=True)
     # VideoPoseScanner(cam_name='top', animal_ids=['PV157'], is_use_db=False)
-    VideoPoseScanner(cam_name='top', animal_ids=['PV157'], is_use_db=False).predict_video('/data/Pogona_Pursuit/output/experiments/PV157/20240307/block2/videos/top_20240307T141316.mp4')
+    # VideoPoseScanner(cam_name='top', animal_ids=['PV157'], is_use_db=False).predict_video('/data/Pogona_Pursuit/output/experiments/PV157/20240307/block2/videos/top_20240307T141316.mp4')
     # VideoPoseScanner(animal_id='PV163').add_bug_trajectory(videos=[Path('/media/reptilearn4/experiments/PV163/20240201/block10/videos/front_20240201T173016.mp4')])
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/Archive/front/20221205T093815_front.png', 0)
     # print(run_predict('pogona_head', [img]))
     # DLCArenaPose('front', is_use_db=True).predict_frame(img)
     # plt.imshow(img)
     # plt.show()
-    sa = SpatialAnalyzer(animal_ids=None, movement_type='low_horizontal', start_date='2023-04-18',
-                         split_by=['exit_hole'], bodypart='nose', is_use_db=True, excluded_animals=['PV85'])
+    # sa = SpatialAnalyzer(animal_ids=None, movement_type='low_horizontal', start_date='2023-04-18',
+    #                      split_by=['exit_hole'], bodypart='nose', is_use_db=True, excluded_animals=['PV85'])
     # load_pose_from_videos('PV80', 'front', is_exit_agg=True) #, day='20221211')h
     # SpatialAnalyzer(animal_ids=['PV91'], bodypart='nose', is_use_db=True).plot_spatial_hist('PV91')
     # SpatialAnalyzer(movement_type='low_horizontal', split_by=['exit_hole'], bodypart='nose').find_crosses(y_value=5)
