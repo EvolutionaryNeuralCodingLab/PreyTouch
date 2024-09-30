@@ -54,10 +54,13 @@ class TongueOutAnalyzer(Predictor):
 
         # latency test
         t0 = time.time()
-        if orig_frame[200:400, 400:600].mean() > 35:
+        if orig_frame[200:400, 400:600].mean() > 35 and (not self.last_action_timestamp or
+                     timestamp - self.last_action_timestamp > 3):
+            time_taken = time.time() - t0
+            print(f'IR on detected by tounge out in {time_taken:.4f} seconds')
             is_action = True
-        time_taken = time.time() - t0
-
+            self.last_action_timestamp = timestamp
+            
         return is_action, frame, prob
 
     def predict_strike(self, strike_db_id, sec_before=2, sec_after=2, cols=8, save_frames_above=None, is_plot=True):

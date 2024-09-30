@@ -84,7 +84,7 @@ class PredictHandler(ImageHandler):
     def draw_pred_on_image(self, det, img):
         return img
 
-    def wait_for_next_frame(self, timeout=2):
+    def wait_for_next_frame(self, timeout=10):
         current_timestamp = self.mp_metadata['shm_frame_timestamp'].value
         t0 = time.time()
         while self.last_timestamp and current_timestamp == self.last_timestamp:
@@ -100,6 +100,7 @@ class TongueOutHandler(PredictHandler):
         super().__init__(*args, **kwargs)
         self.analyzer = TongueOutAnalyzer(action_callback=self.publish_tongue_out)
         self.last_detected_ts = None
+        self.predict_times = []
         self.frames_probas = []
         self.mp_metadata['is_pred_on'].set()
 
@@ -107,11 +108,15 @@ class TongueOutHandler(PredictHandler):
         return f'tongue-out-{self.cam_name}'
 
     def publish_tongue_out(self):
-        self.cache.publish_command('strike_predicted')
-        # self.logger.info('Tongue detected!')
+        t0 = time.time()
+        self.cache.publish_command('strike_predicted', str(t0))
+        self.logger.info('sent strike_predicted to app')
 
     def predict_frame(self, img, timestamp):
+        t0 = time.time()
         is_tongue, resized_img, prob = self.analyzer.predict(img, timestamp)
+        self.predict_times.append(time.time() - t0)
+        
         self.frames_probas.append((timestamp, prob))
         if is_tongue:
             self.publish_tongue_out()
@@ -123,6 +128,7 @@ class TongueOutHandler(PredictHandler):
 
     def on_stop(self):
         try:
+            self.logger.info(f'tongue out predict frame times: {np.mean(self.predict_times):.3f}+-{np.std(self.predict_times):.3f}')
             block_path = self.cache.get(cc.EXPERIMENT_BLOCK_PATH)
             if not block_path:
                 self.logger.warning('unable to save tounge predictions; block path is None')

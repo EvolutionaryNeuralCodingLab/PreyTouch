@@ -419,12 +419,12 @@ class Block:
             self.run_psycho()
 
         if not self.is_blank_block:
-            if self.movement_type == 'jump_up':
-                self.logger.info(f'Latency Trial #{trial_id} started')
-                self.periphery.switch(config.IR_LIGHT_NAME, 1)
-                time.sleep(2)
-                self.periphery.switch(config.IR_LIGHT_NAME, 0)
-                return
+            # if self.movement_type == 'jump_up':
+            #     self.logger.info(f'Latency Trial #{trial_id} started')
+            #     self.periphery.switch(config.IR_LIGHT_NAME, 1)
+            #     time.sleep(1)
+            #     self.periphery.switch(config.IR_LIGHT_NAME, 0)
+            #     return
 
             if self.is_media_block:
                 command, options = 'init_media', self.media_options

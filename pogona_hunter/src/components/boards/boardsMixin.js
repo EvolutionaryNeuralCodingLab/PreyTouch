@@ -57,11 +57,13 @@ export default {
         this.$store.commit('reset_score')
         this.initBoard(!!options['isLogTrajectory'])
       },
-      'cmd/visual_app/strike_predicted': (payload) => {
+      'cmd/visual_app/strike_predicted': (server_time_sent) => {
         console.log('received strike_predicted command')
         this.jumpBugs()
         this.eventsLog.push({
             time: Date.now(),
+            app_time: Date.now(),
+            server_time_sent: server_time_sent,
             event: 'bug_jump'
         })
       },
@@ -151,7 +153,7 @@ export default {
       let darkTimout = setTimeout(() => {
           this.bugsSettings.backgroundColor = origColor
           clearTimeout(darkTimout)
-        }, 500)
+        }, 1000)
       if (this.$refs.bugChild) {
           this.$refs.bugChild.forEach(bug => bug.jump())
         }
