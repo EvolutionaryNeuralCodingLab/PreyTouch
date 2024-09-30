@@ -641,14 +641,14 @@ def plot_comparison(filename):
 
 
 def find_optimal_span(animal_id='PV42', movement_type='random_low_horizontal', dt=0.2, span=60, n_seeds=5):
-    all_res = []
+    all_res = {}
     for t_start in np.arange(-10, (10-(span/60))+dt, dt):
         print(f'Start training with t_start: {t_start}')
         try:
             r = run_with_different_seeds(animal_id, movement_type, (t_start, span), ['x', 'y', 'speed'],
                                      lstm_layers=4, dropout_prob=0.3, lstm_hidden_dim=100, n=n_seeds,
                                      is_run_feature_importance=True, is_plot=False, is_save=False)
-            all_res.append(r)
+            all_res[t_start] = r
         except Exception as exc:
             print(f'Error in t_start: {t_start}; {exc}')
 
@@ -664,7 +664,7 @@ if __name__ == '__main__':
     #                     dropout_prob=0.3, lstm_hidden_dim=50, is_shuffled_target=True)
     # tj.train(is_plot=True)
     # tj.check_hidden_states()
-    find_optimal_span(animal_id='PV91', movement_type='random_low_horizontal')
+    find_optimal_span(animal_id='PV163', movement_type='random_low_horizontal')
     # run_with_different_seeds('PV91', 'random_low_horizontal', (-1, 60),
     #                          ['x', 'y', 'speed'], n=10)
     # find_best_features(movement_type='circle', lstm_layers=6, dropout_prob=0.5, is_resample=True)
