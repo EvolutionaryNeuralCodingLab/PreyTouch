@@ -387,7 +387,7 @@ class WebSocketServer(mp.Process):
                 websockets.broadcast(self.connections, message)
                 # Handle disconnecting clients
         except websockets.exceptions.ConnectionClosed as e:
-            print("A client just disconnected")
+            print(f"A client just disconnected from websocket: {e}")
         finally:
             self.connections.remove(websocket)
 
