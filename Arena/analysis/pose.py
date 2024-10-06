@@ -14,6 +14,7 @@ from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import seaborn as sns
 import pandas as pd
 import numpy as np
+import torch
 from tqdm.auto import tqdm
 from pathlib import Path
 from scipy.spatial import distance
@@ -1201,7 +1202,8 @@ def run_predict(pred_name, images, cam_name='', image_date=None, is_base64=False
 
 
 class VideoPoseScanner:
-    def __init__(self, cam_name=config.NIGHT_POSE_CAMERA, is_use_db=True, model_path=None, animal_ids=None, is_replace_exp_dir=True):
+    def __init__(self, cam_name=config.NIGHT_POSE_CAMERA, is_use_db=True, model_path=None, animal_ids=None, is_replace_exp_dir=True,
+                 only_strikes_vids=False):
         self.cam_name = cam_name
         self.is_use_db = is_use_db
         self.model_path = model_path
@@ -1209,6 +1211,7 @@ class VideoPoseScanner:
             animal_ids = [animal_ids]
         self.animal_ids = animal_ids
         self.is_replace_exp_dir = is_replace_exp_dir
+        self.only_strikes_vids = only_strikes_vids
         self.logger = get_logger('Video-Pose-Scanner')
         self.orm = ORM() if is_use_db else None
         self.dlc = DLCArenaPose(cam_name, is_use_db=is_use_db, model_path=model_path, orm=self.orm, commit_bodypart=None)
@@ -1234,6 +1237,8 @@ class VideoPoseScanner:
                 self.print_cache(exc, errors_cache)
             except Exception as exc:
                 self.print_cache(exc, errors_cache)
+            finally:
+                torch.cuda.empty_cache()
 
     def predict_video(self, video_path, prefix='', is_tqdm=True):
         pose_df = self.dlc.predict_video(video_path=video_path, is_create_example_video=False, 
@@ -1269,10 +1274,13 @@ class VideoPoseScanner:
                     or (self.animal_ids and vid.animal_id not in self.animal_ids):
                     continue
                 
+                blk = s.query(Block).filter_by(id=vid.block_id).first()
                 if config.NIGHT_POSE_RUN_ONLY_BUG_SESSIONS:
-                    blk = s.query(Block).filter_by(id=vid.block_id).first()
                     if blk is None or blk.block_type != 'bugs':
                         continue
+
+                if self.only_strikes_vids and not blk.strikes:
+                    continue
 
                 video_path = Path(vid.path)
                 if self.is_replace_exp_dir: # replace the experiment directory with the experiment directory of the video
@@ -1316,6 +1324,9 @@ class VideoPoseScanner:
             pred_path = self.dlc.get_predicted_cache_path(vid_path)
             if (is_skip_predicted and (pred_path.exists() or pred_path.with_suffix('.txt').exists())) or \
                     (len(pred_path.parts) >= 6 and pred_path.parts[-6] == 'test'):
+                continue
+            # skip blocks without strikes if only_strikes_vids=True
+            if self.only_strikes_vids and not (Path(vid_path).parent.parent / config.experiment_metrics['touch']['csv_file']).exists():
                 continue
             videos.append(vid_path)
         return videos
@@ -1402,9 +1413,10 @@ if __name__ == '__main__':
     # print(get_videos_to_predict('PV148'))
     # commit_video_pred_to_db(animal_ids="PV163")
     # VideoPoseScanner().fix_calibrations()
-    VideoPoseScanner().predict_all(max_videos=20, is_tqdm=True)
+    # VideoPoseScanner().predict_all(max_videos=20, is_tqdm=True)
     # VideoPoseScanner(cam_name='top', animal_ids=['PV157'], is_use_db=False)
     # VideoPoseScanner(cam_name='top', animal_ids=['PV157'], is_use_db=False).predict_video('/data/Pogona_Pursuit/output/experiments/PV157/20240307/block2/videos/top_20240307T141316.mp4')
+    VideoPoseScanner(cam_name='top', animal_ids=['PV161', 'PV162', 'PV157', 'PV149'], is_use_db=False, only_strikes_vids=True).predict_all()
     # VideoPoseScanner(animal_id='PV163').add_bug_trajectory(videos=[Path('/media/reptilearn4/experiments/PV163/20240201/block10/videos/front_20240201T173016.mp4')])
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/Archive/front/20221205T093815_front.png', 0)
     # print(run_predict('pogona_head', [img]))
