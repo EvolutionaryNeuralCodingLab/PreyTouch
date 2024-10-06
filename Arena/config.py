@@ -1,75 +1,53 @@
-import os
 import yaml
 import socket
+import redis
+import json
 from environs import Env
 from pathlib import Path
 from functools import wraps
-
-class Conf:
-    def __init__(self):
-        self.env = Env()
-        self.env.read_env('configurations/.env')
-        if self.env.bool('IS_PROD', 0):
-            self.env.read_env('configurations/.env.prod', override=True)
-        self.groups = {}
-
-    def env_func(func):
-        @wraps(func)
-        def wrapper(self, env_name, default_value, group_name='other', desc=''):
-            val = getattr(self.env, func.__name__)(env_name, default_value)
-            g = self.groups.setdefault(group_name, {})
-            g[env_name] = (val, type(val), desc)
-            return val
-        return wrapper
-
-    @env_func
-    def __call__(self, *args, **kwargs):
-        pass
-
-    @env_func
-    def bool(self, *args, **kwargs):
-        pass
-
-    @env_func
-    def int(self, *args, **kwargs):
-        pass
-
-    @env_func
-    def float(self, *args, **kwargs):
-        pass
-
-    @env_func
-    def dict(self, *args, **kwargs):
-        pass
-
-    @env_func
-    def list(self, *args, **kwargs):
-        pass
-
+from config_utils import Conf, load_configuration, configurations
 
 env = Conf()
 
 # General
 version = '2.2'
-ARENA_NAME = env('ARENA_NAME', socket.gethostname())
-is_debug_mode = env.bool('DEBUG', False)
-is_use_parport = env.bool('IS_USE_PARPORT', False)
-IS_ANALYSIS_ONLY = env.bool('IS_ANALYSIS_ONLY', False)
+ARENA_NAME = env('ARENA_NAME', socket.gethostname(), group='General', desc='The name of the arena to be saved in the database')
+IS_ANALYSIS_ONLY = env.bool('IS_ANALYSIS_ONLY', False, group='General', desc='Mode for development. If set, the arena-manager and periphery are not initialized')
+LOGGING_LEVEL = env('LOGGING_LEVEL', 'DEBUG', group='General', desc='The logging level of the system log (DEBUG,INFO,WARNING,etc.)')
+UI_LOGGING_LEVEL = env('UI_LOGGING_LEVEL', 'INFO', group='General', desc='The logging level of the management console')
+OUTPUT_DIR = env('OUTPUT_DIR', (Path(__file__).parent.parent.resolve() / 'output').as_posix(), group='General', desc='The output directory')
 
 # API
-static_files_dir = env('STATIC_FILES_DIR', 'static')
+STATIC_FILES_DIR = env('STATIC_FILES_DIR', 'static', group='General', desc='Path to media files directory', is_map=False)
+MANAGEMENT_PORT = env.int('MANAGEMENT_PORT', 5084, group='General', desc='Flask API port')
+MANAGEMENT_HOST = env('MANAGEMENT_HOST', 'localhost', group='General', desc='Flask API host')
+MANAGEMENT_URL = f'http://{MANAGEMENT_HOST}:{MANAGEMENT_PORT}'
+POGONA_HUNTER_PORT = env.int('POGONA_HUNTER_PORT', 8080, group='General', desc='Port of the application')
+DISABLE_ARENA_SCREEN = env.bool('DISABLE_ARENA_SCREEN', False, group='General', desc='Work without application screen')
 api_max_blocks_to_show = 20
-LOGGING_LEVEL = env('LOGGING_LEVEL', 'DEBUG')
-UI_LOGGING_LEVEL = env('UI_LOGGING_LEVEL', 'INFO')
-FLASK_PORT = env.int('FLASK_PORT', 5084)
-POGONA_HUNTER_PORT = env.int('POGONA_HUNTER_PORT', 8080)
-SENTRY_DSN = env('SENTRY_DSN', '')
-management_url = env('MANAGEMENT_URL', f'http://localhost:{FLASK_PORT}')
-DISABLE_ARENA_SCREEN = env.bool('DISABLE_ARENA_SCREEN', 0)
+IS_GPU = env.bool('IS_GPU', True, group='General', desc='Whether the system has a CUDA GPU')
+
+# Output Folders
+CAPTURE_IMAGES_DIR = env('CAPTURE_IMAGES_DIR', f'{OUTPUT_DIR}/captures', is_map=False)
+RECORDINGS_OUTPUT_DIR = env('RECORDINGS_OUTPUT_DIR', f'{OUTPUT_DIR}/recordings', is_map=False)
+CALIBRATION_DIR = env('CALIBRATION_DIR', f'{OUTPUT_DIR}/calibrations', is_map=False)
+EXPERIMENTS_DIR = env('EXPERIMENTS_DIR', f"{OUTPUT_DIR}/experiments", is_map=False)
+
+# Application
+TOUCH_SCREEN_NAME = env('TOUCH_SCREEN_NAME', 'Elo', group='Application', desc='Name of the touch screen to be searched in xinput')
+DISABLE_APP_SCREEN = env.bool('DISABLE_APP_SCREEN', False, group='Application', desc='whether to disable the application screen')
+IS_SCREEN_INVERTED = env.bool('IS_SCREEN_INVERTED', False, group='Application', desc='whether to invert the application screen')
+IS_CHECK_SCREEN_MAPPING = env.bool('IS_CHECK_SCREEN_MAPPING', True, group='Application', desc='whether to check the mapping of the touch screen before each experiment')
+APP_SCREEN = env('APP_SCREEN', ':0', group='Application', desc='Application screen address')
+TEST_SCREEN = env('TEST_SCREEN', ':1.0', group='Application', desc='Screen address to be used for running test experiments')
+SCREEN_RESOLUTION = env('SCREEN_RESOLUTION', '1920,1080', group='Application', desc='Resolution of the screen. Write with comma and no spaces.')  # must be written with comma
+SCREEN_DISPLACEMENT = env('SCREEN_DISPLACEMENT', '000', group='Application', desc='Screen displacement. Used if more than one screen in connected to the server')  # used for displacing the screen contents in multi screen setup
 
 # Cache (Redis)
-redis_host = env('REDIS_HOST', 'localhost')
-websocket_url = env('WEBSOCKET_URL', 'ws://localhost:6380')
+IS_USE_REDIS = env.bool('IS_USE_REDIS', True, group='Cache', desc='whether to use redis as cache')
+REDIS_HOST = env('REDIS_HOST', 'localhost', group='Cache', desc='Host of the redis server')
+REDIS_PORT = env.int('REDIS_PORT', 6379, group='Cache', desc='Port of the redis server')
+WEBSOCKET_URL = env('WEBSOCKET_URL', 'ws://localhost:6380', group='Cache', desc='URL of the websocket server that connects the management UI with the BackEnd')
 ui_console_channel = "cmd/visual_app/console"
 # listeners that should listen only during an experiment
 experiment_metrics = {
@@ -82,7 +60,7 @@ experiment_metrics = {
     'trial_data': {
         'is_write_csv': True,
         'is_write_db': True,
-        'csv_file': {'bug_trajectory': 'bug_trajectory.csv', 
+        'csv_file': {'bug_trajectory': 'bug_trajectory.csv',
                      'video_frames': 'video_frames.csv',
                      'app_events': 'app_events.csv',
                      'trials_data': 'trials_data.csv'},
@@ -115,12 +93,6 @@ metric_channel_prefix = 'log/metric'
 subscription_topics.update({k: f'{metric_channel_prefix}/{k}' for k in experiment_metrics.keys()})
 subscription_topics.update(commands_topics)
 
-# Multi-Processing
-array_queue_size_mb = env.int('ARRAY_QUEUE_SIZE_MB', 5 * 20)  # I assume that one image is roughly 5Mb
-count_timestamps_for_fps_calc = env.int('count_timestamps_for_fps_calc', 200)  # how many timestamps to gather for calculating FPS
-writing_video_queue_maxsize = env.int('writing_video_queue_maxsize', 100)
-shm_buffer_dtype = 'uint8'
-
 # Arena
 arena_modules = {
     'cameras': {
@@ -137,90 +109,80 @@ arena_modules = {
         'pogona_head': ('analysis.predictors.pogona_head', 'PogonaHead')
     }
 }
+predictors_map = {
+    'DLCPose': 'analysis.predictors.deeplabcut',
+    'TongueOutAnalyzer': 'analysis.predictors.tongue_out',
+    'PogonaHead': 'analysis.predictors.pogona_head'
+}
 
-CAM_CONFIG_PATH = Path('configurations/cam_config.yaml')
-cameras = yaml.load(CAM_CONFIG_PATH.open(), Loader=yaml.FullLoader) if CAM_CONFIG_PATH.exists() else {}
-QUEUE_WAIT_TIME = env.int('QUEUE_WAIT_TIME', 2)
-SINK_QUEUE_TIMEOUT = env.int('SINK_QUEUE_TIMEOUT', 2)
-VIDEO_WRITER_FORMAT = env('VIDEO_WRITER_FORMAT', 'MJPG')
-DEFAULT_EXPOSURE = env.int('DEFAULT_EXPOSURE', 5000)
-ARENA_DISPLAY = env('ARENA_DISPLAY', ':0')
+# Cameras
+DISABLE_CAMERAS_CHECK = env.bool('DISABLE_CAMERAS_CHECK', False, group='Cameras', desc='Disable check of cameras by the scheduler. Manual mode - scheduler does not turn on/off cameras')
 output_dir_key = 'output_dir'  # used for cam_config
-SCREEN_PIX_CM = env.float('SCREEN_PIX_CM', 0)
-SCREEN_START_X = env.float('SCREEN_START_X', 0)
-SCREEN_Y = env.float('SCREEN_Y', 0)
-temperature_logging_delay_sec = env.int('temperature_logging_delay_sec', 5)
-MAX_VIDEO_TIME_SEC = env.int('MAX_VIDEO_TIME_SEC', 60 * 10)
-# the following is used by the scheduler and set the duration (seconds) in which 'manual' mode cameras would stay on.
-# or for any type of camera this would set the duration it stays on outside of camera_on time.
-camera_on_min_duration = env.float('camera_on_min_duration', 10*60)
-OUTPUT_DIR = env('OUTPUT_DIR', '/data/Pogona_Pursuit/output')
-recordings_output_dir = env('recordings_output_dir', f'{OUTPUT_DIR}/recordings')
-capture_images_dir = env('capture_images_dir', f'{OUTPUT_DIR}/captures')
-IS_TRACKING_CAMERAS_ALLOWED = env.bool('IS_TRACKING_CAMERAS_ALLOWED', False)
-frames_timestamps_dir = env('FRAMES_TIMESTAMPS_DIR', 'frames_timestamps')
-DISABLE_CAMERAS_CHECK = env.bool('DISABLE_CAMERAS_CHECK', False)
+QUEUE_WAIT_TIME = env.int('QUEUE_WAIT_TIME', 2, group='Cameras', desc='time in seconds to wait for frame in camera queue before exception is raised')
+SINK_QUEUE_TIMEOUT = env.int('SINK_QUEUE_TIMEOUT', 2, group='Cameras', desc='time in seconds to wait for frame in camera sink')
+VIDEO_WRITER_FORMAT = env('VIDEO_WRITER_FORMAT', 'MJPG', group='Cameras', desc='format of ouput videos')
+DEFAULT_EXPOSURE = env.int('DEFAULT_EXPOSURE', 5000, group='Cameras', desc='Default exposure for cameras')
+IS_TRACKING_CAMERAS_ALLOWED = env.bool('IS_TRACKING_CAMERAS_ALLOWED', False, group='Cameras', desc='Allow cameras that are configured for tracking to create tracking videos')
+MAX_VIDEO_TIME_SEC = env.int('MAX_VIDEO_TIME_SEC', 60 * 10, group='Cameras', desc='Maximum duration for output videos in seconds')
+CAMERA_ON_MIN_DURATION = env.float('CAMERA_ON_MIN_DURATION', 10*60, group='Cameras', desc="used by the scheduler to set the duration (seconds) in which 'manual' \
+                                   mode cameras would stay on, or for any type of camera this would set the duration it stays on outside of camera_on time.")
+FRAMES_TIMESTAMPS_DIR = env('FRAMES_TIMESTAMPS_DIR', 'frames_timestamps', group='Cameras', is_map=False, desc='Name of the folder to be created in the experiment output directory to store all frames timestamps files')
+ARRAY_QUEUE_SIZE_MB = env.int('ARRAY_QUEUE_SIZE_MB', 5 * 20, group='Cameras', desc='Queue size in MB for cameras')  # I assume that one image is roughly 5Mb
+COUNT_TIMESTAMPS_FOR_FPS_CALC = env.int('COUNT_TIMESTAMPS_FOR_FPS_CALC', 200, group='Cameras', desc='how many timestamps to gather for calculating FPS')
+WRITING_VIDEO_QUEUE_MAXSIZE = env.int('WRITING_VIDEO_QUEUE_MAXSIZE', 100, group='Cameras', desc='Max frames in the writing video queue')
+shm_buffer_dtype = 'uint8'
 
 # Periphery
-DISABLE_PERIPHERY = env.bool('DISABLE_PERIPHERY', False)
+DISABLE_PERIPHERY = env.bool('DISABLE_PERIPHERY', False, group='Periphery', desc='Disable all periphery integration')
 mqtt = {
-    'host': env('MQTT_HOST', 'localhost'),
-    'port': env.int('MQTT_PORT', 1883),
+    'host': env('MQTT_HOST', 'localhost', group='Periphery', desc='Host of the MQTT server'),
+    'port': env.int('MQTT_PORT', 1883, group='Periphery', desc='Port of the MQTT server'),
     'publish_topic': 'arena_command',
-    'temperature_sensors': env.list('TEMPERATURE_SENSORS', ['Temp'])
+    'temperature_sensors': env.list('TEMPERATURE_SENSORS', ['Temp'], group='Periphery', desc='Names of the temperature sensors')
 }
-IR_NAME = env('IR_NAME', 'IR_lights')
-LED_NAME = env('LED_NAME', 'day_lights')
-FEEDER_NAME = env('FEEDER_NAME', 'Feeder 1')
-TOUCH_SCREEN_NAME = env('TOUCH_SCREEN_NAME', 'Elo')
-IS_SCREEN_INVERTED = env.bool('IS_SCREEN_INVERTED', 0)
-IS_CHECK_SCREEN_MAPPING = env.bool('IS_CHECK_SCREEN_MAPPING', 1)
-APP_SCREEN = env('APP_SCREEN', ':0.0')
-TEST_SCREEN = env('TEST_SCREEN', ':1.0')
-SCREEN_RESOLUTION = env('SCREEN_RESOLUTION', '1920,1080')  # must be written with comma
-SCREEN_DISPLACEMENT = env('SCREEN_DISPLACEMENT', '000')  # used for displacing the screen contents in multi screen setup
-
-# temperature sensor
-SERIAL_PORT_TEMP = env('SERIAL_PORT_TEMP', '/dev/ttyACM0')
-SERIAL_BAUD = env.int('SERIAL_BAUD', 9600)
+IR_LIGHT_NAME = env('IR_LIGHT_NAME', '', group='Periphery', desc='Name of infrared light in periphery config')
+DAY_LIGHT_NAME = env('DAY_LIGHT_NAME', '', group='Periphery', desc='Name of LED lights in periphery config')
+CAM_TRIGGER_ARDUINO_NAME = env('CAM_TRIGGER_ARDUINO_NAME', 'camera trigger', group='Periphery', desc='name of the camera trigger arduino in the periphery config')
+ARENA_ARDUINO_NAME = env('ARENA_ARDUINO_NAME', 'arena', group='Periphery', desc='name of the arena arduino in the periphery config')
 
 # Calibration
-calibration_dir = env('calibration_dir', f'{OUTPUT_DIR}/calibrations')
-min_calib_images = env.int('min_calib_images', 7)
-CHESSBOARD_DIM = env.list('CHESSBOARD_DIM', (9, 6))
-ARUCO_MARKER_SIZE = env.float('ARUCO_MARKER_SIZE', 2.25)  # centimeters
-MARKERS_IMAGES_DIR = env('MARKERS_IMAGES_DIR', f'{calibration_dir}/charuco_images')
+MIN_CALIBRATION_IMAGES = env.int('MIN_CALIBRATION_IMAGES', 7, group='Calibration', desc='Nuber of minimum calibration images per camera')
+CHESSBOARD_DIM = env.list('CHESSBOARD_DIM', [9, 6], group='Calibration', desc='Dimensions of calibration chessboard', subcast=int)
+ARUCO_MARKER_SIZE = env.float('ARUCO_MARKER_SIZE', 2.25, group='Calibration', desc='Size of single aruco marker in centimeters')
+NUM_ARUCO_MARKERS = env.int('NUM_ARUCO_MARKERS', 150, group='Calibration', desc='Number of Charuco markers on the board')
 
-# Schedules
-DISABLE_SCHEDULER = env.bool('DISABLE_SCHEDULER', False)
-schedule_date_format = env('schedule_date_format', "%d/%m/%Y %H:%M")
-IS_RUN_NIGHTLY_POSE_ESTIMATION = env.bool('IS_RUN_NIGHTLY_POSE_ESTIMATION', True)
-MAX_COMPRESSION_THREADS = env.int('MAX_COMPRESSION_THREADS', 2)
-IR_LIGHT_NAME = env('IR_LIGHT_NAME', '')
-DAY_LIGHT_NAME = env('DAY_LIGHT_NAME', '')
-SCHEDULE_EXPERIMENTS_END_TIME = env('SCHEDULE_EXPERIMENTS_END_TIME', '19:00')
-IS_COMMIT_TO_DWH = env.bool('IS_COMMIT_TO_DWH', True)
-DWH_N_TRIES = env.int('DWH_N_TRIES', 5)
-IS_AGENT_ENABLED = env.bool('IS_AGENT_ENABLED', 0)
-AGENT_MIN_DURATION_BETWEEN_PUBLISH = env.int('AGENT_MIN_DURATION_BETWEEN_PUBLISH', 2 * 60 * 60)
-NIGHT_POSE_CAMERA = env('NIGHT_POSE_CAMERA', 'front')
-NIGHT_POSE_IS_RUN_ONLY_BUG_SESSIONS = env.bool('NIGHT_POSE_IS_RUN_ONLY_BUG_SESSIONS', False)
+# Scheduler
+DISABLE_SCHEDULER = env.bool('DISABLE_SCHEDULER', False, group='Scheduler', desc='Disable the scheduler')
+SCHEDULER_DATE_FORMAT = env('SCHEDULER_DATE_FORMAT', "%d/%m/%Y %H:%M", group='Scheduler', desc='Scheduler date format or how dates are shown in the schedules panel')
+MAX_COMPRESSION_THREADS = env.int('MAX_COMPRESSION_THREADS', 2, group='Scheduler', desc='Number of threads to be used for video compression')
+SCHEDULE_EXPERIMENTS_END_TIME = env('SCHEDULE_EXPERIMENTS_END_TIME', '19:00', group='Scheduler', desc='last hour of a day to schedule experiments')
+IS_AGENT_ENABLED = env.bool('IS_AGENT_ENABLED', 0, group='Scheduler', desc='Enable the agent to schedule experiments automatically')
+AGENT_MIN_DURATION_BETWEEN_PUBLISH = env.int('AGENT_MIN_DURATION_BETWEEN_PUBLISH', 2 * 60 * 60, group='Scheduler', desc='Minimum duration in seconds between publish meassages by the agent')
+CAMERAS_ON_TIME = env('CAMERAS_ON_TIME', '07:00', group='Scheduler', desc='Time to start cameras by the scheduler', validator='hour_validator')
+CAMERAS_OFF_TIME = env('CAMERAS_OFF_TIME', '19:00', group='Scheduler', desc='Time to stop cameras by the scheduler', validator='hour_validator')
+POSE_ON_TIME = env('POSE_ON_TIME', '19:30', group='Scheduler', desc='Time to start nighly pose by the scheduler', validator='hour_validator')
+POSE_OFF_TIME = env('POSE_OFF_TIME', '05:00', group='Scheduler', desc='Time to stop nighly pose on the day after by the scheduler', validator='hour_validator')
+TRACKING_POSE_ON_TIME = env('TRACKING_POSE_ON_TIME', '05:30', group='Scheduler', desc='Time to start nighly pose analysis on tracking videos by the scheduler', validator='hour_validator')
+TRACKING_POSE_OFF_TIME = env('TRACKING_POSE_OFF_TIME', '07:00', group='Scheduler', desc='Time to stop nighly pose analysis on the day after on tracking videos by the scheduler', validator='hour_validator')
+LIGHTS_SUNRISE = env('LIGHTS_SUNRISE', '07:00', group='Scheduler', desc='Time to turn on LED lights by the scheduler', validator='hour_validator')
+LIGHTS_SUNSET = env('LIGHTS_SUNSET', '19:00', group='Scheduler', desc='Time to turn off LED lights by the scheduler', validator='hour_validator')
+DWH_COMMIT_TIME = env('DWH_COMMIT_TIME', '07:00', group='Scheduler', desc='Time of the day to run the commit to data warehouse', validator='hour_validator')
+STRIKE_ANALYSIS_TIME = env('STRIKE_ANALYSIS_TIME', '06:30', group='Scheduler', desc='Time of the day to run the strike analysis', validator='hour_validator')
+DAILY_SUMMARY_TIME = env('DAILY_SUMMARY_TIME', '20:00', group='Scheduler', desc='Time of the day to send the daily summary in telegram', validator='hour_validator')
 
 # Experiments
-EXPERIMENTS_DIR = env('EXPERIMENTS_DIR', f"{OUTPUT_DIR}/experiments")
-explore_experiment_dir = env('EXPLORE_EXPERIMENT_DIR', EXPERIMENTS_DIR)
-IS_RECORD_SCREEN_IN_EXPERIMENT = env.bool('IS_RECORD_SCREEN_IN_EXPERIMENT', True)
-extra_time_recording = env.int('EXTRA_TIME_RECORDING', 30)
-time_between_blocks = env.int('time_between_blocks', 300)
-experiments_timeout = env.int('EXPERIMENTS_TIMEOUT', 60 * 60)
-reward_timeout = env.int('reward_timeout', 2)
-MAX_DAILY_REWARD = env.int('MAX_DAILY_REWARD', 40)
-experiment_cache_path = env('experiment_cache_path', 'cached_experiments')
-MAX_DURATION_CONT_BLANK = env.int('MAX_DURATION_CONT_BLANK', 48*3600)
-IS_HOLD_TRIGGERS = env.bool('IS_HOLD_TRIGGERS', True)
-IS_CHECK_ENGAGEMENT_LEVEL = env.bool('IS_CHECK_ENGAGEMENT_LEVEL', False)
-HOLD_TRIGGERS_TIME = env.int('HOLD_TRIGGERS_TIME', 2)
-RANDOM_LOW_HORIZONTAL_MAX_STRIKES = env.int('RANDOM_LOW_HORIZONTAL_MAX_STRIKES', 30)
+CAM_TRIGGER_DELAY_AROUND_BLOCK = env.int('CAM_TRIGGER_DELAY_AROUND_BLOCK', 8, group='Experiments', desc='The trigger delay in seconds before and after a block in an experiment. If 0, no delay is used')
+IR_TOGGLE_DELAY_AROUND_BLOCK = env.int('IR_TOGGLE_DELAY_AROUND_BLOCK', 1, group='Experiments', desc='The IR toggle delay in seconds before and after a block in an experiment. If 0, no delay is used')
+IS_RECORD_SCREEN_IN_EXPERIMENT = env.bool('IS_RECORD_SCREEN_IN_EXPERIMENT', False, group='Experiments', desc='Whether to record the screen in the experiment. Notice it has high CPU usage!')
+EXTRA_TIME_RECORDING = env.int('EXTRA_TIME_RECORDING', 30, group='Experiments', desc='Extra time in seconds before and after the experiment in which no trials are on and only the cameras record')
+TIME_BETWEEN_BLOCKS = env.int('TIME_BETWEEN_BLOCKS', 300, group='Experiments', desc='Time in seconds between blocks in an experiment')
+EXPERIMENTS_TIMEOUT = env.int('EXPERIMENTS_TIMEOUT', 60 * 60, group='Experiments', desc='Timeout in seconds used by the cache for maximum experiment time')
+REWARD_TIMEOUT = env.int('REWARD_TIMEOUT', 10, group='Experiments', desc='Time in seconds to wait between rewards')
+MAX_DAILY_REWARD = env.int('MAX_DAILY_REWARD', 40, group='Experiments', desc='Max number of rewards per day')
+MAX_DURATION_CONT_BLANK = env.int('MAX_DURATION_CONT_BLANK', 48*3600, group='Experiments', desc='Max duration in seconds of a blank continuous experiment')
+CHECK_ENGAGEMENT_HOURS = env.int('CHECK_ENGAGEMENT_SPAN', 0, group='Experiments', desc='Hours before to check engagement or whether there were any strikes. If there are no strikes in this time span, give reward. Setting 0 will disable this check.')
+RANDOM_LOW_HORIZONTAL_MAX_STRIKES = env.int('RANDOM_LOW_HORIZONTAL_MAX_STRIKES', 30, group='Experiments', desc='Max number of strikes per bug speed in random_low_horizontal movement')
+CACHED_EXPERIMENTS_DIR = env('CACHED_EXPERIMENTS_DIR', 'cached_experiments', group='Experiments', desc='Folder name in the main Arena folder to store saved experiments')
 experiment_types = {
     'bugs': ['reward_type', 'bug_types', 'reward_bugs', 'bug_speed', 'movement_type', 'time_between_bugs',
              'is_anticlockwise' 'target_drift', 'background_color', 'exit_hole_position'],
@@ -238,31 +200,39 @@ reward_types = [
 ]
 
 # Database
-DISABLE_DB = env.bool('DISABLE_DB', False)
-db_name = env('DB_NAME', 'arena')
-db_host = env('DB_HOST', 'localhost')
-db_port = env.int('DB_PORT', 5432)
-db_engine = env('DB_ENGINE', 'postgresql+psycopg2')
-db_user = env('DB_USER', 'postgres')
-db_password = env('DB_PASSWORD', 'password')
+DISABLE_DB = env.bool('DISABLE_DB', False, group='Database', desc='Disable usage of database by the system')
+db_name = env('DB_NAME', 'arena', group='Database', desc='Database name')
+db_host = env('DB_HOST', 'localhost', group='Database', desc='Database host')
+db_port = env.int('DB_PORT', 5432, group='Database', desc='Database port')
+db_engine = env('DB_ENGINE', 'postgresql+psycopg2', group='Database', desc='Database engine')
+db_user = env('DB_USER', 'postgres', group='Database', desc='Database user')
+db_password = env('DB_PASSWORD', 'password', group='Database', desc='Database password')
 sqlalchemy_url = f'{db_engine}://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}'
-DWH_HOST = env('DWH_HOST', '132.66.212.143')
+DWH_N_TRIES = env.int('DWH_N_TRIES', 5, group='Database', desc='Number of tries to commit to data warehouse')
+DWH_HOST = env('DWH_HOST', None, group='Database', desc='Data-Warehouse host. Must be configured for DWH operations to work')
 DWH_URL = f'{db_engine}://{db_user}:{db_password}@{DWH_HOST}:{db_port}/{db_name}'
 
-# Telegram
-TELEGRAM_CHAT_ID = env('TELEGRAM_CHAT_ID', '725002866')
-TELEGRAM_TOKEN = env('TELEGRAM_TOKEN', None)
+# Publishers
+TELEGRAM_CHAT_ID = env('TELEGRAM_CHAT_ID', '725002866', group='Publishers', desc='Telegram Chat ID')
+TELEGRAM_TOKEN = env('TELEGRAM_TOKEN', None, group='Publishers', desc='Token to use for telegram communication')
+SENTRY_DSN = env('SENTRY_DSN', '', group='Publishers', desc='Data source name for the sentry service')
 
-# Predictors
-DLC_FOLDER = env('DLC_FOLDER', f'{OUTPUT_DIR}/models/deeplabcut')
+# Pose Estimation
+NIGHT_POSE_CAMERA = env('NIGHT_POSE_CAMERA', '', group='Pose-Estimation', validator='cam_exist', desc='Which camera videos should the nighlty pose estimation take. Must set this and NIGHT_POSE_PREDICTOR to activate nightly pose estimation.')
+NIGHT_POSE_PREDICTOR = env('NIGHT_POSE_PREDICTOR', '', group='Pose-Estimation', validator='predict_model_exist', desc='Name of Deeplabcut predictor from predict_config to use for nighly pose estimation')
+NIGHT_POSE_RUN_ONLY_BUG_SESSIONS = env.bool('NIGHT_POSE_RUN_ONLY_BUG_SESSIONS', False, group='Pose-Estimation', desc='Whether to run nightly pose estimation only on bugs experiments')
+IS_RUN_NIGHTLY_POSE_ESTIMATION = bool(NIGHT_POSE_CAMERA) and bool(NIGHT_POSE_PREDICTOR)
+SCREEN_PIX_CM = env.float('SCREEN_PIX_CM', None, group='Pose-Estimation', desc='Number to multiply with the pixels values to convert to cm units')
+SCREEN_START_X_CM = env.float('SCREEN_START_X_CM', None, group='Pose-Estimation', desc='Start X position in cm of the screen inside the arena')
+SCREEN_Y_CM = env.float('SCREEN_Y_CM', None, group='Pose-Estimation', desc='Location of the screen within the arena, along the Y axis [cm]')
+IS_SCREEN_CONFIGURED_FOR_POSE = (SCREEN_PIX_CM is not None) and (SCREEN_START_X_CM is not None)
 
 # PsychoPy
-PSYCHO_FOLDER = env('PSYCHO_FOLDER', '/data/Pogona_Pursuit/psycho_files')
-PSYCHO_PYTHON_INTERPRETER = env('PSYCHO_PYTHON_INTERPRETER', '/home/regev/anaconda3/envs/psycho/bin/python')
+PSYCHO_FOLDER = env('PSYCHO_FOLDER', None, group='PsychoPy', desc='Path to folder with psychopy files')
+PSYCHO_PYTHON_INTERPRETER = env('PSYCHO_PYTHON_INTERPRETER', None, group='PsychoPy', desc='Full path to the python interpreter that will be used to run psychopy')
 
-# LightSTIM
-LIGHT_STIM_SERIAL = env('LIGHT_STIM_SERIAL', None)
-LIGHT_STIM_BAUD = env('LIGHT_STIM_BAUD', 115200)
+# Lights Stimulation
+LIGHT_STIM_SERIAL = env('LIGHT_STIM_SERIAL', None, group='LightSTIM', desc='Serial number of the lightSTIM arduino')
+LIGHT_STIM_BAUD = env('LIGHT_STIM_BAUD', 115200, group='LightSTIM', desc='lightSTIM arduino baud rate')
 
-class UserEnv:
-    pass
+cameras = load_configuration('cameras')

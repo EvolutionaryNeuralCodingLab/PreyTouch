@@ -40,8 +40,8 @@ class Experiment:
     num_blocks: int = 1
     name: str = ''
     blocks: list = field(default_factory=list, repr=False)
-    time_between_blocks: int = config.time_between_blocks
-    extra_time_recording: int = config.extra_time_recording
+    time_between_blocks: int = config.TIME_BETWEEN_BLOCKS
+    extra_time_recording: int = config.EXTRA_TIME_RECORDING
     is_identical_blocks: bool = False
     is_test: bool = False
     cache = RedisCache()
@@ -176,7 +176,7 @@ class Experiment:
             app_config = json.load(f)
 
         block_type = self.blocks[0].block_type
-        if block_type in ['psycho', 'blank']:
+        if block_type in ['psycho', 'blank', 'media']:
             return block_type
         curr_mt = self.blocks[0].movement_type
         curr_board = None
@@ -198,7 +198,7 @@ class Block:
     cam_units: dict
     orm: ORM
     cache: RedisCache
-    extra_time_recording: int = config.extra_time_recording
+    extra_time_recording: int = config.EXTRA_TIME_RECORDING
     start_time = None
     bug_types: list = field(default_factory=list)
     num_trials: int = 1
@@ -312,9 +312,10 @@ class Block:
         # check engagement of the animal
         self.check_engagement_level()
         # start cameras for experiment with their predictors and set the output dir for videos
-        self.periphery.cam_trigger(0)  # turn off trigger
+        if config.CAM_TRIGGER_DELAY_AROUND_BLOCK:
+            self.periphery.cam_trigger(0)  # turn off trigger
+            self.logger.info('trigger is off')
         t0 = time.time()
-        self.logger.info('trigger is off')
         self.turn_cameras('on')
         # screencast
         if config.IS_RECORD_SCREEN_IN_EXPERIMENT:
@@ -323,35 +324,44 @@ class Block:
         for cam_name in self.cameras.keys():
             output_dir = mkdir(f'{self.block_path}/videos')
             self.cache.set_cam_output_dir(cam_name, output_dir)
-        while time.time()-t0 < 8:
-            time.sleep(0.05)
-        self.periphery.cam_trigger(1)  # turn trigger on
-        self.logger.info(f'Trigger was off for {time.time() - t0:.2f} sec')
-        time.sleep(1)
-        self.periphery.switch(config.IR_NAME, 1)
-        time.sleep(1)
-        self.periphery.switch(config.IR_NAME, 0)
+
+        if config.CAM_TRIGGER_DELAY_AROUND_BLOCK:
+            while time.time() - t0 < config.CAM_TRIGGER_DELAY_AROUND_BLOCK:
+                time.sleep(0.05)
+            self.periphery.cam_trigger(1)  # turn trigger on
+            self.logger.info(f'Trigger was off for {time.time() - t0:.2f} sec')
+
+        if config.IR_TOGGLE_DELAY_AROUND_BLOCK:
+            time.sleep(1)
+            self.periphery.switch(config.IR_LIGHT_NAME, 1)
+            time.sleep(config.IR_TOGGLE_DELAY_AROUND_BLOCK)
+            self.periphery.switch(config.IR_LIGHT_NAME, 0)
 
     def end_block(self):
-        self.periphery.switch(config.IR_NAME, 1)
-        time.sleep(1)
-        self.periphery.switch(config.IR_NAME, 0)
-        time.sleep(1)
-        self.periphery.cam_trigger(0)
+        if config.IR_TOGGLE_DELAY_AROUND_BLOCK:
+            self.periphery.switch(config.IR_LIGHT_NAME, 1)
+            time.sleep(config.IR_TOGGLE_DELAY_AROUND_BLOCK)
+            self.periphery.switch(config.IR_LIGHT_NAME, 0)
+            time.sleep(1)
+
         t0 = time.time()
-        self.logger.info('trigger is off')
-        time.sleep(8)
+        if config.CAM_TRIGGER_DELAY_AROUND_BLOCK:
+            self.periphery.cam_trigger(0)
+            self.logger.info('trigger is off')
+            time.sleep(config.CAM_TRIGGER_DELAY_AROUND_BLOCK)
+
         self.cache.delete(cc.EXPERIMENT_BLOCK_ID)
         for cam_name in self.cameras.keys():
             self.cache.set_cam_output_dir(cam_name, '')
-        # self.hold_triggers()
-        # time.sleep(8)
+
         self.turn_cameras('off')
         self.cache.delete(cc.EXPERIMENT_BLOCK_PATH)
         if self.is_continuous_blank:
             self.cache.delete(cc.IS_BLANK_CONTINUOUS_RECORDING)
-        self.periphery.cam_trigger(1)
-        self.logger.info(f'Trigger was off for {time.time() - t0:.2f} sec')
+
+        if config.CAM_TRIGGER_DELAY_AROUND_BLOCK:
+            self.periphery.cam_trigger(1)
+            self.logger.info(f'Trigger was off for {time.time() - t0:.2f} sec')
 
     def turn_cameras(self, required_state):
         """Turn on cameras if needed, and load the experiment predictors"""
@@ -390,7 +400,7 @@ class Block:
                 for ep in exp_predictors:
                     is_on = False
                     t0 = time.time()
-                    while time.time() - t0 < 30:
+                    while time.time() - t0 < 60:
                         if ep in cu.processes and cu.processes[ep].is_on():
                             is_on = True
                             break
@@ -461,32 +471,18 @@ class Block:
 
     def check_engagement_level(self):
         """check if there are any strikes in the previous 2 hours. If not, give a manual reward"""
-        if not config.IS_CHECK_ENGAGEMENT_LEVEL:
+        if not config.CHECK_ENGAGEMENT_HOURS:
             return
         with self.orm.session() as s:
-            res = s.query(Strike).filter(Strike.time > datetime.now() - timedelta(hours=2)).all()
+            res = s.query(Strike).filter(Strike.time > datetime.now() - timedelta(hours=config.CHECK_ENGAGEMENT_HOURS)).all()
         if not res:
             self.periphery.feed(is_manual=True)
 
     def run_psycho(self):
         psycho_files = get_psycho_files()
-        cmd = f'cd {psycho_files[self.psycho_file]} && DISPLAY="{config.ARENA_DISPLAY}" {config.PSYCHO_PYTHON_INTERPRETER} {self.psycho_file}.py'
+        cmd = f'cd {psycho_files[self.psycho_file]} && DISPLAY="{config.APP_SCREEN}" {config.PSYCHO_PYTHON_INTERPRETER} {self.psycho_file}.py'
         self.logger.info(f'Running the following psycho cmd: {cmd}')
         next(run_command(cmd))
-
-    def hold_triggers(self):
-        if not config.IS_HOLD_TRIGGERS:
-            return
-        try:
-            self.logger.info(f'holding triggers for {config.HOLD_TRIGGERS_TIME} sec')
-            self.cache.set(cc.CAM_TRIGGER_DISABLE, True, timeout=self.block_duration)
-            self.periphery.cam_trigger(0)
-            time.sleep(config.HOLD_TRIGGERS_TIME)
-            self.periphery.cam_trigger(1)
-            time.sleep(1)
-            self.cache.delete(cc.CAM_TRIGGER_DISABLE)
-        except Exception as exc:
-            self.logger.error(f'Error holding triggers: {exc}')
 
     def record_screen(self):
         filename = f'{self.block_path}/screen_record.mp4'
@@ -523,7 +519,7 @@ class Block:
     def media_options(self) -> dict:
         return {
             'trialID': 1,  # default value, changed in init_media,
-            'url': f'{config.management_url}/media/{self.media_url}'
+            'url': f'{config.MANAGEMENT_URL}/media/{self.media_url}'
         }
 
     @property
@@ -642,11 +638,11 @@ class ExperimentValidation:
     def is_websocket_server_on(self):
         try:
             ws = websocket.WebSocket()
-            ws.connect(config.websocket_url)
+            ws.connect(config.WEBSOCKET_URL)
             return True
         except Exception:
             if not self.is_silent:
-                self.logger.error(f'Websocket server on {config.websocket_url} is dead')
+                self.logger.error(f'Websocket server on {config.WEBSOCKET_URL} is dead')
 
     def is_pogona_hunter_up(self):
         try:
@@ -673,7 +669,7 @@ class ExperimentValidation:
             is_mapped = _check_mapped()
             if not is_mapped:
                 self.logger.info('Fixing mapping of touchscreen output')
-                cmd = f'DISPLAY="{config.ARENA_DISPLAY}" xinput map-to-output {touchscreen_device_id} HDMI-0'
+                cmd = f'DISPLAY="{config.APP_SCREEN}" xinput map-to-output {touchscreen_device_id} HDMI-0'
                 self.map_touchscreen_to_hdmi()
                 time.sleep(1)
                 is_mapped = _check_mapped()
@@ -687,7 +683,7 @@ class ExperimentValidation:
 
     def map_touchscreen_to_hdmi(self, is_display_on=False):
         touchscreen_device_id = self.get_touchscreen_device_id()
-        cmd = f'DISPLAY="{config.ARENA_DISPLAY}" xinput map-to-output {touchscreen_device_id} HDMI-0'
+        cmd = f'DISPLAY="{config.APP_SCREEN}" xinput map-to-output {touchscreen_device_id} HDMI-0'
         if not is_display_on:
             turn_display_on()
             time.sleep(5)
@@ -716,7 +712,7 @@ class ExperimentValidation:
 
 class ExperimentCache:
     def __init__(self, cache_dir=None):
-        self.cache_dir = cache_dir or config.experiment_cache_path
+        self.cache_dir = cache_dir or config.CACHED_EXPERIMENTS_DIR
         mkdir(self.cache_dir)
         self.saved_caches = self.get_saved_caches()
 

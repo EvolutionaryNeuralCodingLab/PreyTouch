@@ -69,6 +69,7 @@ export default {
       this.randomNoiseCount = 0
       this.step = 0
       this.isDead = false
+      this.vTheta = this.currentSpeed
       this.isChangingDirection = false
       this.currentBugSize = this.getRadiusSize()
       this.initiateStartPosition()

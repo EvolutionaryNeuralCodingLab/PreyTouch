@@ -8,6 +8,7 @@ import tunnelBoard from './components/boards/tunnelBoard.vue'
 import holesBoard from './components/boards/holesBoard.vue'
 import store from './store'
 import {webSocket} from './js/websocket'
+import mediaBoard from "./components/boards/mediaBoard.vue"
 // import VueMqtt from 'vue-mqtt'
 
 Vue.use(VueRouter)
@@ -15,7 +16,8 @@ const PageNotFound = { template: '<h1>Page not found</h1>' }
 const routes = [
     { path: '/', component: PageNotFound },
     { path: '/tunnel', component: tunnelBoard},
-    { path: '/holes', component: holesBoard}
+    { path: '/holes', component: holesBoard},
+    { path: '/media', component: mediaBoard}
 ]
 const router = new VueRouter({
   mode: process.env.ROUTER_MODE,

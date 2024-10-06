@@ -1,10 +1,10 @@
 <template>
   <div id="wrapper">
-    <img v-if="!isVideoFile()" :src="url" alt=""/>
+    <img v-if="!isVideoFile()" :src="mediaUrl" alt=""/>
     <FrameVideo v-if="isVideoFile()"
           id="frame-video"
           ref="videoElement"
-          :src="url"
+          :src="mediaUrl"
           :autoplay="autoplay"
           :muted="muted"
           @frameupdate="onFrameUpdate"
@@ -22,18 +22,39 @@ export default {
   components: {
     FrameVideo
   },
-  props: {
-    url: String
-  },
   data() {
     return {
       frameId: 1,
       framesLog: [],
+      mediaUrl: '',
+      isMedia: false,
       autoplay: 'autoplay',
       muted: true,
       canvasWidth: window.innerWidth,
       canvasHeight: window.innerHeight
     }
+  },
+  created() {
+    this.$socketClient.onOpen = () => {
+      console.log('WebSocket connected')
+    }
+    this.$socketClient.subscribe({
+      'cmd/visual_app/hide_media': (payload) => {
+        if (this.isMedia) {
+          this.$socketClient.publish('log/metric/trial_data', JSON.stringify({video_frames: this.framesLog}))
+          this.isMedia = false
+        }
+        this.mediaUrl = ''
+        location.reload()
+      },
+      'cmd/visual_app/init_media': (options) => {
+        options = JSON.parse(options)
+        // this.clearBoard()
+        this.mediaUrl = options.url
+        console.log(this.mediaUrl)
+        this.isMedia = true
+      }
+    })
   },
   mounted() {
     this.canvas = document.getElementById('media-canvas')
@@ -54,7 +75,7 @@ export default {
       this.frameId++
     },
     isVideoFile() {
-      let url = this.url.toLowerCase()
+      let url = this.mediaUrl.toLowerCase()
       return url.endsWith('.avi') || url.endsWith('.mp4')
     },
     handleTouchEvent(event) {

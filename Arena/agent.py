@@ -11,7 +11,6 @@ from experiment import ExperimentCache, ExperimentValidation
 from loggers import get_logger
 import config
 
-CONFIG_PATH = 'configurations/agent_config.yaml'
 EXIT_HOLES = ['left', 'right']
 
 
@@ -25,8 +24,8 @@ class Agent:
         self.history = {}
         self.next_trial_name = None
 
-        if Path(CONFIG_PATH).exists():
-            agent_config = yaml.load(Path(CONFIG_PATH).open(), Loader=yaml.FullLoader)
+        if Path(config.configurations['agent'][0]).exists():
+            agent_config = config.load_configuration('agent')
             self.check_agent_config(agent_config)
             self.trials = agent_config['trials']
             self.default_struct = agent_config['default_struct']
@@ -38,6 +37,8 @@ class Agent:
         if not self.trials:
             return
         self.animal_id = animal_id or self.cache.get(cc.CURRENT_ANIMAL_ID)
+        if self.animal_id == 'test':
+            return
         self.init_history()
         self.load_history()
         self.next_trial_name = self.get_next_trial_name()
@@ -85,7 +86,7 @@ class Agent:
         while dt <= end_dt:
             if dt >= now:
                 possible_times.append(dt)
-            dt += timedelta(minutes=self.times['time_between_blocks'])
+            dt += timedelta(minutes=self.times['time_between_experiments'])
         return possible_times
 
     def init_history(self):
@@ -182,7 +183,7 @@ class Agent:
         for k in main_keys:
             assert k in agent_config, f'{k} must be in agent config'
 
-        times_keys = ['start_time', 'end_time', 'time_between_blocks']
+        times_keys = ['start_time', 'end_time', 'time_between_experiments']
         for k in times_keys:
             assert k in agent_config['times'], f'{k} must be in times'
 

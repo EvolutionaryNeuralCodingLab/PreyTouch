@@ -7,6 +7,7 @@
 <script>
 import {randomRange} from '@/js/helpers'
 import bugsMixin from './bugsMixin'
+import {distance} from '../../js/helpers'
 
 export default {
   name: 'holeBugs',
@@ -15,7 +16,8 @@ export default {
     return {
       edgesPolicy: 'inside',
       framesUntilExitFromEntranceHole: 100,
-      accelerateMultiplier: 4
+      accelerateMultiplier: 4,
+      circularSpeed: null
     }
   },
   props: {
@@ -53,7 +55,7 @@ export default {
       return this.bugsSettings.exitHole === 'left'
     },
     isMoveInCircles: function () {
-      return this.bugsSettings.movementType === 'circle'
+      return this.bugsSettings.movementType === 'circle' || this.bugsSettings.movementType === 'circle_accelerate'
     },
     isHalfCircleMovement: function () {
       return this.bugsSettings.movementType === 'half_circle'
@@ -66,6 +68,9 @@ export default {
     },
     isJumpUpMovement: function () {
       return this.bugsSettings.movementType === 'jump_up'
+    },
+    isCircleAccelerateMovement: function () {
+      return this.bugsSettings.movementType === 'circle_accelerate'
     },
     isAccelerateMovement: function () {
       return this.bugsSettings.movementType === 'accelerate'
@@ -168,6 +173,7 @@ export default {
       this.frameCounter = 0
       switch (this.bugsSettings.movementType) {
         case 'circle':
+        case 'circle_accelerate':
           this.theta = this.isRightExit ? (Math.PI + (Math.PI / 5)) : (Math.PI + (2 * Math.PI / 3))
           this.r = (Math.abs(this.xTarget - this.x) / 5)
           this.r0 = [(this.x + this.xTarget) / 2, this.y / 2]
@@ -198,7 +204,7 @@ export default {
       }
     },
     circularMove() {
-      this.theta += Math.abs(this.currentSpeed) * Math.sqrt(2) / this.r
+      this.theta += Math.abs(this.vTheta) * Math.sqrt(2) / this.r
       this.x = this.r0[0] + (this.r * Math.cos(this.theta)) * (this.isCounterClockWise ? -1 : 1)
       this.y = this.r0[1] + this.r * Math.sin(this.theta)
     },
@@ -209,8 +215,15 @@ export default {
       this.x += this.dx
       this.y += this.dy
     },
+    isHit(x, y) {
+      if (this.isMoveInCircles && this.isHoleRetreatStarted) {
+        // in case of circles don't consider hits while the bug is retreating from the circle
+        return false
+      }
+      return distance(x, y, this.x, this.y) <= this.currentBugSize / 1.5
+    },
     jump() {
-      if (!(this.isJumpUpMovement || this.isAccelerateMovement) || this.isDead || this.isJumped) {
+      if (!(this.isJumpUpMovement || this.isAccelerateMovement || this.isCircleAccelerateMovement) || this.isDead || this.isJumped) {
         return
       }
       this.isJumped = true
@@ -222,6 +235,8 @@ export default {
         this.y = newY
       } else if (this.isAccelerateMovement) {
         this.vx = this.vx * this.accelerateMultiplier
+      } else if (this.isCircleAccelerateMovement) {
+        this.vTheta = this.vTheta * this.accelerateMultiplier
       }
       console.log('jump')
       this.jumpTimeout()
@@ -252,8 +267,10 @@ export default {
       let xd = this.xTarget - this.x
       let yd = this.yTarget - this.y
       let T = yd / xd
-      this.vx = Math.sign(xd) * (this.currentSpeed / Math.sqrt(1 + T ** 2))
-      this.vy = Math.sign(yd) * Math.sqrt((this.currentSpeed ** 2) - (this.vx ** 2))
+      // in circle movements the retreat must happen quick, otherwise use the configured bug speed
+      let speed = this.isMoveInCircles ? 10 : this.currentSpeed
+      this.vx = Math.sign(xd) * (speed / Math.sqrt(1 + T ** 2))
+      this.vy = Math.sign(yd) * Math.sqrt((speed ** 2) - (this.vx ** 2))
     },
     checkNoisyTrack() {
       if (this.isHoleRetreatStarted) {
@@ -279,6 +296,8 @@ export default {
           this.y = this.exitHolePos[1] + (this.currentBugSize / 2)
         } else if (this.isAccelerateMovement) {
           this.vx = this.vx / this.accelerateMultiplier
+        } else if (this.isCircleAccelerateMovement) {
+          this.vTheta = this.vTheta / this.accelerateMultiplier
         }
         this.setNextAngle(this.directionAngle)
         console.log(this.vx, this.dx, this.currentSpeed)

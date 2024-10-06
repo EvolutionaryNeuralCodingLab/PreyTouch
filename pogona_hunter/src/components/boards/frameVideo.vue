@@ -22,9 +22,9 @@
 </template>
 
 <script>
-import VideoFrameController from '../js/frameVideo/VideoFrameController.js'
-import BaseVideoAdapter from '../js/frameVideo/BaseVideoAdapter.js'
-import ErrorTypes from '../js/frameVideo/ErrorTypes.js'
+import VideoFrameController from '../../js/frameVideo/VideoFrameController.js'
+import BaseVideoAdapter from '../../js/frameVideo/BaseVideoAdapter.js'
+import ErrorTypes from '../../js/frameVideo/ErrorTypes.js'
 
 export default {
   name: 'vue-frame-video',

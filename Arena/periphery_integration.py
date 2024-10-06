@@ -8,13 +8,10 @@ from pathlib import Path
 import utils
 from cache import RedisCache, CacheColumns as cc
 from loggers import get_logger
-from db_models import ORM
-import config
 import serial
 from serial.tools import list_ports
-
-
-CONFIG_PATH = 'configurations/periphery_config.json'
+from db_models import ORM
+import config
 
 
 class PeripheryIntegrator:
@@ -25,26 +22,23 @@ class PeripheryIntegrator:
         self.cache = RedisCache()
         self.mqtt_client = mqtt.Client()
         self.orm = ORM()
-        self.periphery_config = self.read_config()
-        if self.periphery_config and 'arena' in self.periphery_config:
-            self.devices = self.periphery_config['arena']['interfaces']
+        self.periphery_config = config.load_configuration('periphery')
+        if self.periphery_config and config.ARENA_ARDUINO_NAME in self.periphery_config:
+            self.devices = {d['name']: d for d in self.periphery_config[config.ARENA_ARDUINO_NAME]['interfaces']}
         else:
-            self.devices = []
-
-    @staticmethod
-    def read_config() -> dict:
-        d = {}
-        if Path(CONFIG_PATH).exists():
-            with open(CONFIG_PATH, 'r') as f:
-                d = json.load(f)
-        return d
+            self.devices = {}
 
     def save_config_to_file(self):
-        with open(CONFIG_PATH, 'w') as f:
+        with open(config.configurations["periphery"][0], 'w') as f:
             json.dump(self.periphery_config, f, indent=4)
 
     def switch(self, name, state):
         assert state in [0, 1]
+        if name not in self.toggles:
+            self.logger.warning(f'No toggle named {name}; abort switch command')
+            return
+        if self.devices[name].get('nc_toggle'):
+            state = int(not state)
         self.mqtt_publish(config.mqtt['publish_topic'], f'["set","{name}",{state}]')
 
     def cam_trigger(self, state):
@@ -56,9 +50,8 @@ class PeripheryIntegrator:
         self.mqtt_publish(config.mqtt['publish_topic'], f'["get","Camera Trigger"]')
 
     def change_trigger_fps(self, new_fps):
-
         new_duration = round(1000 / new_fps)
-        trig_inters = self.periphery_config['camera trigger']['interfaces'][0]
+        trig_inters = self.periphery_config[config.CAM_TRIGGER_ARDUINO_NAME]['interfaces'][0]
         trig_inters['pulse_len'] = new_duration
         self.save_config_to_file()
         next(utils.run_command('cd ../docker && docker-compose restart periphery'))
@@ -107,11 +100,11 @@ class PeripheryIntegrator:
 
     @property
     def toggles(self) -> list:
-        return [dev['name'] for dev in self.devices if dev['type'] == 'line']
+        return [k for k, dev in self.devices.items() if dev['type'] == 'line']
 
     @property
     def feeders(self) -> list:
-        feeds = [(dev['name'], dev['order']) for dev in self.devices if dev['type'] == 'feeder']
+        feeds = [(k, dev['order']) for k, dev in self.devices.items() if dev['type'] == 'feeder']
         return [x[0] for x in sorted(feeds, key=lambda x: x[1])]
 
 
@@ -198,6 +191,7 @@ class ArenaListener(MQTTListener):
 
 
 class LightSTIM:
+    """Lights stimulations"""
     def __init__(self):
         self.port = None
         self.logger = get_logger('lightSTIM')
@@ -207,24 +201,24 @@ class LightSTIM:
                     self.port = p.device
                     break
             if not self.port:
-                self.logger.warning(f'could not find lightSTIM arduino with serial: {config.LIGHT_STIM_SERIAL}') 
+                self.logger.warning(f'could not find lightSTIM arduino with serial: {config.LIGHT_STIM_SERIAL}')
         else:
-            self.logger.warning(f'LIGHT_STIM_PORT is not configured, cannot run lightSTIM command')        
-    
+            self.logger.warning(f'LIGHT_STIM_PORT is not configured, cannot run lightSTIM command')
+
     def run_stim_command(self, stim_cmd):
         if self.port is None:
-            self.logger.warning(f'cannot run stim light command, no port found') 
+            self.logger.warning(f'cannot run stim light command, no port found')
             return
-        
+
         ser = serial.Serial(self.port, config.LIGHT_STIM_BAUD, timeout=1)
         time.sleep(1)
         self.logger.info(f'Start LightSTIM command: "{stim_cmd}"')
         ser.write((stim_cmd + '\r\n').encode('ascii'))
         ser.close()
-        
+
     def stop_stim(self):
         if self.port is None:
-            self.logger.warning(f'cannot run stop stim light, no port found') 
+            self.logger.warning(f'cannot run stop stim light, no port found')
             return
 
         ser = serial.Serial(self.port, config.LIGHT_STIM_BAUD, timeout=1)
@@ -232,11 +226,7 @@ class LightSTIM:
         self.logger.info(f'Stop LightSTIM')
         ser.write('STOP\r\n'.encode('ascii'))
         ser.close()
-        
-        
-    
-    
-    
+
 if __name__ == "__main__":
     def hc_callback(payload):
         print(payload)

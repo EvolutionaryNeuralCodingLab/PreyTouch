@@ -22,11 +22,13 @@ NUM_POSE_FRAMES_PER_STRIKE = 30
 
 class StrikeAnalyzer:
     def __init__(self, loader: Loader = None, payload: dict = None, pose_df: pd.DataFrame = None,
-                 bug_traj: pd.DataFrame = None, is_y_pd=False):
+                 bug_traj: pd.DataFrame = None, is_y_pd=False, smooth_kernel=37, derivative_kernel=37):
         self.loader = loader
         self.payload = payload
         self.pose_df = pose_df
         self.bug_traj = bug_traj
+        self.smooth_kernel = smooth_kernel
+        self.derivative_kernel = derivative_kernel
         self.is_y_pd = is_y_pd  # if True, prediction distance is calculated by dy and not euclidean
         self.check_arguments()
         self.strike_position = (self.payload.get('x'), self.payload.get('y'))
@@ -43,7 +45,8 @@ class StrikeAnalyzer:
                 # smoothing of x and y
                 for c in ['x', 'y']:
                     self.pose_df[f'orig_{c}'] = self.pose_df[c].copy()
-                    self.pose_df[c] = savgol_filter(self.pose_df[c], window_length=37, polyorder=0, mode='nearest')
+                    if self.smooth_kernel:
+                        self.pose_df[c] = savgol_filter(self.pose_df[c], window_length=self.smooth_kernel, polyorder=0, mode='nearest')
             if self.bug_traj is None:
                 self.bug_traj = self.loader.traj_df
 
@@ -290,11 +293,10 @@ class StrikeAnalyzer:
     #     tng = self.loader.frames_df[TONGUE_COL]
     #     return tng[tng == 1].index.tolist()
 
-    @staticmethod
-    def calc_derivative(x, y=None, dt=0.016, window_length=41, deriv=0):
-        dx = savgol_filter(x, window_length=window_length, polyorder=2, deriv=deriv, delta=dt, mode='nearest')
+    def calc_derivative(self, x, y=None, dt=0.016, deriv=0):
+        dx = savgol_filter(x, window_length=self.derivative_kernel, polyorder=2, deriv=deriv, delta=dt, mode='nearest')
         if y is not None:
-            dy = savgol_filter(y, window_length=window_length, polyorder=2, deriv=deriv, delta=dt, mode='nearest')
+            dy = savgol_filter(y, window_length=self.derivative_kernel, polyorder=2, deriv=deriv, delta=dt, mode='nearest')
             return np.insert(dx, 0, np.nan), np.insert(dy, 0, np.nan)
         else:
             return np.insert(dx, 0, np.nan)

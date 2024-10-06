@@ -4,8 +4,7 @@ from db_models import ORM, Video, VideoPrediction, PoseEstimation
 import time
 
 
-def get_videos_ids_for_compression(sort_by_size=False):
-    orm = ORM()
+def get_videos_ids_for_compression(orm, sort_by_size=False):
     videos = {}
     with orm.session() as s:
         for v in s.query(Video).filter(Video.compression_status < 1).all():
@@ -28,43 +27,44 @@ def get_videos_ids_for_compression(sort_by_size=False):
     return videos_ids
 
 
-def compress(video_db_id):
-    orm = ORM()
+def compress(video_db_ids, logger, orm):
     with orm.session() as s:
-        v = s.query(Video).filter_by(id=video_db_id).first()
-        assert v is not None, 'could not find video in DB'
-        writer, reader = None, None
-        source = Path(v.path).resolve()
-        try:
-            assert source.exists(), f'video does not exist'
-            dest = source.with_suffix('.mp4')
+        for video_db_id in video_db_ids:
+            v = s.query(Video).filter_by(id=video_db_id).first()
+            assert v is not None, 'could not find video in DB'
+            writer, reader = None, None
+            source = Path(v.path).resolve()
+            try:
+                assert source.exists(), f'video does not exist'
+                dest = source.with_suffix('.mp4')
 
-            print(f'start video compression of {source}')
-            t0 = time.time()
-            reader = iio.get_reader(source.as_posix())
-            fps = reader.get_meta_data()['fps']
-            writer = iio.get_writer(dest.as_posix(), format="FFMPEG", mode="I",
-                                    fps=fps, codec="libx264", quality=5,
-                                    macro_block_size=8,  # to work with 1440x1080 image size
-                                    ffmpeg_log_level="error")
-            for im in reader:
-                writer.append_data(im)
-            print(f'Finished compression of {dest} in {(time.time() - t0) / 60:.1f} minutes')
+                logger.info(f'start video compression of {source}')
+                t0 = time.time()
+                reader = iio.get_reader(source.as_posix())
+                fps = reader.get_meta_data()['fps']
+                writer = iio.get_writer(dest.as_posix(), format="FFMPEG", mode="I",
+                                        fps=fps, codec="libx264", quality=5,
+                                        macro_block_size=8,  # to work with 1440x1080 image size
+                                        ffmpeg_log_level="error")
+                for im in reader:
+                    writer.append_data(im)
+                logger.info(f'Finished compression of {dest} in {(time.time() - t0) / 60:.1f} minutes')
 
-            v.path = str(dest)
-            v.compression_status = 1
-            source.unlink()
+                v.path = str(dest)
+                v.compression_status = 1
+                source.unlink()
 
-        except Exception as exc:
-            v.compression_status = 2
-            print(f'Error compressing {source}; {exc}')
+            except Exception as exc:
+                v.compression_status = 2
+                logger.error(f'Error compressing {source}; {exc}')
 
-        finally:
-            s.commit()
-            if writer is not None:
-                writer.close()
-            if reader is not None:
-                reader.close()
+            finally:
+                s.commit()
+                if writer is not None:
+                    writer.close()
+                if reader is not None:
+                    reader.close()
+                time.sleep(2)
 
 
 def main():
@@ -97,9 +97,15 @@ def clear_missing_videos():
 
 
 if __name__ == "__main__":
-    vids = get_videos_ids_for_compression()
-    for vid in vids:
-        compress(vid)
+    import logging
+    orm = ORM()
+    logger_ = logging.getLogger('compress')
+    logger_.addHandler(logging.StreamHandler())
+    logger_.setLevel(logging.DEBUG)
+    vids = get_videos_ids_for_compression(orm)
+    logger_.info(f'found {len(vids)} videos to compress')
+    compress(vids, logger_, orm)
+
     # main()
     # foo()
     # clear_missing_videos()

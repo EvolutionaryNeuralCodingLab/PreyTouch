@@ -1,14 +1,19 @@
 import re
 import json
+import redis
 import time
 import inspect
 import queue
 import threading
+import logging
 import pandas as pd
 from datetime import datetime
 from pathlib import Path
-
+import multiprocessing as mp
 import redis.exceptions
+import websockets
+import asyncio
+from websockets.sync.client import connect
 
 from cache import CacheColumns as cc, RedisCache
 import config
@@ -59,11 +64,16 @@ class Subscriber(threading.Thread):
             return
         except Exception as exc:
             print(f'error in {self.name}; {exc}')
+        finally:
+            self.close()
             # self.logger.exception(f'Error in subscriber {self.name}')
 
     def _run(self, channel, data):
         if self.callback is not None:
             self.callback(channel, data)
+
+    def close(self):
+        pass
 
     @staticmethod
     def parse_message(msg: dict):
@@ -82,26 +92,43 @@ class ExperimentLogger(Subscriber):
         self.config = config.experiment_metrics[self.name]
         self.orm = ORM()
 
+        self.ws = None
+        for _ in range(3):
+            try:
+                self.ws = connect(config.WEBSOCKET_URL)
+            except ConnectionRefusedError:
+                time.sleep(2)
+        if self.ws is None:
+            self.logger.error('Unable to connect to websocket server')
+
     def __str__(self):
         return f'{self.name}-Logger'
 
-    def _run(self, channel, data):
-        try:
-            payload = json.loads(data)
-            payload = self.convert_time_fields(payload)
-            self.payload_action(payload)
+    def run(self):
+        self.logger.debug(f'start listening using websockets on {self.channel}')
+        while not self.stop_event.is_set():
+            try:
+                message = self.ws.recv(timeout=1)
+                message_dict = json.loads(message)
+                if message_dict.get('channel') == self.channel:
+                    try:
+                        payload = json.loads(message_dict.get('payload', '{}'))
+                        payload = self.convert_time_fields(payload)
+                        self.payload_action(payload)
 
-            if self.config.get('is_write_csv'):
-                self.save_to_csv(payload)
-            if self.config.get('is_write_db'):
-                self.commit_to_db(payload)
-        except DoubleEvent:
-            pass
-        except BrokenPipeError:
-            print(f'{self.name} process is down!')
-            return
-        except Exception as exc:
-            self.logger.exception(f'Unable to parse log payload of {self.name}: {exc}')
+                        if self.config.get('is_write_csv'):
+                            self.save_to_csv(payload)
+                        if self.config.get('is_write_db'):
+                            self.commit_to_db(payload)
+                    except DoubleEvent:
+                        pass
+                    except BrokenPipeError:
+                        print(f'{self.name} process is down!')
+                        return
+                    except Exception as exc:
+                        self.logger.exception(f'Unable to parse log payload of {self.name}: {exc}')
+            except TimeoutError:
+                continue
 
     def payload_action(self, payload):
         pass
@@ -339,16 +366,77 @@ class PeripheryHealthCheck(Subscriber):
             self.logger.exception(f'Error in subscriber {self.name}')
 
 
+class WebSocketServer(mp.Process):
+    def __init__(self, stop_event: threading.Event):
+        self.ws = None
+        self.sub = None
+        self.connections = set()
+        self.stop_event = stop_event
+        super().__init__()
+
+    def run(self):
+        try:
+            asyncio.run(self.main_loop())
+        except Exception as e:
+            print(f'websocket server stopped running!; {e}')
+
+    async def echo(self, websocket):
+        self.connections.add(websocket)
+        try:
+            async for message in websocket:
+                websockets.broadcast(self.connections, message)
+                # Handle disconnecting clients
+        except websockets.exceptions.ConnectionClosed as e:
+            print(f"A client just disconnected from websocket: {e}")
+        finally:
+            self.connections.remove(websocket)
+
+    async def main_loop(self):
+        host, port = config.WEBSOCKET_URL.replace('ws://', '').split(':')
+        async with websockets.serve(self.echo, host, int(port), ping_interval=None):
+            while not self.stop_event.is_set():
+                await asyncio.sleep(0.1)
+
+
+class WebSocketPublisher(Subscriber):
+    def __init__(self, stop_event: threading.Event, log_queue, **kwargs):
+        logging.getLogger("websockets").addHandler(logging.NullHandler())
+        logging.getLogger("websockets").propagate = False
+        super().__init__(stop_event, log_queue, channel='cmd/visual_app/*')
+        self.ws = None
+        for _ in range(3):
+            try:
+                self.ws = connect(config.WEBSOCKET_URL)
+            except ConnectionRefusedError:
+                time.sleep(2)
+        if self.ws is None:
+            self.logger.error('Unable to connect to websocket server')
+
+    def _run(self, channel, data):
+        payload_ = json.dumps({'channel': channel, 'payload': data})
+        if self.ws is not None:
+            self.ws.send(payload_)
+
+    def close(self):
+        if self.ws is not None:
+            self.ws.close()
+
+
 def start_management_subscribers(arena_shutdown_event, log_queue, subs_dict):
     """Start all subscribers that must listen as long as an arena management instance initiated"""
-    threads = {}
+    threads = dict()
+    threads['websocket_server'] = WebSocketServer(arena_shutdown_event)
+    threads['websocket_server'].start()
+    threads['websocket_publisher'] = WebSocketPublisher(arena_shutdown_event, log_queue)
+    threads['websocket_publisher'].start()
     for topic, callback in subs_dict.items():
         threads[topic] = Subscriber(arena_shutdown_event, log_queue,
                                     config.subscription_topics[topic], callback)
         threads[topic].start()
 
-    threads['app_healthcheck'] = AppHealthCheck(arena_shutdown_event, log_queue)
-    threads['app_healthcheck'].start()
+    # if config.IS_USE_REDIS:
+    #     threads['app_healthcheck'] = AppHealthCheck(arena_shutdown_event, log_queue)
+    #     threads['app_healthcheck'].start()
     if not config.DISABLE_PERIPHERY:
         threads['temperature'] = TemperatureLogger(arena_shutdown_event, log_queue)
         threads['temperature'].start()
