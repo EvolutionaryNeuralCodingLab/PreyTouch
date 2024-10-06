@@ -1,4 +1,4 @@
-# Adding New Bug Movement
+# Adding New Prey Movement Profile
 
 Currently, the application supports the following bug movements:
 - horizontal movement (hole to hole)
