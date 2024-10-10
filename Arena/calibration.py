@@ -277,7 +277,7 @@ class CharucoEstimator:
         # sort markers ids
         marker_corners = [marker_corners[i] for i in marker_ids.ravel().argsort()]
         marker_ids.sort(axis=0)
-        self.validate_detected_markers(marker_ids)
+        marker_ids, marker_corners = self.validate_detected_markers(marker_ids, marker_corners)
         # create dataset for PnP using aruco top-left (in regular and bottom-right in roatated board) corner detections
         image_points_2D = np.vstack([m[0][0 if not is_rotated else 2] for m in marker_corners]).astype('float32')
         real_world_points_3D = self.get_real_world_points(marker_ids, is_rotated=is_rotated).astype('float32')
@@ -312,7 +312,7 @@ class CharucoEstimator:
         print(text)
         return text
 
-    def validate_detected_markers(self, marker_ids):
+    def validate_detected_markers(self, marker_ids, marker_corners):
         marker_ids = marker_ids.copy().ravel()
         min_markers_amount = 60
         if len(marker_ids) < min_markers_amount:
@@ -320,6 +320,14 @@ class CharucoEstimator:
         
         missing_aruco = [m for m in ARUCO_IDS if m not in marker_ids]
         print(f'The following markers were not detected: {missing_aruco}')
+
+        # remove marker ids above the configures number
+        bad_marker_ids = np.where(marker_ids >= config.NUM_ARUCO_MARKERS)[0].tolist()
+        if bad_marker_ids:
+            marker_ids = np.delete(marker_ids, bad_marker_ids)
+            marker_corners = [m for i, m in enumerate(marker_corners) if i not in bad_marker_ids]
+
+        return marker_ids, marker_corners
 
     @staticmethod
     def get_real_world_points(marker_ids, n=config.NUM_ARUCO_MARKERS, is_rotated=False) -> pd.DataFrame:

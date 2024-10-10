@@ -1,3 +1,6 @@
+import os
+import subprocess
+import signal
 import argparse
 import inspect
 import random
@@ -218,6 +221,7 @@ class Block:
     media_url: str = ''
 
     psycho_file: str = ''
+    psycho_proc_pid: int = None
 
     blank_rec_type: str = 'trials'
     movement_type: str = None
@@ -338,6 +342,10 @@ class Block:
             self.periphery.switch(config.IR_LIGHT_NAME, 0)
 
     def end_block(self):
+        if self.block_type == 'psycho' and self.psycho_proc_pid:
+            os.killpg(os.getpgid(self.psycho_proc_pid), signal.SIGTERM)
+            self.psycho_proc_pid = 0
+
         if config.IR_TOGGLE_DELAY_AROUND_BLOCK:
             self.periphery.switch(config.IR_LIGHT_NAME, 1)
             time.sleep(config.IR_TOGGLE_DELAY_AROUND_BLOCK)
@@ -415,10 +423,11 @@ class Block:
         trial_db_id = self.orm.commit_trial({
             'start_time': datetime.now(),
             'in_block_trial_id': trial_id})
+
         if self.block_type == 'psycho':
             self.run_psycho()
 
-        if not self.is_blank_block:
+        if self.block_type in ['bugs', 'media']:
             if self.is_media_block:
                 command, options = 'init_media', self.media_options
             else:
@@ -430,6 +439,7 @@ class Block:
             self.cache.publish_command(command, json.dumps(options))
             self.cache.set(cc.IS_VISUAL_APP_ON, True)
             time.sleep(1)  # wait for data to be sent
+
         self.logger.info(f'Trial #{trial_id} started')
 
     def end_trial(self):
@@ -482,7 +492,8 @@ class Block:
         psycho_files = get_psycho_files()
         cmd = f'cd {psycho_files[self.psycho_file]} && DISPLAY="{config.APP_SCREEN}" {config.PSYCHO_PYTHON_INTERPRETER} {self.psycho_file}.py'
         self.logger.info(f'Running the following psycho cmd: {cmd}')
-        next(run_command(cmd))
+        proc = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid, stderr=subprocess.STDOUT)
+        self.psycho_proc_pid = proc.pid
 
     def record_screen(self):
         filename = f'{self.block_path}/screen_record.mp4'

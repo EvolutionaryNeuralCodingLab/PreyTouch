@@ -1,4 +1,4 @@
-## Adding New Bug
+## Adding New Prey
 1. Generate a set of a minimum of three images capturing a bug, wherein the bug exhibits slight movement across consecutive frames. 
 
 ![Ant Images](/docs/images/new_bug_images.png)

@@ -82,7 +82,7 @@ and put the following inside it:
 [program:prey_touch]
 command=<path_to_python_interpreter> api.py
 user=<user>
-environment=PYTHONUNBUFFERED=1
+environment=PYTHONUNBUFFERED=1;HOME=/home/<user>
 directory=<path_to_PreyTouch_dir>/Arena
 stdout_logfile=/var/log/prey_touch.out.log
 redirect_stderr=true
