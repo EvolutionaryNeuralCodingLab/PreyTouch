@@ -86,14 +86,14 @@ class LizardTrajDataSet(Dataset):
         self.target_name = target_name
         self.sub_section = sub_section
         # concatenate the trjaectories into a single dataframe
-        self.X = pd.concat([t for t in trajs.values()], axis=0).sort_values(by=['strike_id', 'time']).reset_index(
+        self.X = pd.concat([t for t in trajs.values()], axis=0).sort_values(by=['id', 'time']).reset_index(
             drop=True)
         # standarize the data over all trajectory observations
         if is_standardize:
             for col in variables:
                 self.X[col] = (self.X[col] - self.X[col].mean()) / self.X[col].std()
 
-        self.X = self.X.query(f'strike_id in {self.samples}')
+        self.X = self.X.query(f'id in {self.samples}')
         self.y = strk_df[target_name].loc[self.samples]
         if is_shuffled_target:
             print(f'Notice! Shuffling randomly the target values')
@@ -112,19 +112,19 @@ class LizardTrajDataSet(Dataset):
         min_count = self.y.value_counts().min()
         self.samples = pd.DataFrame(self.y).groupby(self.target_name).apply(lambda x: x.sample(min_count, random_state=0)).index.get_level_values(1).values.tolist()
         print(f'Resampling trajectories to {min_count} samples from each {self.target_name} class')
-        self.X = self.X.query(f'strike_id in {self.samples}')
+        self.X = self.X.query(f'id in {self.samples}')
         self.y = self.y.loc[self.samples]
 
     def __len__(self):
         return len(self.samples)
 
     def __getitem__(self, idx):
-        strike_id = self.samples[idx]
+        sid = self.samples[idx]
         # select variable of interest
-        traj = self.X.query(f'strike_id == {strike_id}').sort_values(by=['time']).reset_index(drop=True)[
+        traj = self.X.query(f'id == {sid}').sort_values(by=['time']).reset_index(drop=True)[
             list(self.variables)]
         traj = np.array(traj)
-        target_ = np.array([self.y[strike_id]])
+        target_ = np.array([self.y[sid]])
         sample = (torch.FloatTensor(traj), torch.FloatTensor(target_).squeeze().type(torch.LongTensor))
         return sample
 
@@ -139,7 +139,7 @@ class LizardTrajDataSet(Dataset):
             sample_indexes = group.iloc[closest_position:closest_position + self.sub_section[1] + 1].index
             return group.loc[sample_indexes]
 
-        self.X = self.X.groupby('strike_id', group_keys=False).apply(_sample)
+        self.X = self.X.groupby('id', group_keys=False).apply(_sample)
 
 
 @dataclass
@@ -155,6 +155,7 @@ class TrajClassifier(ClassificationTrainer):
     monitored_metric_algo: str = 'min'
     num_loader_workers: int = 0
     threshold: float = 0
+    is_iti: bool = True  # ITI dataset instead of strikes
     is_resample: bool = True  # resample trajectories to have equal number of samples from each class
     dataset_path: str = TRAJ_DIR
     movement_type: str = 'random_low_horizontal'
@@ -212,9 +213,9 @@ class TrajClassifier(ClassificationTrainer):
         self.print(f'Traj classes count: {pd.Series(dataset.y).value_counts().sort_index().set_axis(self.targets).to_dict()}')
 
         # set strike index
-        example_strike_id = dataset.X.strike_id.unique()[0]
-        tf = dataset.X.query(f'strike_id=={example_strike_id}').sort_values(by='time').reset_index()
-        row = strk_df.loc[example_strike_id]
+        example_sid = dataset.X.id.unique()[0]
+        tf = dataset.X.query(f'id=={example_sid}').sort_values(by='time').reset_index()
+        row = strk_df.loc[example_sid]
         self.strike_index = (tf.time - row.time).dt.total_seconds().abs().idxmin()
 
         # find the right kfolds size
@@ -255,19 +256,25 @@ class TrajClassifier(ClassificationTrainer):
         }
 
     def load_data(self):
-        filename = 'trajs_10s_after' if self.animal_id not in ['PV80', 'PV42', 'PV85'] else 'trajs_10s_after_msi_regev'
+        if not self.is_iti:
+            filename = 'trajs_10s_after'
+        else:
+            filename = 'trajs_10s_iti'
         with open(f'{self.dataset_path}/{filename}.pkl', 'rb') as f:
             d = pickle.load(f)
-        strk_df, trajs = d['strk_df'], d['trajs']
-        for strike_id, xf in trajs.items():
+        strk_df, trajs = d['strk_df' if not self.is_iti else 'trial_df'], d['trajs']
+        for sid, xf in trajs.items():
             xf['speed_x'] = xf.x.diff()
             xf['speed_y'] = xf.y.diff()
             xf['speed'] = np.sqrt(xf.x.diff() ** 2 + xf.y.diff() ** 2)
-            trajs[strike_id] = xf.iloc[1:] # remove first row because it had NaN after speed calculation
+            trajs[sid] = xf.iloc[1:] # remove first row because it had NaN after speed calculation
         return strk_df, trajs
 
     def get_model_name(self):
-        return f'traj_classifier_{self.animal_id}_{self.movement_type}'
+        model_name = f'traj_classifier_{self.animal_id}_{self.movement_type}'
+        if self.is_iti:
+            model_name += '_iti'
+        return model_name
 
     def summary_plots(self, chosen_fold_id):
         fig, axes = plt.subplots(2, 3, figsize=(15, 6))
@@ -659,12 +666,12 @@ def find_optimal_span(animal_id='PV42', movement_type='random_low_horizontal', d
 
 
 if __name__ == '__main__':
-    # tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=(-2, 150), is_resample=False,
-    #                     animal_id='all', movement_type='random_low_horizontal', is_hit=False, lstm_layers=4,
-    #                     dropout_prob=0.3, lstm_hidden_dim=50, is_shuffled_target=True)
-    # tj.train(is_plot=True)
-    # tj.check_hidden_states()
-    find_optimal_span(animal_id='PV163', movement_type='random_low_horizontal')
+    tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=(0, 60), is_resample=False,
+                        animal_id='PV91', movement_type='random_low_horizontal', is_hit=False, lstm_layers=4,
+                        dropout_prob=0.3, lstm_hidden_dim=50, is_shuffled_target=True, is_iti=True)
+    tj.train(is_plot=True)
+    tj.check_hidden_states()
+    # find_optimal_span(animal_id='PV163', movement_type='random_low_horizontal')
     # run_with_different_seeds('PV91', 'random_low_horizontal', (-1, 60),
     #                          ['x', 'y', 'speed'], n=10)
     # find_best_features(movement_type='circle', lstm_layers=6, dropout_prob=0.5, is_resample=True)
