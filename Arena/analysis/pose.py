@@ -57,6 +57,7 @@ class ArenaPose:
         is_use_db (bool, optional): Whether to use the database for loading and saving data. Defaults to True.
         orm (object, optional): The ORM object to use for interacting with the database. Defaults to None.
         model_path (str, optional): The path to the model file if it is not located in the default location. Defaults to None.
+        is_raise_no_caliber (bool, optional): Whether to raise an exception if no calibration data is available. Defaults to True.
 
     Attributes:
         cam_name (str): The name of the camera from which the pose is being estimated.
@@ -74,12 +75,14 @@ class ArenaPose:
 
     """
 
-    def __init__(self, cam_name, predictor, is_use_db=True, orm=None, model_path=None, commit_bodypart='head', is_dwh=False):
+    def __init__(self, cam_name, predictor, is_use_db=True, orm=None, model_path=None, commit_bodypart='head',
+                 is_dwh=False, is_raise_no_caliber=True):
         self.cam_name = cam_name
         self.predictor = predictor
         self.model_path = model_path
         self.is_use_db = is_use_db
         self.is_dwh = is_dwh
+        self.is_raise_no_caliber = is_raise_no_caliber
         self.load_predictor()
         self.last_commit = None
         self.caliber = None
@@ -113,7 +116,12 @@ class ArenaPose:
             self.caliber = CharucoEstimator(self.cam_name, is_debug=False)
             self.caliber.init(img)
             if not self.caliber.is_on:
-                raise Exception('Could not initiate caliber; closing ArenaPose')
+                msg = 'Could not initiate caliber; closing ArenaPose'
+                if self.is_raise_no_caliber:
+                    raise Exception(msg)
+                else:
+                    self.caliber = None
+                    print('Caliber could no loaded. Working without pose calibration')
         self.is_initialized = True
 
     def init_from_video(self, video_path: [str, Path], caliber_only=False):
@@ -149,7 +157,14 @@ class ArenaPose:
             if not re.match(r'\w+_\d{8}T\d{6}', Path(video_path).stem):
                 return
             cam_name, vid_date = Path(video_path).stem.split('_')
-        self.caliber.set_image_date_and_load(vid_date)
+        try:
+            self.caliber.set_image_date_and_load(vid_date)
+        except Exception as e:
+            if self.is_raise_no_caliber:
+                raise(e)
+            else:
+                print(f'No caliber loaded: {e}')
+                self.caliber = None
 
     def load(self, video_path=None, video_db_id=None, only_load=False, prefix=''):
         """
@@ -246,12 +261,14 @@ class ArenaPose:
             ret, frame = cap.read()
             if not self.is_initialized:
                 self.init(frame)
-                self.change_aruco_markers(video_path=video_path)
+                if self.caliber is not None:
+                    self.change_aruco_markers(video_path=video_path)
 
             timestamp = frames_times.loc[frame_id, 'time'].timestamp()
             pred_row, _ = self.predictor.predict(frame, frame_id)
             pred_row = self.analyze_frame(timestamp, pred_row, db_video_id)
-            pred_row = self.add_bug_traj(pred_row, bug_traj, timestamp)
+            if bug_traj is not None:
+                pred_row = self.add_bug_traj(pred_row, bug_traj, timestamp)
             if is_create_example_video:
                 self.write_to_example_video(frame, frame_id, pred_row, fps, video_path)
             pose_df.append(pred_row)
@@ -303,7 +320,7 @@ class ArenaPose:
 
             cam_x, cam_y = pred_row[(bodypart, 'cam_x')].iloc[0], pred_row[(bodypart, 'cam_y')].iloc[0]
             x, y = np.nan, np.nan
-            if not np.isnan(cam_x) and not np.isnan(cam_y):
+            if self.caliber is not None and not np.isnan(cam_x) and not np.isnan(cam_y):
                 x, y = self.caliber.get_location(cam_x, cam_y)
 
             if bodypart == self.commit_bodypart:
@@ -386,7 +403,7 @@ class ArenaPose:
             frames_output_dir = Path(video_path).parent.parent
             csv_path = frames_output_dir / 'bug_trajectory.csv'
             if not csv_path.exists():
-                raise MissingFile(f'unable to find bug_trajectory in {csv_path}')
+                return None
             bug_trajs = pd.read_csv(csv_path, index_col=0)
         
         bug_trajs = bug_trajs.rename(columns={'x': 'bug_x', 'y': 'bug_y'})

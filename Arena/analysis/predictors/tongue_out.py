@@ -50,7 +50,10 @@ class TongueOutAnalyzer(Predictor):
         self.push_to_predictions_stack(label, timestamp)
         is_tongue = label == TONGUE_CLASS and prob >= self.pred_config.get('threshold')
         is_action = self.tongue_detected(orig_frame, timestamp) if is_tongue else False
-        return is_action, frame, prob
+        return is_action, frame, prob, label
+
+    def create_pred_row(self, res):
+        return {'label': res[3], 'prob': res[2]}
 
     def predict_strike(self, strike_db_id, sec_before=2, sec_after=2, cols=8, save_frames_above=None, is_plot=True):
         ld = Loader(strike_db_id, 'front', is_debug=False, sec_after=sec_after, sec_before=sec_before, is_use_db=False)

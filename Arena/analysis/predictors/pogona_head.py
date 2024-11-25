@@ -49,6 +49,9 @@ class PogonaHead(Predictor):
         else:
             return pd.Series(det, index=['xA', 'yA', 'xB', 'yB', 'confidence']), img
 
+    def create_pred_row(self, res):
+        return res[0].to_dict()
+
     @staticmethod
     def plot_predictions(img, frame_id, det):
         if det is None:

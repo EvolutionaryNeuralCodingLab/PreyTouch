@@ -1,5 +1,7 @@
 import yaml
 from pathlib import Path
+import cv2
+import pandas as pd
 if __name__ == '__main__':
     import os
     os.chdir('../..')
@@ -20,6 +22,28 @@ class Predictor:
 
     def predict(self, frame, timestamp):
         raise NotImplemented('No predict method')
+
+    def create_pred_row(self, res):
+        raise NotImplemented('No create_pred_row method')
+
+    def predict_video(self, video_path):
+        cap = cv2.VideoCapture(video_path)
+        n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        df = []
+        for frame_id in range(n_frames):
+            ret, frame = cap.read()
+            res = self.predict(frame, frame_id)
+            row = self.create_pred_row(res)
+            df.append(row)
+        cap.release()
+        df = pd.DataFrame(df)
+        df.to_parquet(self.get_predicted_cache_path(video_path))
+
+    def get_predicted_cache_path(self, video_path) -> Path:
+        preds_dir = Path(video_path).parent / 'predictions'
+        preds_dir.mkdir(exist_ok=True)
+        vid_name = Path(video_path).with_suffix('.parquet').name
+        return preds_dir / f'{self.model_name}__{vid_name}'
 
     def plot_predictions(self, frame, *args, **kwargs):
         return frame

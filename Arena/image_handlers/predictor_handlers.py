@@ -111,7 +111,7 @@ class TongueOutHandler(PredictHandler):
         # self.logger.info('Tongue detected!')
 
     def predict_frame(self, img, timestamp):
-        is_tongue, resized_img, prob = self.analyzer.predict(img, timestamp)
+        is_tongue, resized_img, prob, _ = self.analyzer.predict(img, timestamp)
         self.frames_probas.append((timestamp, prob))
         if is_tongue:
             self.publish_tongue_out()
