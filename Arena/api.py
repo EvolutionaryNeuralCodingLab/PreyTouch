@@ -486,6 +486,8 @@ def start_media():
         data = request.json
         if not data or not data.get('media_url'):
             return Response('Unable to find media url')
+        turn_display_on(board='media', logger=arena_mgr.logger)
+        time.sleep(2)
         payload = json.dumps({'url': f'{config.MANAGEMENT_URL}/media/{data["media_url"]}'})
         print(payload)
         cache.publish_command('init_media', payload)
