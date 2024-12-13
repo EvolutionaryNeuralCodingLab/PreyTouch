@@ -33,9 +33,10 @@ cache = RedisCache()
 
 
 def signal_handler(signum, frame):
-    print('signal detected!')
-    cache.publish_command('arena_shutdown')
-    sys.exit(0)
+    if mp.current_process().name == 'MainProcess':
+        cache.publish_command('arena_shutdown')
+    else:
+        sys.exit(0)
 
 
 signal.signal(signal.SIGINT, signal_handler)
@@ -414,16 +415,20 @@ class CameraUnit:
         self.stop_signal.set()
         [proc.join() for proc in list(self.processes.values())]
         self.processes = {}
-        self.logger.info('unit stopped')
+        print(f'cam-unit {self.cam_name} stopped')
         self.is_stopping = False
 
     def listen_stop_events(self):
         def listener():
             while True:
-                if self.global_stop.is_set() or self.stop_signal.is_set():
+                try:
+                    if self.global_stop.is_set() or self.stop_signal.is_set():
+                        self.stop()
+                        break
+                    time.sleep(0.01)
+                except Exception as exc:
                     self.stop()
                     break
-                time.sleep(0.01)
 
         t = threading.Thread(target=listener)
         t.start()
@@ -553,9 +558,10 @@ class CameraUnit:
 
 
 class ArenaManager(SyncManager):
-    def __init__(self, **kwargs):
+    def __init__(self, main_app_queue=None, **kwargs):
         super().__init__(**kwargs) #address=(config.arena_manager_address, config.arena_manager_port),
                          #authkey=config.arena_manager_password.encode('utf-8'), **kwargs)
+        self.main_app_queue = main_app_queue
         self.start()
         self.detected_cameras = {}
         self.camera_modules = []
@@ -626,10 +632,10 @@ class ArenaManager(SyncManager):
         self.units[cam_name] = cu
         cu.start()
 
-    def arena_shutdown(self, *args) -> None:
+    def arena_shutdown(self, *args, is_restart=False) -> None:
         self.logger.warning('shutdown start')
         current_thread = threading.current_thread().name
-        self.logger.debug(f'open threads: {[t for t in self.threads.keys() if self.threads[t].name != current_thread]}')
+        print(f'open threads: {[t for t in self.threads.keys() if self.threads[t].name != current_thread]}')
         self.arena_shutdown_event.set()
         [cu.stop() for cu in self.units.values()]
         for name, t in self.threads.items():
@@ -640,12 +646,14 @@ class ArenaManager(SyncManager):
                 except:
                     print(f'Error joining thread {name}')
         self.units, self.threads = {}, {}
-        print('Closing logging thread; Arena is down')
-        self.stop_logging_event.set()
-        self.logging_thread.join()
-        print('logging thread is joined')
+        # print('Closing logging thread; Arena is down')
+        # self.stop_logging_event.set()
+        # self.logging_thread.join()
+        # print('logging thread is joined')
         self.shutdown()
-        print('shutdown finished')
+        print(f'{mp.current_process().name} - shutdown finished')
+        if self.main_app_queue is not None and not is_restart:
+            self.main_app_queue.put('stop')
 
     def start_experiment(self, **kwargs):
         cameras_dict = kwargs.get('cameras', {})

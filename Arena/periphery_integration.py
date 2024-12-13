@@ -6,12 +6,15 @@ import paho.mqtt.client as mqtt
 import paho.mqtt.subscribe as subscribe
 from pathlib import Path
 import utils
-from cache import RedisCache, CacheColumns as cc
+from cache import RedisCache, CacheColumns as cc, Column
 from loggers import get_logger
 import serial
 from serial.tools import list_ports
 from db_models import ORM
 import config
+
+HEALTHCHECK_PREFIX = 'periphery_healthcheck_'
+HEALTHCHECK_TIMEOUT = 10
 
 
 class PeripheryIntegrator:
@@ -98,6 +101,13 @@ class PeripheryIntegrator:
         new_counts = [str(c.get(feeder, 0)) for feeder in self.feeders]
         self.cache.set(cc.REWARD_LEFT, new_counts)
 
+    def check_periphery_healthcheck(self):
+        res = []
+        for port_name in self.periphery_config.keys():
+            if self.cache.get(Column(f'{HEALTHCHECK_PREFIX}{port_name}', bool, HEALTHCHECK_TIMEOUT)):
+                res.append(port_name)
+        return res
+
     @property
     def toggles(self) -> list:
         return [k for k, dev in self.devices.items() if dev['type'] == 'line']
@@ -155,11 +165,21 @@ class MQTTListener:
 
 
 class ArenaListener(MQTTListener):
-    topics = ['arena/value']
+    topics = ['arena/value', 'arena/listening']
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.cache = RedisCache()
+        self.hc_cache_columns = {}
+
+    def on_message(self, client, userdata, msg):
+        if msg.topic == 'arena/listening':
+            port_name = msg.payload.decode('utf-8')
+            col = self.hc_cache_columns.setdefault(port_name, Column(f'{HEALTHCHECK_PREFIX}{port_name}', bool,
+                                                                     HEALTHCHECK_TIMEOUT))
+            self.cache.set(col, True)
+        else:
+            super().on_message(client, userdata, msg)
 
     def parse_payload(self, payload):
         payload = json.loads(payload)
@@ -234,19 +254,21 @@ if __name__ == "__main__":
 
     e = threading.Event()
     listener = ArenaListener(is_debug=False, callback=hc_callback, is_loop_forever=True, stop_event=e)
+    listener.topics = ['arena/listening']
     t = threading.Thread(target=listener.loop)
     t.start()
 
     pi = PeripheryIntegrator()
-    pi.mqtt_publish(config.mqtt['publish_topic'], f'["set","Camera Trigger",1]')
-    time.sleep(1)
-    pi.mqtt_publish(config.mqtt['publish_topic'], f'["get","Camera Trigger"]')
-    time.sleep(1)
-    pi.mqtt_publish(config.mqtt['publish_topic'], f'["set","Camera Trigger",0]')
-    time.sleep(1)
-    pi.mqtt_publish(config.mqtt['publish_topic'], f'["get","Camera Trigger"]')
-    time.sleep(10)
-    e.set()
+    pi
+    # pi.mqtt_publish(config.mqtt['publish_topic'], f'["set","Camera Trigger",1]')
+    # time.sleep(1)
+    # pi.mqtt_publish(config.mqtt['publish_topic'], f'["get","Camera Trigger"]')
+    # time.sleep(1)
+    # pi.mqtt_publish(config.mqtt['publish_topic'], f'["set","Camera Trigger",0]')
+    # time.sleep(1)
+    # pi.mqtt_publish(config.mqtt['publish_topic'], f'["get","Camera Trigger"]')
+    # time.sleep(10)
+    # e.set()
     # listener.loop()
     # while True:
     #     listener.loop()

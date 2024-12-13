@@ -32,7 +32,6 @@ from agent import Agent
 from analysis.pose import run_predict
 import matplotlib
 matplotlib.use('Agg')
-
 app = Flask('ArenaAPI')
 cache: RedisCache = None
 arena_mgr: ArenaManager = None
@@ -84,6 +83,7 @@ def check():
         res.update({'reward_left': 0, 'schedules': {}})
     else:
         res['reward_left'] = periphery_mgr.get_feeders_counts()
+        res['periphery_hc'] = ','.join(periphery_mgr.check_periphery_healthcheck())
         res['streaming_camera'] = arena_mgr.get_streaming_camera()
         res['schedules'] = arena_mgr.schedules
         for cam_name, cu in arena_mgr.units.copy().items():
@@ -734,8 +734,7 @@ def restart():
     # p = mp.Process(target=restart_cmd, name='RESTART_ARENA')
     # p.daemon = True
     # p.start()
-
-    arena_mgr.arena_shutdown()
+    arena_mgr.arena_shutdown(is_restart=True)
     queue_app.put('restart')
     return Response('ok')
 
@@ -758,7 +757,7 @@ def start_app(queue):
 
     cache = RedisCache()
     if not config.IS_ANALYSIS_ONLY:
-        arena_mgr = ArenaManager()
+        arena_mgr = ArenaManager(main_app_queue=queue_app)
         periphery_mgr = PeripheryIntegrator()
         utils.turn_display_off(logger=arena_mgr.logger)
         if arena_mgr.is_cam_trigger_setup() and not config.DISABLE_PERIPHERY:
@@ -768,7 +767,6 @@ def start_app(queue):
 
 
 if __name__ == "__main__":
-
     # app.logger.removeHandler(flask_logging.default_handler)
     # h = logging.StreamHandler(sys.stdout)
     # h.setLevel(logging.WARNING)
@@ -794,7 +792,7 @@ if __name__ == "__main__":
     queue_app = mp.Queue()
 
     while True:
-        p = mp.Process(target=start_app, args=(queue_app,), name='MAIN')
+        p = mp.Process(target=start_app, args=(queue_app,), name='ARENA-MAIN')
         p.start()
         while True:
             if queue_app.empty():
@@ -802,10 +800,8 @@ if __name__ == "__main__":
             else:
                 x = queue_app.get()
                 if x == 'stop':
+                    p.terminate()
                     sys.exit(1)
                 break
         app.logger.warning('Restarting Arena!')
         p.terminate()
-
-    app.run(host='0.0.0.0', port=config.MANAGEMENT_PORT, debug=False)
-

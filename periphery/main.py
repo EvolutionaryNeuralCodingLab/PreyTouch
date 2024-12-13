@@ -36,6 +36,7 @@ class Config:
             # MQTT topics for outgoing commands and incoming data.
             "command_topic": "arena_command",
             "publish_topic": "arena",
+            "healthcheck_timeout": 5
         }
 
 

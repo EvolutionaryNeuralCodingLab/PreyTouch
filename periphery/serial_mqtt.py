@@ -71,6 +71,8 @@ class SerialMQTTBridge:
         self.arena_conf = arena_config
         self.interface_dispatcher = {}
 
+        self.last_healthcheck_time = None
+
         for port_name, port_conf in self.arena_conf.items():
             for interface_name in [ifs["name"] for ifs in port_conf["interfaces"]]:
                 if interface_name in self.interface_dispatcher:
@@ -169,11 +171,12 @@ class SerialMQTTBridge:
         for e in self.serial_configured_events.values():
             e.wait()
 
-        self.publish_listening()
+        for port_name in self.serials.keys():
+            self.publish_listening(port_name)
 
-    def publish_listening(self):
+    def publish_listening(self, port_name):
         with self.mqtt_publish_lock:
-            self.mqtt.publish(f"{self.mqtt_config['publish_topic']}/listening", "true")
+            self.mqtt.publish(f"{self.mqtt_config['publish_topic']}/listening", port_name)
 
     def shutdown(self):
         """
@@ -217,6 +220,10 @@ class SerialMQTTBridge:
             except SerialException:
                 self.log.error(f"(SERIAL) Error reading from serial port {port_name}.")
                 break
+
+            if (not self.last_healthcheck_time or
+                    (time.time() - self.last_healthcheck_time) > self.mqtt_config['healthcheck_timeout']):
+                self.publish_listening(port_name)
 
             if len(line) == 0:
                 continue
@@ -313,7 +320,6 @@ class SerialMQTTBridge:
                     inter_conf[0]['pulse_len'] = int(msg.payload.decode('utf-8'))
 
                     ser = self.serials[port_name]
-                    ser
                     # ser.write(b'~')
                     # try:
                     #     with self.serial_write_locks[ser.name]:
@@ -357,7 +363,8 @@ class SerialMQTTBridge:
 
                 elif cmd_interface == "bridge":
                     if cmd_name == "is_listening":
-                        self.publish_listening()
+                        for port_name in self.serials.keys():
+                            self.publish_listening(port_name)
                     elif cmd_name == "terminate":
                         self.shutdown()
                         continue
