@@ -123,7 +123,6 @@ export default {
       this.bugsSettings.numOfBugs = 0
       if (this.animationHandler) {
         this.$refs.bugChild = []
-        this.trialBugs = []
         cancelAnimationFrame(this.animationHandler)
       }
       this.bugsSettings.trialID = null
@@ -249,11 +248,11 @@ export default {
         bug_trajectory: this.bugTrajectoryLog,
         app_events: this.eventsLog
       }
-      Object.assign(this.trialData, payload)
+      this.trialData = Object.assign(this.trialData, payload)
       this.$socketClient.set('IS_VISUAL_APP_ON', 0)
+      this.$socketClient.publish('log/metric/trial_data', JSON.stringify(this.trialData))
       this.clearBoard()
       this.endLogBugTrajectory()
-      this.$socketClient.publish('log/metric/trial_data', JSON.stringify(payload))
       console.log(`Trial ${trialID} data was sent to the server`)
     },
     dumpTrialData() {
