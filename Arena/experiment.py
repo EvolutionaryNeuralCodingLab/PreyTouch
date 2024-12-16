@@ -211,7 +211,9 @@ class Block:
     block_type: str = 'bugs'
     bug_speed: [int, list] = None
     bug_size: int = None
-    holes_height: int = 100
+    holes_height_scale: float = 0.1
+    circle_height_scale: float = 0.5
+    circle_radius_scale: float = 0.2
     is_default_bug_size: bool = True
     exit_hole: str = None
     reward_type: str = 'always'
@@ -553,7 +555,9 @@ class Block:
             'backgroundColor': self.background_color,
             'exitHole': random.choice(['left', 'right']) if self.exit_hole == 'random' else self.exit_hole,
             'rewardAnyTouchProb': self.reward_any_touch_prob,
-            # 'holesHeight': self.holes_height
+            'holesHeightScale': self.holes_height_scale,
+            'circleHeightScale': self.circle_height_scale,
+            'circleRadiusScale': self.circle_radius_scale
         }
 
     @property
@@ -787,8 +791,8 @@ def main():
 
 def start_trial():
     arg_parser = argparse.ArgumentParser(description='Experiments')
-    arg_parser.add_argument('-m', '--movement_type', default='random')
-    arg_parser.add_argument('--exit_hole', default='left', choices=['left', 'right'])
+    arg_parser.add_argument('-m', '--movement_type', default='circle')
+    arg_parser.add_argument('--exit_hole', default='right', choices=['left', 'right'])
     arg_parser.add_argument('--speed', type=int, default=5)
     args = arg_parser.parse_args()
     cache_ = RedisCache()
@@ -798,7 +802,7 @@ def start_trial():
         'trialDBId': 1, # default value, changed in init_bugs
         'numTrials': 1,
         'iti': 30,
-        'trialDuration': 30,
+        'trialDuration': 5,
         'speed': args.speed,
         'bugTypes': ['cockroach'],
         'rewardBugs': [],
@@ -809,7 +813,10 @@ def start_trial():
         # 'bugSize': self.bug_size,
         # 'backgroundColor': self.background_color,
         'exitHole': args.exit_hole,
-        'rewardAnyTouchProb': 0
+        'rewardAnyTouchProb': 0,
+        'circleRadiusScale': 0.2,
+        'circleHeightScale': 0.5,
+        'holesHeightScale': 0.1
     }
     cache_.publish_command('init_bugs', json.dumps(options))
 

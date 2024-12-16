@@ -35,7 +35,9 @@ export default {
         holeSize: [200, 200],
         exitHole: 'right',
         entranceHole: null,
-        holesHeight: 100
+        holesHeightScale: 0.1,
+        circleHeightScale: 0.5,
+        circleRadiusScale: 0.2
       },
       xpad: 100 // padding for holes
     }
@@ -44,9 +46,10 @@ export default {
     holesPositions: function () {
       let [canvasW, canvasH] = [this.canvas.width, this.canvas.height]
       let [holeW, holeH] = this.bugsSettings.holeSize
+      let configuredHolesHeight = (canvasH - holeH / 2) * this.bugsSettings.holesHeightScale
       return {
-        left: [this.xpad, canvasH - holeH - this.bugsSettings.holesHeight],
-        right: [canvasW - holeW - this.xpad, canvasH - holeH - this.bugsSettings.holesHeight]
+        left: [this.xpad, canvasH - holeH - configuredHolesHeight],
+        right: [canvasW - holeW - this.xpad, canvasH - holeH - configuredHolesHeight]
       }
     },
     exitHolePos: function () {
@@ -71,10 +74,16 @@ export default {
       image.src = require('@/assets/hole2.png')
     },
     extraTrialData: function () {
-      return {
-        exit_hole: this.bugsSettings.exitHole,
-        holes_height: this.entranceHolePos[1]
+      let d = {
+        entrance_hole_pos: this.entranceHolePos,
+        exit_hole_pos: this.exitHolePos
       }
+      let bug = this.$refs.bugChild[0]
+      if (bug.isMoveInCircles) {
+        d['circle_radius'] = bug.r
+        d['circle_position'] = bug.r0
+      }
+      return d
     }
   }
 }

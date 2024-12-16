@@ -10,11 +10,10 @@ export default {
         numOfBugs: process.env.NUM_BUGS,
         trialID: null,
         trialDBId: null,
-        trialStartTime: null,
         numTrials: null, // deprecated. Trials are governed by the experiment
-        trialDuration: 20,
+        trialDuration: 5,
         iti: 5,
-        bugTypes: ['cockroach'],
+        bugTypes: ['cockroach', 'green_beetle'],
         rewardBugs: 'cockroach',
         movementType: 'circle',
         speed: 0, // if 0 config default for bug will be used
@@ -34,7 +33,7 @@ export default {
         height: window.innerHeight
       },
       bugTrajectoryLog: [],
-      trialBugs: [],
+      trialData: {},
       eventsLog: [],
       identifier: uuidv4()
     }
@@ -109,12 +108,11 @@ export default {
       if (isLogTrajectory) {
         this.startLogBugTrajectory()
       }
-      this.bugsSettings.trialStartTime = Date.now()
       this.initDrawing()
       this.spawnBugs(this.bugsSettings.numOfBugs)
       this.$nextTick(function () {
         console.log('start animation...')
-        this.trialBugs = this.$refs.bugChild.map(bug => bug.currentBugType)
+        this.dumpTrialData()
         this.animate()
       })
     },
@@ -246,22 +244,29 @@ export default {
       let endTime = Date.now()
       let trialID = this.bugsSettings.trialID
       let payload = {
-        trial_db_id: this.bugsSettings.trialDBId,
-        start_time: this.bugsSettings.trialStartTime,
-        bug_types: this.trialBugs,
-        duration: (endTime - this.bugsSettings.trialStartTime) / 1000,
+        duration: (endTime - this.trialData.start_time) / 1000,
         end_time: endTime,
         bug_trajectory: this.bugTrajectoryLog,
-        video_frames: null,
-        app_events: this.eventsLog,
-        bug_speed: this.bugsSettings.speed
+        app_events: this.eventsLog
       }
-      Object.assign(payload, this.extraTrialData())
+      Object.assign(this.trialData, payload)
       this.$socketClient.set('IS_VISUAL_APP_ON', 0)
       this.clearBoard()
       this.endLogBugTrajectory()
       this.$socketClient.publish('log/metric/trial_data', JSON.stringify(payload))
       console.log(`Trial ${trialID} data was sent to the server`)
+    },
+    dumpTrialData() {
+      this.trialData = {
+        trial_db_id: this.bugsSettings.trialDBId,
+        start_time: Date.now(),
+        trial_bugs: this.$refs.bugChild.map(bug => bug.currentBugType).join(','),
+        bug_sizes: this.$refs.bugChild.map(bug => bug.currentBugSize).join(','),
+        bug_speed: this.bugsSettings.speed,
+        exit_hole: this.bugsSettings.exitHole,
+        video_frames: null,
+        extra: JSON.stringify(this.extraTrialData())
+      }
     },
     extraTrialData: function () {
       return {}

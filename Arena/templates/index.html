@@ -299,7 +299,7 @@
             camCheckBox$.change((res) => {
                 let isChecked = $(`#camera-${cam}`).prop('checked')
                 const camIndex = checkedCameras.indexOf(cam)
-                if (camIndex > -1 && !isChecked) {  // in checkedCameras
+                if (camIndex > -1 && !isChecked) {  // unchecked and was in checkedCameras
                     checkedCameras.splice(camIndex, 1)
                     if (checkedCameras.length === 0) {
                         $startExpButton.prop('disabled', true)
@@ -316,7 +316,6 @@
         // Get animal ID
         setTimeout(() => {
           $.get('/get_current_animal').done(data => {
-console.log(data)
               AnimalIDFields.values = data
             })
         }, 1000)
@@ -394,6 +393,13 @@ console.log(data)
                     $(`#bugSpeedDiv${i}`).hide()
                 } else {
                     $(`#bugSpeedDiv${i}`).show()
+                }
+                if (['circle', 'circle_accelerate'].indexOf($movementType.val()) !== -1) {
+                    $(`#circleHeightDiv${i}`).show()
+                    $(`#circleRadiusDiv${i}`).show()
+                } else {
+                    $(`#circleHeightDiv${i}`).hide()
+                    $(`#circleRadiusDiv${i}`).hide()
                 }
             }
             ).trigger('change')

@@ -240,7 +240,9 @@ const blockFields = {
     movement_type: new FieldObject('movementTypeSelect', Field),
     is_default_bug_size: new FieldObject('isDefaultBugSize', CheckField),
     bug_size: new FieldObject('bugSize', NumericalField, {is_default_bug_size: false}),
-    holes_height: new FieldObject('holesHeight', NumericalField)
+    holes_height_scale: new FieldObject('holesHeight', NumericalField),
+    circle_height_scale: new FieldObject('circleHeight', NumericalField),
+    circle_radius_scale: new FieldObject('circleRadius', NumericalField)
   },
   media: {
     media_url: new FieldObject('media-url', Field)

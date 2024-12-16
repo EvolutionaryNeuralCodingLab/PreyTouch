@@ -175,8 +175,8 @@ export default {
         case 'circle':
         case 'circle_accelerate':
           this.theta = this.isRightExit ? (Math.PI + (Math.PI / 5)) : (Math.PI + (2 * Math.PI / 3))
-          this.r = (Math.abs(this.xTarget - this.x) / 5)
-          this.r0 = [(this.x + this.xTarget) / 2, this.y / 2]
+          this.r = (Math.abs(this.xTarget - this.x) * this.bugsSettings.circleRadiusScale)
+          this.r0 = [(this.x + this.xTarget) / 2, this.canvas.height * this.bugsSettings.circleHeightScale]
           break
         case 'half_circle':
           this.theta = this.isCounterClockWise ? (Math.PI + (Math.PI / 4)) : (Math.PI + (Math.PI / 4))
