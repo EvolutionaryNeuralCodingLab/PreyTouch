@@ -147,6 +147,8 @@ class ExperimentLogger(Subscriber):
         return ['time', 'start_time', 'end_time']
 
     def convert_time_fields(self, payload: dict) -> dict:
+        if not isinstance(payload, dict):
+            return payload
         for k, v in payload.copy().items():
             if k in self.time_fields:
                 payload[k] = self.ms2datetime(v)

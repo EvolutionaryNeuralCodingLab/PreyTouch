@@ -69,6 +69,12 @@ export default {
         ctx.drawImage(image, that.entranceHolePos[0], that.entranceHolePos[1], holeW, holeH)
       }
       image.src = require('@/assets/hole2.png')
+    },
+    extraTrialData: function () {
+      return {
+        exit_hole: this.bugsSettings.exitHole,
+        holes_height: this.entranceHolePos[1]
+      }
     }
   }
 }

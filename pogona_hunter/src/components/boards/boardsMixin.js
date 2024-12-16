@@ -1,4 +1,4 @@
-import {distance, randomRange} from '../../js/helpers'
+import {randomRange} from '../../js/helpers'
 import { v4 as uuidv4 } from 'uuid'
 
 export default {
@@ -34,6 +34,7 @@ export default {
         height: window.innerHeight
       },
       bugTrajectoryLog: [],
+      trialBugs: [],
       eventsLog: [],
       identifier: uuidv4()
     }
@@ -113,6 +114,7 @@ export default {
       this.spawnBugs(this.bugsSettings.numOfBugs)
       this.$nextTick(function () {
         console.log('start animation...')
+        this.trialBugs = this.$refs.bugChild.map(bug => bug.currentBugType)
         this.animate()
       })
     },
@@ -123,6 +125,7 @@ export default {
       this.bugsSettings.numOfBugs = 0
       if (this.animationHandler) {
         this.$refs.bugChild = []
+        this.trialBugs = []
         cancelAnimationFrame(this.animationHandler)
       }
       this.bugsSettings.trialID = null
@@ -225,7 +228,6 @@ export default {
     },
     destruct(bugIndex, x, y, isRewardBug) {
       let currentBugs = this.$refs.bugChild
-      let lastBugType = currentBugs[bugIndex].currentBugType
       currentBugs[bugIndex].isDead = true
       if (isRewardBug) {
         this.$refs.audio1.play()
@@ -234,34 +236,38 @@ export default {
       const bloodTimeout = setTimeout(() => {
         this.$refs.bugChild = currentBugs.filter((items, index) => bugIndex !== index)
         if (this.$refs.bugChild.length === 0) {
-          this.endTrial(lastBugType)
+          this.endTrial()
         }
         clearTimeout(bloodTimeout)
       }, this.bugsSettings.bloodDuration)
     },
-    endTrial(lastBugType) {
+    endTrial() {
       // endTrial can be called only after: 1) bug caught [destruct method], 2) trial time reached
       let endTime = Date.now()
       let trialID = this.bugsSettings.trialID
       let payload = {
         trial_db_id: this.bugsSettings.trialDBId,
         start_time: this.bugsSettings.trialStartTime,
-        bug_type: lastBugType,
+        bug_types: this.trialBugs,
         duration: (endTime - this.bugsSettings.trialStartTime) / 1000,
         end_time: endTime,
         bug_trajectory: this.bugTrajectoryLog,
         video_frames: null,
         app_events: this.eventsLog,
-        exit_hole: this.bugsSettings.exitHole
+        bug_speed: this.bugsSettings.speed
       }
+      Object.assign(payload, this.extraTrialData())
       this.$socketClient.set('IS_VISUAL_APP_ON', 0)
       this.clearBoard()
       this.endLogBugTrajectory()
       this.$socketClient.publish('log/metric/trial_data', JSON.stringify(payload))
       console.log(`Trial ${trialID} data was sent to the server`)
     },
+    extraTrialData: function () {
+      return {}
+    },
     spawnBugs(noOfBugs) {
-      const minDistance = 100
+      // const minDistance = 100
       for (let i = 0; i < noOfBugs; i++) {
         let x = randomRange(0, this.canvas.width)
         let y = randomRange(0, this.canvas.height)
@@ -270,16 +276,16 @@ export default {
           y: y,
           bugId: `${this.bugsSettings.bugTypes}${i}`
         }
-        if (i !== 0) {
-          for (let j = 0; j < i; j++) {
-            let d = distance(x, y, this.bugsProps[j].x, this.bugsProps[j].y)
-            if (d <= minDistance) {
-              x = randomRange(0, this.canvas.width)
-              y = randomRange(0, this.canvas.height)
-              j = -1
-            }
-          }
-        }
+        // if (i !== 0) {
+        //   for (let j = 0; j < i; j++) {
+        //     let d = distance(x, y, this.bugsProps[j].x, this.bugsProps[j].y)
+        //     if (d <= minDistance) {
+        //       x = randomRange(0, this.canvas.width)
+        //       y = randomRange(0, this.canvas.height)
+        //       j = -1
+        //     }
+        //   }
+        // }
         this.bugsProps.push(properties)
       }
     },
