@@ -101,10 +101,10 @@ def check():
                     else:
                         proc_name = 'cam'
                     proc_name += f'({p.pid})'
-                    proc_cpus[f'CU-{cam_name}'] = f'{calc_cpu_percent(p.pid):.1f}'
+                    proc_cpus[proc_name] = f'{calc_cpu_percent(p.pid):.1f}'
                 except:
                     continue
-            res.setdefault('processes_cpu', {})[cam_name] = proc_cpus
+            res.setdefault('processes_cpu', {})[f'CU-{cam_name}'] = proc_cpus
         if 'websocket_server' in arena_mgr.threads:
             p = arena_mgr.threads['websocket_server']
             res.setdefault('processes_cpu', {})['WebSocket'] = {f'server({p.pid})': f'{calc_cpu_percent(p.pid):.1f}'}
