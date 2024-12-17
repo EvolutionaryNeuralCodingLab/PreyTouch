@@ -4,6 +4,7 @@ import requests
 import json
 import serial
 import time
+import psutil
 import threading
 from pathlib import Path
 import pandas as pd
@@ -355,3 +356,7 @@ def get_psycho_files():
             if main_file.exists():
                 files[p.name] = p
     return files
+
+
+def calc_cpu_percent(pid):
+    return psutil.Process(pid).cpu_percent(0.1)

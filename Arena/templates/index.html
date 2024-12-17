@@ -150,10 +150,10 @@
                     }
 
                     let procText = ''
-                    for (let cam_name in data['processes_cpu']) {
-                        let d = data['processes_cpu'][cam_name]
+                    for (let proc_group in data['processes_cpu']) {
+                        let d = data['processes_cpu'][proc_group]
                         if (!jQuery.isEmptyObject(d)) {
-                            procText += `--CU-${cam_name}--` + '\n'
+                            procText += `--${proc_group}--` + '\n'
                             for (let procName in d) {
                                 procText += `${procName}: ${d[procName]}%\n`
                             }

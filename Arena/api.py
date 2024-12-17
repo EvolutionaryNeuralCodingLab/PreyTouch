@@ -22,7 +22,7 @@ import sentry_sdk
 import config
 import utils
 from cache import RedisCache, CacheColumns as cc
-from utils import titlize, turn_display_on, turn_display_off, get_sys_metrics, get_psycho_files
+from utils import titlize, turn_display_on, turn_display_off, get_sys_metrics, get_psycho_files, calc_cpu_percent
 from experiment import ExperimentCache
 from arena import ArenaManager
 from loggers import init_logger_config, create_arena_handler
@@ -86,6 +86,7 @@ def check():
         res['periphery_hc'] = ','.join(periphery_mgr.check_periphery_healthcheck())
         res['streaming_camera'] = arena_mgr.get_streaming_camera()
         res['schedules'] = arena_mgr.schedules
+
         for cam_name, cu in arena_mgr.units.copy().items():
             res.setdefault('cam_units_status', {})[cam_name] = cu.is_on()
             res.setdefault('cam_units_fps', {})[cam_name] = {k: cu.mp_metadata.get(k).value for k in ['cam_fps', 'sink_fps', 'pred_fps', 'pred_delay']}
@@ -93,10 +94,20 @@ def check():
             proc_cpus = {}
             for p in cu.processes.copy().values():
                 try:
-                    proc_cpus[p.name] = round(psutil.Process(p.pid).cpu_percent(0.1))
+                    if 'ImageSink' in p.name:
+                        proc_name = 'sink'
+                    elif 'ImageHandler' in p.name:
+                        proc_name = 'predictor'
+                    else:
+                        proc_name = 'cam'
+                    proc_name += f'({p.pid})'
+                    proc_cpus[f'CU-{cam_name}'] = f'{calc_cpu_percent(p.pid):.1f}'
                 except:
                     continue
             res.setdefault('processes_cpu', {})[cam_name] = proc_cpus
+        if 'websocket_server' in arena_mgr.threads:
+            p = arena_mgr.threads['websocket_server']
+            res.setdefault('processes_cpu', {})['WebSocket'] = {f'server({p.pid})': f'{calc_cpu_percent(p.pid):.1f}'}
 
     res.update(get_sys_metrics())
     return jsonify(res)
