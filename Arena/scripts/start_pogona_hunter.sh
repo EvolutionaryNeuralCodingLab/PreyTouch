@@ -5,7 +5,7 @@
 
 params=( "--disable-session-crashed-bubble" "--disable-infobars" "--disable-component-update" \
          "--disable-pinch" "--chrome-frame" "--window-size=$2"  "--window-position=$4,001" \
-         "--remember-cert-error-decisions" \
+         "--remember-cert-error-decisions" "--no-default-browser-check" "--no-first-run" \
          "--ignore-urlfetcher-cert-requests" "--allow-running-insecure-content" \
          '--simulate-outdated-no-au="01 Jan 2199"' \
          "--display=$3" )
