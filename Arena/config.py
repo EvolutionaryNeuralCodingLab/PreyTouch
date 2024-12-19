@@ -160,7 +160,7 @@ IS_AGENT_ENABLED = env.bool('IS_AGENT_ENABLED', 0, group='Scheduler', desc='Enab
 AGENT_MIN_DURATION_BETWEEN_PUBLISH = env.int('AGENT_MIN_DURATION_BETWEEN_PUBLISH', 2 * 60 * 60, group='Scheduler', desc='Minimum duration in seconds between publish meassages by the agent')
 CAMERAS_ON_TIME = env('CAMERAS_ON_TIME', '07:00', group='Scheduler', desc='Time to start cameras by the scheduler', validator='hour_validator')
 CAMERAS_OFF_TIME = env('CAMERAS_OFF_TIME', '19:00', group='Scheduler', desc='Time to stop cameras by the scheduler', validator='hour_validator')
-POSE_ON_TIME = env('POSE_ON_TIME', '19:30', group='Scheduler', desc='Time to start nighly pose by the scheduler', validator='hour_validator')
+POSE_ON_TIME = env('POSE_ON_TIME', '20:00', group='Scheduler', desc='Time to start nighly pose by the scheduler', validator='hour_validator')
 POSE_OFF_TIME = env('POSE_OFF_TIME', '05:00', group='Scheduler', desc='Time to stop nighly pose on the day after by the scheduler', validator='hour_validator')
 TRACKING_POSE_ON_TIME = env('TRACKING_POSE_ON_TIME', '05:30', group='Scheduler', desc='Time to start nighly pose analysis on tracking videos by the scheduler', validator='hour_validator')
 TRACKING_POSE_OFF_TIME = env('TRACKING_POSE_OFF_TIME', '07:00', group='Scheduler', desc='Time to stop nighly pose analysis on the day after on tracking videos by the scheduler', validator='hour_validator')

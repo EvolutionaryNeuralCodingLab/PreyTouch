@@ -397,20 +397,30 @@ class ArenaPose:
                         bt = pd.DataFrame(tr.bug_trajectory)
                         bt['trial_id'] = tr.id
                         bug_trajs.append(bt)
-            bug_trajs = pd.concat(bug_trajs)
+            if bug_trajs:
+                bug_trajs = pd.concat(bug_trajs)
+            else:
+                if video_path:
+                    bug_trajs = self._load_bug_trajectory_from_file(video_path)
         else:
             assert video_path, 'must provide video_path for loading bug trajectory'
-            frames_output_dir = Path(video_path).parent.parent
-            csv_path = frames_output_dir / 'bug_trajectory.csv'
-            if not csv_path.exists():
-                return None
-            bug_trajs = pd.read_csv(csv_path, index_col=0)
-        
+            bug_trajs = self._load_bug_trajectory_from_file(video_path)
+
+        if bug_trajs is None or len(bug_trajs) == 0:
+            return
+
         bug_trajs = bug_trajs.rename(columns={'x': 'bug_x', 'y': 'bug_y'})
         bug_trajs['datetime'] = pd.to_datetime(bug_trajs['time']).dt.tz_localize(None)
         bug_trajs['timestamp'] = bug_trajs.datetime.astype(int).div(10**9)
         bug_trajs = bug_trajs.sort_values(by='datetime').reset_index(drop=True)
         return bug_trajs
+
+    def _load_bug_trajectory_from_file(self, video_path):
+        frames_output_dir = Path(video_path).parent.parent
+        csv_path = frames_output_dir / 'bug_trajectory.csv'
+        if not csv_path.exists():
+            return None
+        return pd.read_csv(csv_path, index_col=0)
 
     def add_bug_traj(self, pred_row, bug_traj, timestamp):
         dt = (bug_traj.timestamp - timestamp).abs()

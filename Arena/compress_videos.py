@@ -27,44 +27,43 @@ def get_videos_ids_for_compression(orm, sort_by_size=False):
     return videos_ids
 
 
-def compress(video_db_ids, logger, orm):
+def compress(video_db_id, logger, orm):
     with orm.session() as s:
-        for video_db_id in video_db_ids:
-            v = s.query(Video).filter_by(id=video_db_id).first()
-            assert v is not None, 'could not find video in DB'
-            writer, reader = None, None
-            source = Path(v.path).resolve()
-            try:
-                assert source.exists(), f'video does not exist'
-                dest = source.with_suffix('.mp4')
+        v = s.query(Video).filter_by(id=video_db_id).first()
+        assert v is not None, 'could not find video in DB'
+        writer, reader = None, None
+        source = Path(v.path).resolve()
+        try:
+            assert source.exists(), f'video does not exist'
+            dest = source.with_suffix('.mp4')
 
-                logger.info(f'start video compression of {source}')
-                t0 = time.time()
-                reader = iio.get_reader(source.as_posix())
-                fps = reader.get_meta_data()['fps']
-                writer = iio.get_writer(dest.as_posix(), format="FFMPEG", mode="I",
-                                        fps=fps, codec="libx264", quality=5,
-                                        macro_block_size=8,  # to work with 1440x1080 image size
-                                        ffmpeg_log_level="error")
-                for im in reader:
-                    writer.append_data(im)
-                logger.info(f'Finished compression of {dest} in {(time.time() - t0) / 60:.1f} minutes')
+            logger.info(f'start video compression of {source}')
+            t0 = time.time()
+            reader = iio.get_reader(source.as_posix())
+            fps = reader.get_meta_data()['fps']
+            writer = iio.get_writer(dest.as_posix(), format="FFMPEG", mode="I",
+                                    fps=fps, codec="libx264", quality=5,
+                                    macro_block_size=8,  # to work with 1440x1080 image size
+                                    ffmpeg_log_level="error")
+            for im in reader:
+                writer.append_data(im)
+            logger.info(f'Finished compression of {dest} in {(time.time() - t0) / 60:.1f} minutes')
 
-                v.path = str(dest)
-                v.compression_status = 1
-                source.unlink()
+            v.path = str(dest)
+            v.compression_status = 1
+            source.unlink()
 
-            except Exception as exc:
-                v.compression_status = 2
-                logger.error(f'Error compressing {source}; {exc}')
+        except Exception as exc:
+            v.compression_status = 2
+            logger.error(f'Error compressing {source}; {exc}')
 
-            finally:
-                s.commit()
-                if writer is not None:
-                    writer.close()
-                if reader is not None:
-                    reader.close()
-                time.sleep(2)
+        finally:
+            s.commit()
+            if writer is not None:
+                writer.close()
+            if reader is not None:
+                reader.close()
+            time.sleep(2)
 
 
 def main():
