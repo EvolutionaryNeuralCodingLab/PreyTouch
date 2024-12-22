@@ -19,9 +19,17 @@
     </div>
 
     <div class="p-1">
-        <h5 class="p-2">Upcoming Schedules</h5>
-            <ul class="list-group" style="height: 200px;overflow-y: scroll;" id="upcoming-schedules">
-            </ul>
+        <div class="row mr-2">
+            <h5 class="p-2">Upcoming Schedules</h5>
+            <div class="row p-2" style="margin-left: auto">
+                <label class="form-check-label" for="agent-active-toggle">Agent</label>
+                <input id="agent-active-toggle" type="checkbox" checked data-toggle="toggle"
+                       data-onstyle="success" data-offstyle="danger" data-size="xs" data-height="25">
+            </div>
+        </div>
+
+        <ul class="list-group" style="height: 200px;overflow-y: scroll;" id="upcoming-schedules">
+        </ul>
     </div>
 </div>
 

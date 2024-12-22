@@ -78,6 +78,8 @@ def check():
     res['temperature'] = json.loads(cache.get(cc.TEMPERATURE) or "{}")
     res['cached_experiments'] = sorted([c.stem for c in Path(config.CACHED_EXPERIMENTS_DIR).glob('*.json')])
     res['cam_trigger_state'] = cache.get(cc.CAM_TRIGGER_STATE)
+    if config.IS_AGENT_ENABLED:
+        res['agent_active'] = not cache.get(cc.HOLD_AGENT)
 
     if config.IS_ANALYSIS_ONLY:
         res.update({'reward_left': 0, 'schedules': {}})
@@ -292,6 +294,14 @@ def set_cam_trigger():
         return Response('ok')
     state = int(request.form['state'])
     periphery_mgr.cam_trigger(state)
+    return Response('ok')
+
+
+@app.route('/set_hold_agent', methods=['POST'])
+def set_hold_agent():
+    state = int(request.form['state'])
+    arena_mgr.logger.info(f'Agent is {"activated" if state else "deactivated"}')
+    cache.set(cc.HOLD_AGENT, not state)
     return Response('ok')
 
 

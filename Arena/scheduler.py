@@ -139,7 +139,8 @@ class Scheduler(threading.Thread):
 
     @schedule_method
     def agent_update(self):
-        if config.IS_AGENT_ENABLED and self.is_in_range('cameras_on') and not self.is_test_animal():
+        if config.IS_AGENT_ENABLED and self.is_in_range('cameras_on') and not self.is_test_animal() \
+                and not cache.get(cc.HOLD_AGENT):
             self.agent.update()
 
     @schedule_method

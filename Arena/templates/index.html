@@ -99,6 +99,8 @@
 
         let isToggleCamsCheckPause = false
         let isToggleTriggerCheckPause = false
+        let isToggleAgentCheckPause = false
+        let $agentTrig = $("#agent-active-toggle")
         let api_check = function () {
             $.ajax({
                 url: '/check',
@@ -199,6 +201,23 @@
                         stopStreaming()
                     }
 
+                    // agent active
+                    if (!('agent_active' in data)) {
+                      $agentTrig.bootstrapToggle('off')
+                      $agentTrig.bootstrapToggle('disable')
+                    } else if (!isToggleAgentCheckPause) {
+                      let currentAgentState = Number($agentTrig.prop('checked'))
+                      if (currentAgentState !== Number(data['agent_active'])) {
+                        $agentTrig.bootstrapToggle('enable')
+                        let state = data['agent_active'] ? 'on' : 'off'
+                        isToggleAgentCheckPause = true
+                        $agentTrig.bootstrapToggle(state)
+                        setTimeout(() => {
+                             isToggleAgentCheckPause = false
+                         }, apiCheckTimeout)
+                      }
+                    }
+
                     for (let [val, label] of Object.entries(data['schedules'])) {
                         if (schedulesList.indexOf(val) !== -1) {
                             // schedule already appears in upcoming schedules
@@ -257,6 +276,20 @@
             }
             $comp.text(`${text}: ${!!value ? value.toFixed(fixation): value}${value == null ? '' : units}`).css({'color': color})
         }
+
+        $agentTrig.change(() => {
+           if (isToggleAgentCheckPause) {
+               return
+           }
+           isToggleAgentCheckPause = true
+           let requestedState = Number($agentTrig.prop('checked'))
+
+           $.post('/set_hold_agent', {state: requestedState}).done(function () {
+               setTimeout(() => {
+                   isToggleAgentCheckPause = false
+               }, apiCheckTimeout)
+           })
+        })
 
         let $startExpButton = $('#startExperimentButton')
         let $recordButton = $("#runRecordButton")
@@ -713,7 +746,7 @@
     }
 
     .toggle {
-        margin-left: 2em;
+        margin-left: 0.5em;
     }
 
     .cams-labels {

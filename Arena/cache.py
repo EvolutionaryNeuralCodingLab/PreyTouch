@@ -36,6 +36,7 @@ class CacheColumns:
     CAM_TRIGGER_DISABLE = Column('CAM_TRIGGER_DISABLE', bool, config.EXPERIMENTS_TIMEOUT)
     IS_BLANK_CONTINUOUS_RECORDING = Column('IS_BLANK_CONTINUOUS_RECORDING', bool, config.MAX_DURATION_CONT_BLANK)
     TEMPERATURE = Column('TEMPERATURE', str, 60)
+    HOLD_AGENT = Column('HOLD_AGENT', bool, 'static')
 
 
 class RedisCache:
