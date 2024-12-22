@@ -48,8 +48,10 @@ def index():
         app_config = json.load(f)
     if arena_mgr is None:
         cameras = list(config.cameras.keys())
+        is_cam_trigger = False
     else:
         cameras = list(arena_mgr.units.keys())
+        is_cam_trigger = arena_mgr.is_cam_trigger_setup()
 
     if config.IS_ANALYSIS_ONLY:
         toggels, feeders, cameras = [], [], []
@@ -64,7 +66,7 @@ def index():
                            blank_rec_types=config.blank_rec_types, config_envs=config_envs, predictors=predictors,
                            max_blocks=config.api_max_blocks_to_show, toggels=toggels, psycho_files=get_psycho_files(),
                            extra_time_recording=config.EXTRA_TIME_RECORDING, feeders=feeders, configurations=confs,
-                           is_light_stim=config.LIGHT_STIM_SERIAL is not None,
+                           is_light_stim=config.LIGHT_STIM_SERIAL is not None, is_cam_trigger=is_cam_trigger,
                            acquire_stop={'num_frames': 'Num Frames', 'rec_time': 'Record Time [sec]'})
 
 

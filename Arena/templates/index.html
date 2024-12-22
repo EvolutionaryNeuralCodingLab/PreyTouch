@@ -120,13 +120,15 @@
                         }
                         // Cam-trigger update
                         let trigTog = $(`#toggle-cam-trigger`)
-                        if ((Number(data['cam_trigger_state']) !== Number(trigTog.prop('checked'))) && !isToggleTriggerCheckPause) {
-                            isToggleTriggerCheckPause = true
-                            trigTog.bootstrapToggle('toggle')
-                            console.log('Trigger state toggled by the check process')
-                            setTimeout(() => {
-                                 isToggleTriggerCheckPause = false
-                             }, apiCheckTimeout)
+                        if (trigTog.length) { // check if the trigger exist
+                             if ((Number(data['cam_trigger_state']) !== Number(trigTog.prop('checked'))) && !isToggleTriggerCheckPause) {
+                                isToggleTriggerCheckPause = true
+                                trigTog.bootstrapToggle('toggle')
+                                console.log('Trigger state toggled by the check process')
+                                setTimeout(() => {
+                                     isToggleTriggerCheckPause = false
+                                 }, apiCheckTimeout)
+                             }
                         }
 
                         $("#selectStreamCamera option").each(function () {
