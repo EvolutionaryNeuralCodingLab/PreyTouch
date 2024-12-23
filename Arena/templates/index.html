@@ -208,8 +208,8 @@
                                 }
                             }
                         } else {
-                            $peripheryTog.bootstrapToggle('off')
                             $peripheryTog.bootstrapToggle('disable')
+                            $peripheryTog.bootstrapToggle('off')
                         }
                     }
                     // $("#nStrikes").text(`Today Strikes Count: ${(data['n_strikes']).toFixed(0)}`)
@@ -317,7 +317,7 @@
 
         for (let toggle of peripheryToggles) {
             $(`#toggle-${toggle}`).change(() => {
-                if (peripheryTogglesCheckPause[toggle]) {
+                if (peripheryTogglesCheckPause[toggle] || $(`#toggle-${toggle}`).prop('disabled')) {
                     return
                 }
                 peripheryTogglesCheckPause[toggle] = true
