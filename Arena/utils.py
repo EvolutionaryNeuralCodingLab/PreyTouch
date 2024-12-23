@@ -51,7 +51,7 @@ def turn_display_on(board='holes', is_test=False, logger=None):
             f'scripts/start_pogona_hunter.sh {board} {config.SCREEN_RESOLUTION} {screen} {config.SCREEN_DISPLACEMENT} --kiosk'
         ]
     if logger is not None:
-        logger.debug(f'Turning display {DISPLAY} on')
+        logger.info(f'Turning display {DISPLAY} on')
     return os.system(' && '.join(cmds))
 
 

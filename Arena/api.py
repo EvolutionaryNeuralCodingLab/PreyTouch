@@ -445,7 +445,7 @@ def display(state):
         stdout = turn_display_off(logger=arena_mgr.logger)
     else:
         stdout = turn_display_on(logger=arena_mgr.logger)
-    return Response(stdout)
+    return Response('ok')
 
 
 @app.route('/cameras_info')
