@@ -14,6 +14,7 @@ from db_models import ORM
 import config
 
 HEALTHCHECK_PREFIX = 'periphery_healthcheck_'
+TOGGLES_STATE_PREFIX = 'periphery_toggles_state_'
 HEALTHCHECK_TIMEOUT = 10
 
 
@@ -108,6 +109,19 @@ class PeripheryIntegrator:
                 res.append(port_name)
         return res
 
+    def check_toggles_states(self):
+        res = {}
+        for toggle in self.toggles:
+            value = self.cache.get(Column(f'{TOGGLES_STATE_PREFIX}{toggle}', bool, HEALTHCHECK_TIMEOUT))
+            if value is not None:
+                res[toggle] = value
+        return res
+
+    def send_toggles_healthcheck(self):
+        for toggle in self.toggles:
+            self.mqtt_publish(config.mqtt['publish_topic'], f'["get","{toggle}"]')
+            time.sleep(1)
+
     @property
     def toggles(self) -> list:
         return [k for k, dev in self.devices.items() if dev['type'] == 'line']
@@ -170,13 +184,19 @@ class ArenaListener(MQTTListener):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.cache = RedisCache()
-        self.hc_cache_columns = {}
+        self.toggles = self.load_toggles()
+
+    def load_toggles(self):
+        toggles = {}
+        periphery_config = config.load_configuration('periphery')
+        if periphery_config and config.ARENA_ARDUINO_NAME in periphery_config:
+            toggles = {d['name']: d for d in periphery_config[config.ARENA_ARDUINO_NAME]['interfaces'] if d['type'] == 'line'}
+        return toggles
 
     def on_message(self, client, userdata, msg):
         if msg.topic == 'arena/listening':
             port_name = msg.payload.decode('utf-8')
-            col = self.hc_cache_columns.setdefault(port_name, Column(f'{HEALTHCHECK_PREFIX}{port_name}', bool,
-                                                                     HEALTHCHECK_TIMEOUT))
+            col = Column(f'{HEALTHCHECK_PREFIX}{port_name}', bool, HEALTHCHECK_TIMEOUT)
             self.cache.set(col, True)
         else:
             super().on_message(client, userdata, msg)
@@ -191,6 +211,13 @@ class ArenaListener(MQTTListener):
                 payload = self.parse_temperature(name, value)
             elif name == 'Camera Trigger':
                 payload = self.parse_trigger_state(value)
+            elif name in self.toggles:
+                col = Column(f'{TOGGLES_STATE_PREFIX}{name}', bool, HEALTHCHECK_TIMEOUT)
+                value = bool(value)
+                if self.toggles[name].get('nc_toggle'):
+                    value = not value
+                self.cache.set(col, value)
+
         return payload
 
     @staticmethod
@@ -254,12 +281,12 @@ if __name__ == "__main__":
 
     e = threading.Event()
     listener = ArenaListener(is_debug=False, callback=hc_callback, is_loop_forever=True, stop_event=e)
-    listener.topics = ['arena/listening']
+    listener.topics = ['arena/value', 'arena/listening']
     t = threading.Thread(target=listener.loop)
     t.start()
 
     pi = PeripheryIntegrator()
-    pi
+    pi.send_toggles_healthcheck()
     # pi.mqtt_publish(config.mqtt['publish_topic'], f'["set","Camera Trigger",1]')
     # time.sleep(1)
     # pi.mqtt_publish(config.mqtt['publish_topic'], f'["get","Camera Trigger"]')

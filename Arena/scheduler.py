@@ -75,6 +75,7 @@ class Scheduler(threading.Thread):
                 self.check_camera_status()
                 self.set_tracking_cameras()
                 self.check_scheduled_experiments()
+                self.periphery.send_toggles_healthcheck()
                 self.arena_mgr.update_upcoming_schedules()
                 self.analyze_strikes()
                 self.dwh_commit()

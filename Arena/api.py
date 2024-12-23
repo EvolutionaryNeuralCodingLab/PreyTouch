@@ -88,6 +88,7 @@ def check():
     else:
         res['reward_left'] = periphery_mgr.get_feeders_counts()
         res['periphery_hc'] = ','.join(periphery_mgr.check_periphery_healthcheck())
+        res['periphery_toggles_state'] = periphery_mgr.check_toggles_states()
         res['streaming_camera'] = arena_mgr.get_streaming_camera()
         res['schedules'] = arena_mgr.schedules
 

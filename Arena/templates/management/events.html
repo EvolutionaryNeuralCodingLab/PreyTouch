@@ -3,14 +3,16 @@
     <h4 style="text-align: center;">Events</h4>
 
     {% for name in toggels %}
-        <div class="row mb-1" id="toggle-{{ name }}">
+        <div class="row mb-1" id="toggle-{{ name }}-div">
             <h7 class="col ml-2">{{ name }}:</h7>
-            <div class="col ml-5">
-                <button id="{{ name }}-on" type="button" class="btn btn-sm btn-primary">ON</button>
-            </div>
-            <div class="col ml-2">
-                <button id="{{ name }}-off" type="button" class="btn btn-sm btn-outline-danger">OFF</button>
-            </div>
+            <input id="toggle-{{ name }}" type="checkbox" checked data-toggle="toggle"
+                       data-onstyle="success" data-offstyle="danger" data-size="xs" data-height="25">
+{#            <div class="col ml-5">#}
+{#                <button id="{{ name }}-on" type="button" class="btn btn-sm btn-primary">ON</button>#}
+{#            </div>#}
+{#            <div class="col ml-2">#}
+{#                <button id="{{ name }}-off" type="button" class="btn btn-sm btn-outline-danger">OFF</button>#}
+{#            </div>#}
         </div>
     {% endfor %}
 
