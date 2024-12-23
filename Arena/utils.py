@@ -51,7 +51,7 @@ def turn_display_on(board='holes', is_test=False, logger=None):
             f'scripts/start_pogona_hunter.sh {board} {config.SCREEN_RESOLUTION} {screen} {config.SCREEN_DISPLACEMENT} --kiosk'
         ]
     if logger is not None:
-        logger.info(f'Turning display {DISPLAY} on')
+        logger.info(f'Turning display {config.APP_DISPLAY} on')
     return os.system(' && '.join(cmds))
 
 
@@ -66,7 +66,7 @@ def turn_display_off(app_only=False, logger=None):
             f'{DISPLAY} xinput disable {touch_device_id}',  # disable touch
         ]
     if logger is not None:
-        logger.debug(f'Turning display {DISPLAY} off')
+        logger.info(f'Turning display {config.APP_DISPLAY} off')
     return os.system(' && '.join(cmds))
 
 
