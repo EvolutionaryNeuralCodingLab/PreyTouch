@@ -90,6 +90,7 @@
         })
         const maxBlocks = Number("{{max_blocks}}")
         const cameras = "{{ cameras|join(',') }}".split(',')
+        const peripheryToggles = JSON.parse('{{ toggels|tojson|safe }}')
         const $numBlocks = $("#numBlocks")
         const apiCheckTimeout = 1000
         let currentStreamingCamera = null
@@ -100,6 +101,7 @@
         let isToggleCamsCheckPause = false
         let isToggleTriggerCheckPause = false
         let isToggleAgentCheckPause = false
+        let peripheryTogglesCheckPause = Object.fromEntries(peripheryToggles.map(x => [x, false]))
         let $agentTrig = $("#agent-active-toggle")
         let api_check = function () {
             $.ajax({
@@ -183,11 +185,32 @@
                     $("#currentBlockID").text(expName ? `Block ID: ${blockId}` : '')
                     $("#openAppHostDiv").text(openAppHost ? `pogona hunter run on: ${openAppHost}` : 'No APP is running')
 
+                    // periphery health-check
                     let perpHC = data['periphery_hc']
                     if (!perpHC) {
                         $("#peripheryInterfaces").text(`No periphery interfaces!`).css({'color': 'red'})
                     } else {
                         $("#peripheryInterfaces").text(`Periphery:${perpHC}`).css({'color': 'black'})
+                    }
+                    // periphery toggles state
+                    for (let toggle of peripheryToggles) {
+                        let $peripheryTog = $(`#toggle-${toggle}`)
+                        if (toggle in data['periphery_toggles_state']) {
+                            if (!peripheryTogglesCheckPause[toggle]) {
+                                $peripheryTog.bootstrapToggle('enable')
+                                let togState = Number($peripheryTog.prop('checked'))
+                                if (Number(data['periphery_toggles_state']) !== togState) {
+                                    peripheryTogglesCheckPause[toggle] = true
+                                    $peripheryTog.bootstrapToggle(togState ? 'on' : 'off')
+                                    setTimeout(() => {
+                                        peripheryTogglesCheckPause[toggle] = false
+                                    }, apiCheckTimeout)
+                                }
+                            }
+                        } else {
+                            $peripheryTog.bootstrapToggle('off')
+                            $peripheryTog.bootstrapToggle('disable')
+                        }
                     }
                     // $("#nStrikes").text(`Today Strikes Count: ${(data['n_strikes']).toFixed(0)}`)
                     // $("#nRewards").text(`Today Rewards Count: ${(data['n_rewards'])}`)
@@ -205,19 +228,19 @@
 
                     // agent active
                     if (!('agent_active' in data)) {
-                      $agentTrig.bootstrapToggle('off')
-                      $agentTrig.bootstrapToggle('disable')
+                        $agentTrig.bootstrapToggle('off')
+                        $agentTrig.bootstrapToggle('disable')
                     } else if (!isToggleAgentCheckPause) {
-                      let currentAgentState = Number($agentTrig.prop('checked'))
-                      if (currentAgentState !== Number(data['agent_active'])) {
-                        $agentTrig.bootstrapToggle('enable')
-                        let state = data['agent_active'] ? 'on' : 'off'
-                        isToggleAgentCheckPause = true
-                        $agentTrig.bootstrapToggle(state)
-                        setTimeout(() => {
-                             isToggleAgentCheckPause = false
-                         }, apiCheckTimeout)
-                      }
+                        let currentAgentState = Number($agentTrig.prop('checked'))
+                        if (currentAgentState !== Number(data['agent_active'])) {
+                            $agentTrig.bootstrapToggle('enable')
+                            let state = data['agent_active'] ? 'on' : 'off'
+                            isToggleAgentCheckPause = true
+                            $agentTrig.bootstrapToggle(state)
+                            setTimeout(() => {
+                                 isToggleAgentCheckPause = false
+                             }, apiCheckTimeout)
+                        }
                     }
 
                     for (let [val, label] of Object.entries(data['schedules'])) {
@@ -285,13 +308,28 @@
            }
            isToggleAgentCheckPause = true
            let requestedState = Number($agentTrig.prop('checked'))
-
            $.post('/set_hold_agent', {state: requestedState}).done(function () {
                setTimeout(() => {
                    isToggleAgentCheckPause = false
                }, apiCheckTimeout)
            })
         })
+
+        for (let toggle of peripheryToggles) {
+            $(`#toggle-${toggle}`).change(() => {
+                if (peripheryTogglesCheckPause[toggle]) {
+                    return
+                }
+                peripheryTogglesCheckPause[toggle] = true
+                let requestedState = Number($(`#toggle-${toggle}`).prop('checked'))
+                $.get(`/arena_switch/${toggle}/${requestedState}`).done(() => {
+                    setTimeout(() => {
+                        peripheryTogglesCheckPause[toggle] = false
+                    }, apiCheckTimeout)
+                })
+            })
+        }
+
 
         let $startExpButton = $('#startExperimentButton')
         let $recordButton = $("#runRecordButton")

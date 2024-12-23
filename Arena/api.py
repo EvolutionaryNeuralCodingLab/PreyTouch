@@ -433,7 +433,7 @@ def reward():
 def arena_switch(name, state):
     state = int(state)
     assert state in [0, 1], f'state must be 0 or 1; received {state}'
-    arena_mgr.logger.debug(f'Turn {name} {"on" if state == 1 else "off"}')
+    arena_mgr.logger.info(f'Turn {name} {"on" if state == 1 else "off"}')
     periphery_mgr.switch(name, state)
     return Response('ok')
 
