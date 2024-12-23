@@ -7,24 +7,15 @@
             <h7 class="col ml-2">{{ name }}:</h7>
             <input id="toggle-{{ name }}" type="checkbox" checked data-toggle="toggle"
                        data-onstyle="success" data-offstyle="danger" data-size="xs" data-height="25">
-{#            <div class="col ml-5">#}
-{#                <button id="{{ name }}-on" type="button" class="btn btn-sm btn-primary">ON</button>#}
-{#            </div>#}
-{#            <div class="col ml-2">#}
-{#                <button id="{{ name }}-off" type="button" class="btn btn-sm btn-outline-danger">OFF</button>#}
-{#            </div>#}
         </div>
     {% endfor %}
 
     <div class="row mb-1" id="display-div">
         <h7 class="col ml-2">Display:</h7>
-        <div class="col ml-5">
-            <button id="display_on" type="button" class="btn btn-sm btn-primary">ON</button>
-        </div>
-        <div class="col ml-2">
-            <button id="display_off" type="button" class="btn btn-sm btn-outline-danger">OFF</button>
-        </div>
+        <input id="display-toggle" type="checkbox" checked data-toggle="toggle"
+                       data-onstyle="success" data-offstyle="danger" data-size="xs" data-height="25">
     </div>
+
     <div class="row mb-1" id="media-event-div">
         <h7 class="col ml-2">Media:</h7>
         <div class="col ml-5">
@@ -36,6 +27,7 @@
             <button id="media_stop" type="button" class="btn btn-sm btn-outline-danger">OFF</button>
         </div>
     </div>
+
     <div class="row mb-1" id="bugs-event-div">
         <h7 class="col ml-2">Bugs:</h7>
         <div class="col ml-5">
@@ -213,24 +205,9 @@
 </div>
 
 <script>
-    {% for name in toggels %}
-        $("#{{ name }}-on").click(function (e) {
-            $.get('/arena_switch/{{ name }}/1')
-        })
-        $("#{{ name }}-off").click(function (e) {
-            $.get('/arena_switch/{{ name }}/0')
-        })
-    {% endfor %}
-
     $('#stim-datetimepicker1').datetimepicker({
             format: "DD/MM/YYYY HH:mm",
             todayHighlight: true
-    })
-    $("#display_on").click(function (e) {
-        $.get('/display/on')
-    })
-    $("#display_off").click(function (e) {
-        $.get('/display/off')
     })
 
     $("#openArenaConfig").click(() => {

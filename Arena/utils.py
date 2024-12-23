@@ -39,10 +39,10 @@ def turn_display_on(board='holes', is_test=False, logger=None):
     if not is_test:
         cmds = [
             'pkill chrome || true',  # kill all existing chrome processes
-            f'{DISPLAY} xrandr --output HDMI-0 --auto --right-of DP-0' +
+            f'{DISPLAY} xrandr --output {config.APP_DISPLAY} --auto --right-of DP-0' +
             (' --rotate inverted' if config.IS_SCREEN_INVERTED else ''),  # turn touch screen on
             f'{DISPLAY} xinput enable {touch_device_id}',  # enable touch
-            f'{DISPLAY} xinput map-to-output {touch_device_id} HDMI-0',
+            f'{DISPLAY} xinput map-to-output {touch_device_id} {config.APP_DISPLAY}',
             'sleep 1'
         ]
     # Pogona hunter
@@ -62,12 +62,24 @@ def turn_display_off(app_only=False, logger=None):
     cmds = ['pkill chrome || true']
     if not app_only:
         cmds = cmds + [
-            f'{DISPLAY} xrandr --output HDMI-0 --off',  # turn touchscreen off
+            f'{DISPLAY} xrandr --output {config.APP_DISPLAY} --off',  # turn touchscreen off
             f'{DISPLAY} xinput disable {touch_device_id}',  # disable touch
         ]
     if logger is not None:
         logger.debug(f'Turning display {DISPLAY} off')
     return os.system(' && '.join(cmds))
+
+
+def check_app_screen_state():
+    out = next(run_command(f'{DISPLAY} xrandr')).decode()
+    m = re.search(rf'{config.APP_DISPLAY} (\w+)', out)
+    if not m:
+        # return None if the screen is not connected
+        return None
+
+    out = next(run_command(f'{DISPLAY} xrandr --listmonitors')).decode()
+    # return bool for the screen state (on/off)
+    return config.APP_DISPLAY in out
 
 
 def get_hdmi_xinput_id():

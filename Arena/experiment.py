@@ -676,7 +676,7 @@ class ExperimentValidation:
         def _check_mapped():
             # if the matrix under "Coordinate Transformation Matrix" has values different from 0,1 - that means
             # that the mapping is working
-            cmd = f'DISPLAY=":0"  xinput list-props {touchscreen_device_id} | grep "Coordinate Transformation Matrix"'
+            cmd = f'DISPLAY="{config.APP_SCREEN}"  xinput list-props {touchscreen_device_id} | grep "Coordinate Transformation Matrix"'
             res = next(run_command(cmd)).decode()
             return any(z not in [0.0, 1.0] for z in [float(x) for x in re.findall(r'\d\.\d+', res)])
 
@@ -684,13 +684,13 @@ class ExperimentValidation:
             is_mapped = _check_mapped()
             if not is_mapped:
                 self.logger.info('Fixing mapping of touchscreen output')
-                cmd = f'DISPLAY="{config.APP_SCREEN}" xinput map-to-output {touchscreen_device_id} HDMI-0'
+                cmd = f'DISPLAY="{config.APP_SCREEN}" xinput map-to-output {touchscreen_device_id} {config.APP_DISPLAY}'
                 self.map_touchscreen_to_hdmi()
                 time.sleep(1)
                 is_mapped = _check_mapped()
                 if not is_mapped and not self.is_silent:
                     self.logger.error(
-                        f'Touch detection is not mapped to HDMI screen\nFix by running: {cmd}')
+                        f'Touch detection is not mapped to {config.APP_DISPLAY} screen\nFix by running: {cmd}')
             return is_mapped
         except Exception:
             if not self.is_silent:
@@ -698,7 +698,7 @@ class ExperimentValidation:
 
     def map_touchscreen_to_hdmi(self, is_display_on=False):
         touchscreen_device_id = self.get_touchscreen_device_id()
-        cmd = f'DISPLAY="{config.APP_SCREEN}" xinput map-to-output {touchscreen_device_id} HDMI-0'
+        cmd = f'DISPLAY="{config.APP_SCREEN}" xinput map-to-output {touchscreen_device_id} {config.APP_DISPLAY}'
         if not is_display_on:
             turn_display_on()
             time.sleep(5)

@@ -101,8 +101,10 @@
         let isToggleCamsCheckPause = false
         let isToggleTriggerCheckPause = false
         let isToggleAgentCheckPause = false
+        let isToggleDisplayCheckPause = false
         let peripheryTogglesCheckPause = Object.fromEntries(peripheryToggles.map(x => [x, false]))
         let $agentTrig = $("#agent-active-toggle")
+        let $displayToggle = $("#display-toggle")
         let api_check = function () {
             $.ajax({
                 url: '/check',
@@ -212,6 +214,7 @@
                             $peripheryTog.bootstrapToggle('off')
                         }
                     }
+
                     // $("#nStrikes").text(`Today Strikes Count: ${(data['n_strikes']).toFixed(0)}`)
                     // $("#nRewards").text(`Today Rewards Count: ${(data['n_rewards'])}`)
 
@@ -226,10 +229,27 @@
                         stopStreaming()
                     }
 
+                    // display toggle
+                    if (data['display_state'] === null) {
+                        $displayToggle.bootstrapToggle('disable')
+                        $displayToggle.bootstrapToggle('off')
+                    } else if (!isToggleDisplayCheckPause) {
+                        let currentDisplayState = Number($displayToggle.prop('checked'))
+                        if (currentDisplayState !== Number(data['display_state'])) {
+                            $displayToggle.bootstrapToggle('enable')
+                            let state = data['display_state'] ? 'on' : 'off'
+                            isToggleDisplayCheckPause = true
+                            $displayToggle.bootstrapToggle(state)
+                            setTimeout(() => {
+                                 isToggleDisplayCheckPause = false
+                             }, apiCheckTimeout)
+                        }
+                    }
+
                     // agent active
                     if (!('agent_active' in data)) {
-                        $agentTrig.bootstrapToggle('off')
                         $agentTrig.bootstrapToggle('disable')
+                        $agentTrig.bootstrapToggle('off')
                     } else if (!isToggleAgentCheckPause) {
                         let currentAgentState = Number($agentTrig.prop('checked'))
                         if (currentAgentState !== Number(data['agent_active'])) {
@@ -303,7 +323,7 @@
         }
 
         $agentTrig.change(() => {
-           if (isToggleAgentCheckPause) {
+           if (isToggleAgentCheckPause || $agentTrig.prop('disabled')) {
                return
            }
            isToggleAgentCheckPause = true
@@ -312,6 +332,19 @@
                setTimeout(() => {
                    isToggleAgentCheckPause = false
                }, apiCheckTimeout)
+           })
+        })
+
+        $displayToggle.change(() => {
+           if (isToggleDisplayCheckPause || $displayToggle.prop('disabled')) {
+               return
+           }
+           isToggleDisplayCheckPause = true
+           let requestedState = $displayToggle.prop('checked') ? 'on' : 'off'
+           $.get(`/display/${requestedState}`).done(() => {
+                setTimeout(() => {
+                  isToggleDisplayCheckPause = false
+                }, apiCheckTimeout)
            })
         })
 
