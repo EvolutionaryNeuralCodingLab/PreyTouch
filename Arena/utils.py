@@ -73,7 +73,7 @@ def turn_display_off(app_only=False, logger=None):
 def check_app_screen_state():
     out = next(run_command(f'{DISPLAY} xrandr')).decode()
     m = re.search(rf'{config.APP_DISPLAY} (\w+)', out)
-    if not m:
+    if not m or m.group(1) != 'connected':
         # return None if the screen is not connected
         return None
 
