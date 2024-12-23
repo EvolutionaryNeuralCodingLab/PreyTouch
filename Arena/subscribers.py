@@ -269,7 +269,9 @@ class TemperatureLogger(Subscriber):
     def run(self):
         def callback(payload):
             if payload is not None:
-                self.commit_to_db(payload)
+                payload = {name: d for name, d in payload.items() if name in config.mqtt['temperature_sensors']}
+                if payload:
+                    self.commit_to_db(payload)
             # self.cache.publish(config.subscription_topics['temperature'], payload)
 
         try:
