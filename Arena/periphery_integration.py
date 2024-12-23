@@ -16,6 +16,7 @@ import config
 HEALTHCHECK_PREFIX = 'periphery_healthcheck_'
 TOGGLES_STATE_PREFIX = 'periphery_toggles_state_'
 HEALTHCHECK_TIMEOUT = 10
+TOGGLES_STATE_TIMEOUT = 120
 
 
 class PeripheryIntegrator:
@@ -112,7 +113,7 @@ class PeripheryIntegrator:
     def check_toggles_states(self):
         res = {}
         for toggle in self.toggles:
-            value = self.cache.get(Column(f'{TOGGLES_STATE_PREFIX}{toggle}', bool, HEALTHCHECK_TIMEOUT))
+            value = self.cache.get(Column(f'{TOGGLES_STATE_PREFIX}{toggle}', bool, TOGGLES_STATE_TIMEOUT))
             if value is not None:
                 res[toggle] = value
         return res
@@ -214,7 +215,7 @@ class ArenaListener(MQTTListener):
             elif name == 'Camera Trigger':
                 self.parse_trigger_state(value)
             elif name in self.toggles:
-                col = Column(f'{TOGGLES_STATE_PREFIX}{name}', bool, HEALTHCHECK_TIMEOUT)
+                col = Column(f'{TOGGLES_STATE_PREFIX}{name}', bool, TOGGLES_STATE_TIMEOUT)
                 value = bool(value)
                 if self.toggles[name].get('nc_toggle'):
                     value = not value
