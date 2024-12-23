@@ -186,7 +186,8 @@ class ArenaListener(MQTTListener):
         self.cache = RedisCache()
         self.toggles = self.load_toggles()
 
-    def load_toggles(self):
+    @staticmethod
+    def load_toggles():
         toggles = {}
         periphery_config = config.load_configuration('periphery')
         if periphery_config and config.ARENA_ARDUINO_NAME in periphery_config:
@@ -206,11 +207,12 @@ class ArenaListener(MQTTListener):
         if not isinstance(payload, dict):
             return payload
 
+        return_payload = {}
         for name, value in payload.items():
             if name in config.mqtt['temperature_sensors']:
-                payload = self.parse_temperature(name, value)
+                return_payload = self.parse_temperature(name, value)
             elif name == 'Camera Trigger':
-                payload = self.parse_trigger_state(value)
+                self.parse_trigger_state(value)
             elif name in self.toggles:
                 col = Column(f'{TOGGLES_STATE_PREFIX}{name}', bool, HEALTHCHECK_TIMEOUT)
                 value = bool(value)
@@ -218,7 +220,7 @@ class ArenaListener(MQTTListener):
                     value = not value
                 self.cache.set(col, value)
 
-        return payload
+        return return_payload
 
     @staticmethod
     def parse_temperature(name, data):
