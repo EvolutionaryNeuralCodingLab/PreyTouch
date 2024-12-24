@@ -185,8 +185,7 @@ CHECK_ENGAGEMENT_HOURS = env.int('CHECK_ENGAGEMENT_SPAN', 0, group='Experiments'
 RANDOM_LOW_HORIZONTAL_MAX_STRIKES = env.int('RANDOM_LOW_HORIZONTAL_MAX_STRIKES', 30, group='Experiments', desc='Max number of strikes per bug speed in random_low_horizontal movement')
 CACHED_EXPERIMENTS_DIR = env('CACHED_EXPERIMENTS_DIR', 'cached_experiments', group='Experiments', desc='Folder name in the main Arena folder to store saved experiments')
 experiment_types = {
-    'bugs': ['reward_type', 'bug_types', 'reward_bugs', 'bug_speed', 'movement_type', 'time_between_bugs',
-             'is_anticlockwise' 'target_drift', 'background_color', 'exit_hole_position'],
+    'bugs': ['bug_types', 'reward_bugs', 'bug_speed', 'movement_type', 'exit_hole'],
     'media': ['media_url'],
     'blank': ['blank_rec_type'],
     'psycho': ['psycho_file']

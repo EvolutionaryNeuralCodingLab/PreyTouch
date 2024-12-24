@@ -235,7 +235,6 @@ const blockFields = {
     notes: new FieldObject('block-notes', Field)
   },
   bugs: {
-    reward_type: new FieldObject('rewardTypeSelect', Field),
     bug_speed: new FieldObject('bugSpeed', NumericalField),
     movement_type: new FieldObject('movementTypeSelect', Field),
     is_default_bug_size: new FieldObject('isDefaultBugSize', CheckField),

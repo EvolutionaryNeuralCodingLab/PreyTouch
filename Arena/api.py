@@ -80,7 +80,7 @@ def check():
     res['temperature'] = json.loads(cache.get(cc.TEMPERATURE) or "{}")
     res['cached_experiments'] = sorted([c.stem for c in Path(config.CACHED_EXPERIMENTS_DIR).glob('*.json')])
     res['cam_trigger_state'] = cache.get(cc.CAM_TRIGGER_STATE)
-    res['display_state'] = utils.check_app_screen_state()
+    res['display_state'] = utils.check_app_screen_state() if not config.DISABLE_APP_SCREEN else None
     if config.IS_AGENT_ENABLED:
         res['agent_active'] = not cache.get(cc.HOLD_AGENT)
 

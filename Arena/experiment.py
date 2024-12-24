@@ -201,6 +201,7 @@ class Block:
     cam_units: dict
     orm: ORM
     cache: RedisCache
+    periphery: PeripheryIntegrator = None
     extra_time_recording: int = config.EXTRA_TIME_RECORDING
     start_time = None
     bug_types: list = field(default_factory=list)
@@ -208,12 +209,16 @@ class Block:
     trial_duration: int = 10
     iti: int = 10
     notes: str = ''
-    block_type: str = 'bugs'
+    background_color: str = ''
+    block_type: str = 'bugs'  # options: 'bugs', 'blank', 'media', 'psycho'
+
+    movement_type: str = None
     bug_speed: [int, list] = None
     bug_size: int = None
     holes_height_scale: float = 0.1
     circle_height_scale: float = 0.5
     circle_radius_scale: float = 0.2
+    time_between_bugs: int = None
     is_default_bug_size: bool = True
     exit_hole: str = None
     reward_type: str = 'always'
@@ -225,14 +230,7 @@ class Block:
     psycho_file: str = ''
     psycho_proc_pid: int = None
 
-    blank_rec_type: str = 'trials'
-    movement_type: str = None
-    is_anticlockwise: bool = False
-    target_drift: str = ''
-    bug_height: int = None
-    time_between_bugs: int = None
-    background_color: str = ''
-    periphery: PeripheryIntegrator = None
+    blank_rec_type: str = 'trials'  # options: 'trials', 'continuous'
 
     def __post_init__(self):
         self.logger = get_logger(f'{self.experiment_name}-Block {self.block_id}')
@@ -548,8 +546,6 @@ class Block:
             'bugTypes': self.bug_types,
             'rewardBugs': self.reward_bugs,
             'movementType': self.movement_type,
-            'timeBetweenBugs': self.time_between_bugs,
-            'isStopOnReward': self.is_always_reward,
             'isLogTrajectory': True,
             'bugSize': self.bug_size,
             'backgroundColor': self.background_color,
@@ -807,8 +803,6 @@ def start_trial():
         'bugTypes': ['cockroach'],
         'rewardBugs': [],
         'movementType': args.movement_type,
-        # 'timeBetweenBugs': self.time_between_bugs,
-        # 'isStopOnReward': self.is_always_reward,
         'isLogTrajectory': True,
         # 'bugSize': self.bug_size,
         # 'backgroundColor': self.background_color,

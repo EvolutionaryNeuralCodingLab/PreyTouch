@@ -39,12 +39,6 @@
         </div>
 
         <div class="row">
-          <label for="time-between-bugs">Time Between Bugs: </label>
-          <input v-model.number="bugSettings.timeBetweenBugs" id="time-between-bugs" type="number"
-                 style="width: 4em">
-        </div>
-
-        <div class="row">
           <label for="blood-duration">Blood Duration: </label>
           <input v-model.number="bugSettings.bloodDuration" id="blood-duration" type="number" style="width: 4em">
         </div>
