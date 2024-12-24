@@ -45,6 +45,8 @@ class PeripheryIntegrator:
         if self.devices[name].get('nc_toggle'):
             state = int(not state)
         self.mqtt_publish(config.mqtt['publish_topic'], f'["set","{name}",{state}]')
+        time.sleep(1)
+        self.mqtt_publish(config.mqtt['publish_topic'], f'["get","{name}"]')
 
     def cam_trigger(self, state):
         assert state in [0, 1]

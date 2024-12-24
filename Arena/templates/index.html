@@ -201,9 +201,10 @@
                             if (!peripheryTogglesCheckPause[toggle]) {
                                 $peripheryTog.bootstrapToggle('enable')
                                 let togState = Number($peripheryTog.prop('checked'))
-                                if (Number(data['periphery_toggles_state']) !== togState) {
+                                let actualState = Number(data['periphery_toggles_state'][toggle])
+                                if (actualState !== togState) {
                                     peripheryTogglesCheckPause[toggle] = true
-                                    $peripheryTog.bootstrapToggle(togState ? 'on' : 'off')
+                                    $peripheryTog.bootstrapToggle(actualState ? 'on' : 'off')
                                     setTimeout(() => {
                                         peripheryTogglesCheckPause[toggle] = false
                                     }, apiCheckTimeout)
@@ -355,10 +356,12 @@
                 }
                 peripheryTogglesCheckPause[toggle] = true
                 let requestedState = Number($(`#toggle-${toggle}`).prop('checked'))
+                $(`#toggle-${toggle}`).bootstrapToggle('disable')
                 $.get(`/arena_switch/${toggle}/${requestedState}`).done(() => {
                     setTimeout(() => {
+                        $(`#toggle-${toggle}`).bootstrapToggle('enable')
                         peripheryTogglesCheckPause[toggle] = false
-                    }, apiCheckTimeout)
+                    }, 5000)
                 })
             })
         }
