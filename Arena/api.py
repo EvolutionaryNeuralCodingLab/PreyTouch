@@ -48,10 +48,11 @@ def index():
         app_config = json.load(f)
     if arena_mgr is None:
         cameras = list(config.cameras.keys())
-        is_cam_trigger = False
+        is_cam_trigger, summary_animal_ids = False, []
     else:
         cameras = list(arena_mgr.units.keys())
         is_cam_trigger = arena_mgr.is_cam_trigger_setup()
+        summary_animal_ids = arena_mgr.orm.get_animal_ids_for_summary()
 
     if config.IS_ANALYSIS_ONLY:
         toggels, feeders, cameras = [], [], []
@@ -67,6 +68,7 @@ def index():
                            max_blocks=config.api_max_blocks_to_show, toggels=toggels, psycho_files=get_psycho_files(),
                            extra_time_recording=config.EXTRA_TIME_RECORDING, feeders=feeders, configurations=confs,
                            is_light_stim=config.LIGHT_STIM_SERIAL is not None, is_cam_trigger=is_cam_trigger,
+                           summary_animal_ids=summary_animal_ids,
                            acquire_stop={'num_frames': 'Num Frames', 'rec_time': 'Record Time [sec]'})
 
 
@@ -225,23 +227,31 @@ def get_current_animal():
     return jsonify(animal_dict)
 
 
-@app.route('/animal_today_summary', methods=['GET'])
-def animal_today_summary():
+@app.route('/animal_day_summary', methods=['POST'])
+def animal_day_summary():
     if config.DISABLE_DB or config.IS_ANALYSIS_ONLY:
         return Response('Unable to load animal summary since DB is disabled')
+
+    data = request.form
+    today_str = datetime.today().strftime('%Y-%m-%d')
     try:
-        animal_id = cache.get(cc.CURRENT_ANIMAL_ID)
-        strike_df = arena_mgr.orm.get_today_strikes()
-        rewards_counts = arena_mgr.orm.get_today_rewards()
-        text = f'Animal ID: {animal_id}\n'
-        text += f'Total Strikes Today: {len(strike_df)}\n'
-        text += f'Today Rewards: {rewards_counts["auto"]} (manual: {rewards_counts["manual"]})\n\n'
+        animal_id, day = data.get('animal_id', cache.get(cc.CURRENT_ANIMAL_ID)), data.get('day', today_str)
+        strike_df = arena_mgr.orm.get_strikes_for_day(day, animal_id)
+        tr_df = arena_mgr.orm.get_trials_for_day(day, animal_id)
+        rewards_counts = arena_mgr.orm.get_rewards_for_day(day, animal_id)
+        text = f'\n<div><b>Animal ID:</b> {animal_id}, <b>Day:</b> {day}</div>'
+        text += f'<div><b>Total Trials:</b> {len(tr_df)}</div>'
+        text += f'<div><b>Total Strikes:</b> {len(strike_df)}</div>'
+        text += f'<div><b>Total Rewards:</b> {rewards_counts["auto"]} (manual: {rewards_counts["manual"]})</div>'
         if not strike_df.empty:
-            text += f'Today Strikes:\n\n{strike_df.to_string(index=False)}\n\n'
-        if config.IS_AGENT_ENABLED:
+            text += f'<h5 class="mt-3">Strikes:</h5>{utils.format_strikes_df(strike_df)}'
+        if not tr_df.empty:
+            text += f'<h5 class="mt-3">Trials:</h5>{utils.format_trials_df(tr_df)}'
+        # in case the chosen day is today, show also the current agent summary
+        if config.IS_AGENT_ENABLED and day == today_str:
             ag = Agent()
             ag.update()
-            text += f'Agent Summary:\n{ag.get_animal_history()}'
+            text += f'<h5 class="mt-3">Agent Summary:</h5>{ag.get_animal_history()}'
         return Response(text)
     except Exception as e:
         arena_mgr.logger.exception(e)

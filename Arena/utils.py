@@ -346,6 +346,41 @@ def send_telegram_message(message: str):
     return response
 
 
+def format_strikes_df(strike_df):
+    def highlight(s):
+        if s.is_climbing:
+            return ['background-color: #7E587E'] * len(s)  # viola purple
+        if s.is_hit:
+            return ['background-color: #DBF9DB'] * len(s)  # light rose green
+        else:
+            return ['background-color: #F8B88B'] * len(s)  # pastel orange
+
+    strk_html = strike_df.style.format({
+        'time': lambda x: x.strftime('%H:%M:%S') if not pd.isna(x) else 'NaT'
+    }, precision=0).set_table_styles([
+        {'selector': 'td', 'props': [('border-style', 'solid'), ('border-width', '1px')]},
+        {'selector': 'th', 'props': [('text-align', 'center'), ('border-style', 'solid'), ('border-width', '1px')]}
+    ]).set_properties(**{'text-align': 'center'}).hide(axis='index').apply(highlight, axis=1).to_html()
+    return strk_html
+
+
+def format_trials_df(tr_df):
+    def highlight(s):
+        if s.n_strikes > 0:
+            return ['background-color: #FFFFE0'] * len(s)  # viola purple
+        else:
+            return ['background-color: white'] * len(s)
+
+    tr_html = tr_df.set_index(['block_id', 'id']).style.format({
+        'start_time': lambda x: x.strftime('%H:%M:%S') if not pd.isna(x) else 'NaT',
+        'end_time': lambda x: x.strftime('%H:%M:%S') if not pd.isna(x) else 'NaT'
+    }, precision=0).set_table_styles([
+        {'selector': 'td', 'props': [('border-style', 'solid'), ('border-width', '1px')]},
+        {'selector': 'th', 'props': [('text-align', 'center'), ('border-style', 'solid'), ('border-width', '1px')]}
+    ]).set_properties(**{'text-align': 'center'}).apply(highlight, axis=1).to_html()
+    return tr_html
+
+
 def timeit(func):
     from time import time
     @wraps(func)

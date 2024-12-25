@@ -1,0 +1,64 @@
+<!-- Animal Summary Modal -->
+<div class="modal fade" id="animalSummaryModal" tabindex="-1" role="dialog"
+     aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Animal Summary</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+
+            <div class="modal-body">
+                <div class="row m-1">
+                    <label for="animalIdsForSummarySelect">Animal ID</label>
+                    <select id="animalIdsForSummarySelect" style="margin-left: 0.5em" autocomplete="off">
+                        {% for animal_id in summary_animal_ids.keys() %}
+                            <option value="{{ animal_id }}">{{ animal_id }}</option>
+                        {% endfor %}
+                    </select>
+
+                    <label for="dateForSummarySelect" style="margin-left: 1em">Day</label>
+                    <select id="dateForSummarySelect" style="margin-left: 0.5em">
+                    </select>
+
+                    <button id="updateAnimalSummary" type="button" class="btn btn-sm btn-outline-primary"
+                            style="margin-left: 1em">Update</button>
+                </div>
+
+                <pre id="animalSummaryText" class="mt-2"></pre>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<script>
+    let animalIdsSummaryData = JSON.parse('{{ summary_animal_ids|tojson|safe }}')
+
+    $("#animalIdsForSummarySelect").change(() => {
+        let selectedAnimal = $("#animalIdsForSummarySelect").val()
+        $(`#dateForSummarySelect option`).remove()
+        let $el = $("#dateForSummarySelect")
+        $.each(animalIdsSummaryData[selectedAnimal], (i, day) => {
+            $el.append($("<option></option>").attr("value", day).text(day))
+        })
+    }).trigger('change')
+
+    $("#updateAnimalSummary").click(() => {
+        $.post('/animal_day_summary', {
+            animal_id: $("#animalIdsForSummarySelect").val(),
+            day: $("#dateForSummarySelect").val()
+        }).done((data) => {
+            $("#animalSummaryText").html(data)
+        }).fail((data) => {
+          $("#animalSummaryText").text(data.responseText)
+      })
+    })
+
+</script>

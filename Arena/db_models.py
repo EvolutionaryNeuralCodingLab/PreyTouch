@@ -7,7 +7,8 @@ from tqdm.auto import tqdm
 from functools import wraps
 import numpy as np
 from datetime import datetime, timedelta, date
-from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, Boolean, create_engine, cast, Date, and_, desc, func, alias
+from sqlalchemy import (Column, Integer, String, DateTime, Float, ForeignKey, Boolean, create_engine, cast, Date, and_,
+                        desc, func, alias, not_)
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from sqlalchemy_utils import database_exists, create_database
 from sqlalchemy.dialects.postgresql import JSON
@@ -577,25 +578,101 @@ class ORM:
             s.add(rwd)
             s.commit()
 
-    def get_today_rewards(self, animal_id=None) -> dict:
+    @staticmethod
+    def _parse_day_string(day_string):
+        if day_string is None:
+            day = date.today()
+        else:
+            day = datetime.strptime(day_string, '%Y-%m-%d').date()
+        return day
+
+    def get_rewards_for_day(self, day_string=None, animal_id=None) -> dict:
+        """
+        @param day_string: string format="%Y-%m-%d", if None use today.
+        @param animal_id: string of animal_id
+        @return: dict with 'manual' and 'auto' counts
+        """
+        day = self._parse_day_string(day_string)
         with self.session() as s:
-            rewards = s.query(Reward).filter(and_(cast(Reward.time, Date) == date.today(),
+            rewards = s.query(Reward).filter(and_(cast(Reward.time, Date) == day,
                                                   Reward.arena == config.ARENA_NAME))
             if animal_id:
                 rewards = rewards.filter_by(animal_id=animal_id)
         return {'manual': rewards.filter_by(is_manual=True).count(),
                 'auto': rewards.filter_by(is_manual=False).count()}
 
-    def get_today_strikes(self, animal_id=None) -> pd.DataFrame:
+    def get_strikes_for_day(self, day_string=None, animal_id=None) -> pd.DataFrame:
+        day = self._parse_day_string(day_string)
+        filters = [cast(Strike.time, Date) == day,
+                   not_(Experiment.animal_id.ilike('%test%'))]
+        if animal_id:
+            filters.append(Experiment.animal_id == animal_id)
+        cols = ['id', 'time', 'is_hit', 'bug_type', 'movement_type', 'bug_speed',  'x', 'y', 'bug_x', 'bug_y', 'bug_size',
+                'in_block_trial_id', 'is_climbing', 'block_id', 'trial_id', 'video_id', 'analysis_error']
+        df = []
         with self.session() as s:
-            strks = s.query(Strike).filter(and_(cast(Strike.time, Date) == date.today(),
-                                                  Strike.arena == config.ARENA_NAME))
-            if animal_id:
-                strks = strks.filter_by(animal_id=animal_id)
+            orm_res = s.query(Strike, Block, Experiment).join(
+                Block, Block.id == Strike.block_id).join(
+                Experiment, Experiment.id == Block.experiment_id).filter(*filters).all()
+            for strk, blk, exp in orm_res:
+                d = {c: strk.__dict__.get(c) if c in strk.__dict__ else blk.__dict__.get(c) for c in cols}
+                df.append(d)
+            df = pd.DataFrame(df)
+        return df
 
-        cols = ['id', 'time', 'is_hit', 'bug_type', 'x', 'y', 'bug_x', 'bug_y', 'bug_size', 'in_block_trial_id',
-                'is_climbing', 'analysis_error', 'block_id', 'trial_id', 'video_id']
-        return pd.DataFrame([{c: strk.__dict__.get(c) for c in cols} for strk in strks.all()])
+    def get_trials_for_day(self, day_string=None, animal_id=None) -> pd.DataFrame:
+        day = self._parse_day_string(day_string)
+        filters = [cast(Trial.start_time, Date) == day,
+                   not_(Experiment.animal_id.ilike('%test%'))]
+        if animal_id:
+            filters.append(Experiment.animal_id == animal_id)
+        cols = ['id', 'start_time', 'end_time', 'duration', 'movement_type', 'bug_speed', 'exit_hole', 'trial_bugs',
+                'block_id', 'in_block_trial_id']
+        df = []
+        with self.session() as s:
+            orm_res = s.query(Trial, Block, Experiment).join(
+                Block, Block.id == Trial.block_id).join(
+                Experiment, Experiment.id == Block.experiment_id).filter(*filters).all()
+            for tr, blk, exp in orm_res:
+                d = {c: tr.__dict__.get(c) if c in tr.__dict__ else blk.__dict__.get(c) for c in cols}
+                d['n_strikes'] = len(tr.strikes)
+                df.append(d)
+        df = pd.DataFrame(df)
+        if not df.empty:
+            df = df.sort_values(by='start_time')
+        return df
+
+    def get_animal_ids_for_summary(self) -> dict:
+        """return dict with animal ids that had experiments as keys, and an experiment days list as values """
+        res = []
+        current_animal_id = self.cache.get(cc.CURRENT_ANIMAL_ID)
+        with self.session() as s:
+            orm_res = s.query(Block, Experiment).join(
+                Experiment, Experiment.id == Block.experiment_id).filter(
+                Block.block_type == 'bugs',
+                not_(Experiment.animal_id.ilike('%test%'))
+            ).all()
+
+            if not orm_res:
+                return {}
+
+            for blk, exp in orm_res:
+                res.append({'block_id': blk.id, 'date': exp.start_time, 'animal_id': exp.animal_id})
+
+            res = pd.DataFrame(res)
+            res['exp_day'] = res.date.dt.strftime('%Y-%m-%d')
+
+        res = res.groupby('animal_id').exp_day.apply(lambda x: sorted(np.unique(x), reverse=True)).to_dict()
+        today = date.today().strftime('%Y-%m-%d')
+        if current_animal_id in res.keys():
+            days = res.pop(current_animal_id)
+            if today not in days:
+                days = [today] + days
+        else:
+            days = [today]
+        d = {current_animal_id: days}
+        d.update(res)
+        return d
 
     def today_summary(self):
         summary = {}
@@ -615,7 +692,7 @@ class ORM:
                         else:
                             block_dict['misses'] += 1
         for animal_id, d in summary.items():
-            rewards_dict = self.get_today_rewards(animal_id)
+            rewards_dict = self.get_rewards_for_day(animal_id=animal_id)
             d['total_rewards'] = f'{rewards_dict["auto"]} ({rewards_dict["manual"]})'
         return summary
 
