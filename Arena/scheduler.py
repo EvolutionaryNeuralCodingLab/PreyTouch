@@ -59,8 +59,8 @@ class Scheduler(threading.Thread):
         self.tracking_pose_on = multiprocessing.Event()
         self.compress_threads = {}
         self.current_animal_id = None
-        self.lights_state = 0  # 0 - off, 1 - on
         self.dwh_commit_tries = 0
+        self.start_lights()
 
     def run(self):
         time.sleep(10)  # let all other arena processes and threads to start
@@ -107,6 +107,16 @@ class Scheduler(threading.Thread):
         self.periphery.switch(name, state)
         self.logger.info(f'turn {name} {"on" if state else "off"}')
 
+    def start_lights(self):
+        """function to run only when scheduler is initiated to match lightning to expected lighting conditions"""
+        if self.is_in_range((TIME_TABLE['lights_sunrise'], TIME_TABLE['lights_sunset'])):
+            self.turn_light(config.IR_LIGHT_NAME, 0)
+            self.turn_light(config.DAY_LIGHT_NAME, 1)
+        else:
+            self.turn_light(config.IR_LIGHT_NAME, 1)
+            self.turn_light(config.DAY_LIGHT_NAME, 0)
+
+
     @schedule_method
     def check_scheduled_experiments(self):
         """Check if a scheduled experiment needs to be executed and run it"""
@@ -152,7 +162,10 @@ class Scheduler(threading.Thread):
     @staticmethod
     def is_in_range(label):
         now = datetime.now()
-        val = TIME_TABLE[label]
+        if isinstance(label, str):
+            val = TIME_TABLE[label]
+        else:
+            val = label
         if isinstance(val, tuple):
             start, end = [datetime.combine(now, datetime.strptime(t, '%H:%M').time()) for t in val]
         elif isinstance(val, str):

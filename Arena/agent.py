@@ -41,6 +41,8 @@ class Agent:
             return
         self.init_history()
         self.load_history()
+        if self.cache.get(cc.HOLD_AGENT):  # stop here if agent is on hold
+            return
         self.next_trial_name = self.get_next_trial_name()
         if not self.next_trial_name:
             # all experiments are over
