@@ -1,4 +1,5 @@
 import time
+from pprint import pprint
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -21,12 +22,12 @@ class MissingStrikeData(Exception):
 
 
 class Loader:
-    def __init__(self, db_id, cam_name, is_load_pose=True, is_use_db=True, is_debug=True, orm=None,
+    def __init__(self, db_id, cam_name, raise_no_pose=False, is_use_db=True, is_debug=True, orm=None,
                  sec_before=3, sec_after=2, is_dwh=False, is_trial=False):
         self.db_id = db_id
         self.is_trial = is_trial
         self.cam_name = cam_name
-        self.is_load_pose = is_load_pose
+        self.raise_no_pose = raise_no_pose  # raise exception if no pose data found
         self.is_use_db = is_use_db
         self.is_debug = is_debug
         self.sec_before = sec_before
@@ -38,8 +39,8 @@ class Loader:
         self.n_frames_forward = None
         self.bug_traj_strike_id = None
         self.bug_traj_before_strike = None
+        self.relevant_video_frames = (None, None)
         self.strike_frame_id = None
-        self.trial_frames_ids = (None, None)
         self.video_path = None
         self.arena_name = None
         self.avg_temperature = None
@@ -104,54 +105,55 @@ class Loader:
     def load_frames_data(self, s, trial, strk):
         block = s.query(Block).filter_by(id=trial.block_id).first()
         self.update_info_with_block_data(block)
-        for vid in block.videos:
-            if vid.cam_name != self.cam_name:
-                continue
 
+        cam_vids = [vid for vid in block.videos if vid.cam_name == self.cam_name]
+        if not cam_vids:
+            raise MissingStrikeData(f'No {self.cam_name} camera videos were found in DB for block {block.id}')
+
+        errors = {}
+        for vid in cam_vids:
             frames_times = self.load_frames_times(vid)
-            # check whether strike's time is in the loaded frames_times
-            if not frames_times.empty and \
-                    (self.is_trial or (frames_times.iloc[0].time <= strk.time <= frames_times.iloc[-1].time)):
-                # if load pose isn't needed finish here
-                if not self.is_trial:
-                    self.strike_frame_id = (strk.time - frames_times.time).dt.total_seconds().abs().idxmin()
-                else:
-                    times = [self.traj_df['time'].iloc[i] for i in [0, -1]]
-                    self.trial_frames_ids = [(t - frames_times.time).dt.total_seconds().abs().idxmin() for t in times]
-                # if not self.is_use_db:
-                self.set_video_path(vid)
-
-                if not self.is_load_pose:
-                    self.frames_df = frames_times
-                # otherwise, load all pose data around strike frame
-                else:
-                    try:
-                        self.load_pose(vid)
-                    except Exception as exc:
-                        raise MissingStrikeData(str(exc))
-                # break since the relevant video was found
-                break
-            # if strike's time not in frames_times continue to the next video
-            else:
+            if frames_times.empty:
+                errors[Path(vid.path).stem] = 'frame times not found'
                 continue
+            # in strike mode use the strike time, in trial mode use the mid-trial time, and check if this time
+            # is included in this video's frame times.
+            center_time = self.traj_df.time.iloc[len(self.traj_df) // 2] if self.is_trial else strk.time
+            if not (frames_times.iloc[0].time <= center_time <= frames_times.iloc[-1].time):
+                errors[Path(vid.path).stem] = 'center frame is not in the video'
+                continue
+
+            if self.is_trial:  # in trials, relevant frames are taken from trajectory times
+                times = [self.traj_df['time'].iloc[i] for i in [0, -1]]
+                self.relevant_video_frames = [(t - frames_times.time).dt.total_seconds().abs().idxmin() for t in times]
+            else:  # in strikes, relevant frames are calculated using strike frame with sec_before and sec_after
+                self.strike_frame_id = (strk.time - frames_times.time).dt.total_seconds().abs().idxmin()
+                self.relevant_video_frames = [max(self.strike_frame_id - self.n_frames_back, frames_times.index[0]),
+                                              min(self.strike_frame_id + self.n_frames_forward, frames_times.index[-1])]
+
+            self.set_video_path(vid)  # save video path
+            frames_df = frames_times
+            try:
+                frames_df = self.load_pose(vid)
+            except Exception as exc:
+                errors[Path(vid.path).stem] = f'load pose failed; {exc}'
+                if self.raise_no_pose:
+                    raise Exception('loader failed since no pose found and raise_no_pose=True')
+
+            first_frame, last_frame = self.relevant_video_frames
+            self.frames_df = frames_df.loc[first_frame:last_frame].copy()
+            self.frames_df['time'] = pd.to_datetime(self.frames_df.time, unit='s')
+            # break since the relevant video was found
+            break
 
         if self.frames_df.empty:
+            if self.is_debug:
+                print(f'Frames load failed:')
+                pprint(errors)
             raise MissingStrikeData('frames_df is empty after loading')
 
     def load_pose(self, vid):
-        if not self.is_use_db:
-            pose_df = self.dlc_pose.load(video_path=self.video_path, only_load=True)
-        else:
-            pose_df = self.dlc_pose.load(video_db_id=vid.id)
-
-        if not self.is_trial:
-            first_frame = max(self.strike_frame_id - self.n_frames_back, pose_df.index[0])
-            last_frame = min(self.strike_frame_id + self.n_frames_forward, pose_df.index[-1])
-        else:
-            first_frame, last_frame = self.trial_frames_ids
-
-        self.frames_df = pose_df.loc[first_frame:last_frame].copy()
-        self.frames_df['time'] = pd.to_datetime(self.frames_df.time, unit='s')
+        return self.dlc_pose.load(video_db_id=vid.id, video_path=self.video_path, only_load=True)
 
     def set_video_path(self, vid):
         video_path = Path(vid.path).resolve()
@@ -206,21 +208,26 @@ class Loader:
             yield i, frame
         cap.release()
 
-    def gen_frames_around_strike(self, cam_name=None, n_frames_back=None, n_frames_forward=None, center_frame=None, step=1):
-        if self.is_trial:
-            frame_ids = [i for i in range(*self.trial_frames_ids, step)]
-        else:
-            n_frames_back, n_frames_forward = n_frames_back or self.n_frames_back, n_frames_forward or self.n_frames_forward
-            center_frame = center_frame or self.strike_frame_id
-            start_frame = center_frame - (n_frames_back * step)
-            frame_ids = [i for i in range(start_frame, start_frame + step * (n_frames_back + n_frames_forward), step)]
-    
+    def gen_frames_around(self, start_frame=None, end_frame=None, cam_name=None, step=1):
+        start_frame = start_frame if start_frame is not None else self.relevant_video_frames[0]
+        end_frame = end_frame if end_frame is not None else self.relevant_video_frames[1] + 1
+        frame_ids = list(range(start_frame, end_frame, step))
         video_path = self.video_path.as_posix()
-        if cam_name is not None and cam_name != 'front':
+        if cam_name is not None and cam_name != self.cam_name:
             video_path, frame_ids, frames_pairs = self.align_frames_to_other_cam(cam_name, video_path, frame_ids)
             return self.gen_frames(frame_ids, video_path=video_path, cam_name=cam_name, frames_map=frames_pairs)
+        else:
+            return self.gen_frames(frame_ids, video_path=video_path, cam_name=cam_name)
 
-        return self.gen_frames(frame_ids, video_path=video_path, cam_name=cam_name)
+    def gen_frames_around_strike(self, cam_name=None, n_frames_back=None, n_frames_forward=None, step=1):
+        if self.is_trial:
+            raise Exception('Loader is working in trial mode, cannot generate strike frames')
+        start_frame, end_frame = self.relevant_video_frames[0], self.relevant_video_frames[1] + 1
+        if n_frames_back is not None:
+            start_frame = max([start_frame, self.strike_frame_id - n_frames_back])
+        if n_frames_forward is not None:
+            end_frame = min([end_frame, self.strike_frame_id + n_frames_forward])
+        return self.gen_frames_around(start_frame, end_frame, cam_name, step)
 
     def align_frames_to_other_cam(self, cam_name: str, video_path: str, frame_ids: list):
         vids = list(Path(video_path).parent.glob(f'{cam_name}*.mp4'))
@@ -245,31 +252,24 @@ class Loader:
     def get_bodypart_pose(self, bodypart):
         return pd.concat([pd.to_datetime(self.frames_df['time'], unit='s'), self.frames_df[bodypart]], axis=1)
 
-    def play_trial(self, cam_name=None, annotations=None, between_frames_delay=None, save_video=False):
-        if self.is_load_pose:
+    def _play(self, start_frame, end_frame, cam_name=None, annotations=None, between_frames_delay=None,
+              save_video=False):
+        is_pose_loaded = 'nose' in self.frames_df.columns
+        if is_pose_loaded:
             nose_df = self.frames_df['nose']
-
-    def play_strike(self, cam_name=None, n_frames_back=None, n_frames_forward=None, annotations=None,
-                    between_frames_delay=None, save_video=False):
-        n_frames_back = n_frames_back or self.n_frames_back
-        n_frames_forward = n_frames_forward or self.n_frames_forward
-        if self.is_load_pose:
-            nose_df = self.frames_df['nose']
-        for i, frame in self.gen_frames_around_strike(cam_name, n_frames_back, n_frames_forward):
-            if cam_name != 'back':
+        for i, frame in self.gen_frames_around(start_frame, end_frame, cam_name):
+            if len(frame.squeeze().shape) == 2:
                 frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
-
-            if i == self.strike_frame_id:
+            if not self.is_trial and i == self.strike_frame_id:
                 put_text('Strike Frame', frame, 30, 20)
             if annotations and i in annotations:
-                put_text(annotations[i], frame, 30, frame.shape[0]-30)
-            if self.is_load_pose:
-                if cam_name == 'front':
+                put_text(annotations[i], frame, 30, frame.shape[0] - 30)
+            if is_pose_loaded:
+                if cam_name == self.cam_name:
                     self.dlc_pose.predictor.plot_predictions(frame, i, self.frames_df)
                 if i in nose_df.index and not np.isnan(nose_df['cam_x'][i]):
                     angle = self.frames_df.loc[i, [("angle", "")]]
                     put_text(f'Angle={math.degrees(angle):.0f}', frame, 1000, 30)
-
             if save_video:
                 self.save_strike_video(frame, cam_name)
             frame = cv2.resize(frame, None, None, fx=0.5, fy=0.5)
@@ -279,10 +279,22 @@ class Loader:
             if cv2.waitKey(25) & 0xFF == ord('q'):
                 break
         cv2.destroyAllWindows()
-
         if save_video:
             self.strike_video_writer.close()
         self.strike_video_writer = None
+
+    def play_trial(self, cam_name=None, annotations=None, between_frames_delay=None, save_video=False):
+        self._play(self.relevant_video_frames[0], self.relevant_video_frames[1], cam_name=cam_name,
+                   annotations=annotations, between_frames_delay=between_frames_delay, save_video=save_video)
+
+    def play_strike(self, cam_name=None, n_frames_back=None, n_frames_forward=None, annotations=None,
+                    between_frames_delay=None, save_video=False):
+        n_frames_back = n_frames_back if n_frames_back is not None else self.n_frames_back
+        n_frames_forward = n_frames_forward if n_frames_forward is not None else self.n_frames_forward
+        start_frame = max([self.strike_frame_id - n_frames_back], self.relevant_video_frames[0])
+        end_frame = min([self.strike_frame_id + n_frames_forward], self.relevant_video_frames[1])
+        self._play(start_frame, end_frame, cam_name=cam_name, annotations=annotations,
+                   between_frames_delay=between_frames_delay, save_video=save_video)
 
     def save_strike_video(self, frame, cam_name):
         output_dir = Path(config.OUTPUT_DIR) / 'strikes_videos'
@@ -303,5 +315,6 @@ class Loader:
 
 
 if __name__ == "__main__":
-    ld = Loader(4587, 'front', is_use_db=True, is_dwh=True, is_trial=True)
-    ld.play_strike(cam_name='back')
+    ld = Loader(5353, 'top', is_use_db=True, is_dwh=False, is_trial=True)
+    # ld = Loader(611, 'top', is_use_db=True, is_dwh=False, is_trial=True)
+    ld.play_trial(cam_name='right')

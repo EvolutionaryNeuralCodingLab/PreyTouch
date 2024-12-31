@@ -182,7 +182,11 @@ class ArenaPose:
         """
         if self.is_use_db:
             assert video_db_id, 'must provide video_db_id if is_use_db=True'
-            return self._load_from_db(video_db_id)
+            try:
+                return self._load_from_db(video_db_id)
+            except MissingFile:
+                if video_path is not None:
+                    return self._load_from_local_files(video_path, only_load, prefix)
         else:
             assert video_path, 'must provide video_path if is_use_db=False'
             return self._load_from_local_files(video_path, only_load, prefix)
@@ -1443,7 +1447,7 @@ if __name__ == '__main__':
     # VideoPoseScanner().predict_all(max_videos=20, is_tqdm=True)
     # VideoPoseScanner(cam_name='top', animal_ids=['PV157'], is_use_db=False)
     # VideoPoseScanner(cam_name='top', animal_ids=['PV157'], is_use_db=False).predict_video('/data/Pogona_Pursuit/output/experiments/PV157/20240307/block2/videos/top_20240307T141316.mp4')
-    VideoPoseScanner(cam_name='top', animal_ids=['PV161', 'PV162', 'PV157', 'PV149'], is_use_db=False, only_strikes_vids=True).predict_all()
+    VideoPoseScanner(cam_name='top', animal_ids=['PV157'], is_use_db=True, only_strikes_vids=False).predict_all()
     # VideoPoseScanner(animal_id='PV163').add_bug_trajectory(videos=[Path('/media/reptilearn4/experiments/PV163/20240201/block10/videos/front_20240201T173016.mp4')])
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/Archive/front/20221205T093815_front.png', 0)
     # print(run_predict('pogona_head', [img]))
