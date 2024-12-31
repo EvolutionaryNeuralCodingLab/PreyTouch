@@ -28,12 +28,11 @@ class TrialScanner:
 
         print(f'Found {len(block_ids)} blocks for trials analysis.')
         for block_id, (cache_path, trials) in block_ids.items():
-            res, trials_images, trial_strikes = [], {}, {}
+            res, trials_images = [], {}
             for trial_id, strikes_times in (tqdm(trials.items(), desc=cache_path.as_posix()) if self.is_tqdm else trials.items()):
                 try:
-                    tdf, images = self.run_on_trial(trial_id)
+                    tdf, images = self.run_on_trial(trial_id, strikes_times)
                     trials_images[trial_id] = images
-                    trial_strikes[trial_id] = strikes_times
                     res.append(tdf)
                 except Exception as e:
                     continue
@@ -42,7 +41,7 @@ class TrialScanner:
                 print(f'None of the {len(trials)} trials of block {block_id} were processed successfully.')
                 continue
             res = pd.concat(res)
-            self.plot_trials_analysis(res, trials_images, trial_strikes, cache_path)
+            self.plot_trials_analysis(res, trials_images, cache_path)
             res.to_csv(cache_path)
 
     def scan(self, is_cache=True):
@@ -61,32 +60,34 @@ class TrialScanner:
                 block_ids[int(blk.id)] = (cache_path, {int(tr.id): [strk.time for strk in tr.strikes] for tr in blk.trials})
         return block_ids
 
-    def run_on_trial(self, trial_id):
+    def run_on_trial(self, trial_id, strikes_times):
         ld = Loader(trial_id, config.NIGHT_POSE_CAMERA, is_use_db=self.is_use_db, is_trial=True, raise_no_pose=True)
         pose_df = (pd.concat([ld.frames_df[['time', 'bug_x', 'bug_y', 'angle']].droplevel(1, axis=1),
                                    ld.frames_df['nose']],
                              axis=1).reset_index().rename(columns={'index': 'frame_id', 'prob': 'pose_prob'}))
         tdf, images = self.predict_tongues(ld)
         tdf = pose_df.merge(tdf, how='left', on='frame_id')
+        tdf['is_strike'] = False
+        for strike_time in strikes_times:
+            closest_index = (tdf.time - strike_time).dt.total_seconds().abs().idxmin()
+            tdf.loc[closest_index, 'is_strike'] = True
         tdf['trial_id'] = trial_id
         return tdf, images
 
-    def plot_trials_analysis(self, df, trials_images, strikes_times, cache_path):
+    def plot_trials_analysis(self, df, trials_images, cache_path):
         trials = df.trial_id.unique().tolist()
         fig, axes = plt.subplots(len(trials), 5, figsize=(25, 3*len(trials)))
         for i, trial_id in enumerate(trials):
-            self.plot_tongues_and_bug_position(df.query(f'trial_id=={trial_id}'), axes[i, 3:], strikes_times[trial_id])
+            self.plot_tongues_and_bug_position(df.query(f'trial_id=={trial_id}'), axes[i, 3:])
             for j, image in enumerate(trials_images[trial_id]):
                 axes[i, j].imshow(image, cmap='gray')
                 axes[i, j].axis('off')
         fig.tight_layout()
         fig.savefig(cache_path.with_suffix('.png'), bbox_inches='tight')
-        plt.show()
 
     @staticmethod
-    def plot_tongues_and_bug_position(tdf, axes, strikes_times):
+    def plot_tongues_and_bug_position(tdf, axes):
         time = (tdf.time - tdf.time.iloc[0]).dt.total_seconds().values
-        strikes_times = [(t - tdf.time.iloc[0]).total_seconds() for t in strikes_times]
         bug_x = tdf.bug_x.values
         screen_x_lim = np.array([0, int(config.SCREEN_RESOLUTION.split(',')[0])])
         if config.SCREEN_PIX_CM:
@@ -101,7 +102,8 @@ class TrialScanner:
 
         axes[1].plot(time, tdf.y.values, linewidth=2)
         axes[1].margins(x=0)
-        for strike_time in strikes_times:
+        for strike_time in tdf.query('is_strike').time.values:
+            strike_time = (strike_time - tdf.time.iloc[0]).total_seconds()
             for j in [0, 1]:
                 axes[j].axvline(strike_time, color='tab:green', ls='--')
         if config.SCREEN_Y_CM:
