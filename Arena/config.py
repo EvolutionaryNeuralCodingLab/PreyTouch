@@ -16,6 +16,7 @@ IS_ANALYSIS_ONLY = env.bool('IS_ANALYSIS_ONLY', False, group='General', desc='Mo
 LOGGING_LEVEL = env('LOGGING_LEVEL', 'DEBUG', group='General', desc='The logging level of the system log (DEBUG,INFO,WARNING,etc.)')
 UI_LOGGING_LEVEL = env('UI_LOGGING_LEVEL', 'INFO', group='General', desc='The logging level of the management console')
 OUTPUT_DIR = env('OUTPUT_DIR', (Path(__file__).parent.parent.resolve() / 'output').as_posix(), group='General', desc='The output directory')
+LOGGER_FILEPATH = env('LOGGER_FILEPATH', '/var/log/prey_touch.out.log', group='General', desc='Path to the PreyTouch log file')
 
 # API
 STATIC_FILES_DIR = env('STATIC_FILES_DIR', 'static', group='General', desc='Path to media files directory', is_map=False)

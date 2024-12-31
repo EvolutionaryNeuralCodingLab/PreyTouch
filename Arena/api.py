@@ -68,7 +68,7 @@ def index():
                            max_blocks=config.api_max_blocks_to_show, toggels=toggels, psycho_files=get_psycho_files(),
                            extra_time_recording=config.EXTRA_TIME_RECORDING, feeders=feeders, configurations=confs,
                            is_light_stim=config.LIGHT_STIM_SERIAL is not None, is_cam_trigger=is_cam_trigger,
-                           summary_animal_ids=summary_animal_ids,
+                           summary_animal_ids=summary_animal_ids, is_log_file=Path(config.LOGGER_FILEPATH).exists(),
                            acquire_stop={'num_frames': 'Num Frames', 'rec_time': 'Record Time [sec]'})
 
 
@@ -546,6 +546,11 @@ def list_media():
 @app.route('/media/<filename>')
 def send_media(filename):
     return send_from_directory(config.STATIC_FILES_DIR, filename)
+
+
+@app.route('/system_log')
+def system_log():
+    return Response(next(utils.run_command(f'tail -n 300 {config.LOGGER_FILEPATH}')).decode())
 
 
 @app.route('/set_stream_camera', methods=['POST'])

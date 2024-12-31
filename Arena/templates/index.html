@@ -33,12 +33,18 @@
         {% include "management/reboots.html" %}
         {% include "management/calibrations.html" %}
         {% include "management/predictions.html" %}
+        {% include "management/logging.html" %}
         <button class="btn btn-lg"  data-toggle="modal" data-target="#rebootsModal" style="padding: 0">
             <i class="fa fa-power-off fa-lg"></i>
         </button>
         <button class="btn btn-lg"  data-toggle="modal" data-target="#arenaConfig" style="padding: 0">
             <i class="fa fa-cog fa-lg"></i>
         </button>
+        {% if is_log_file %}
+            <button class="btn btn-lg"  data-toggle="modal" data-target="#loggingModal" style="padding: 0">
+                <i class="fa fa-file-text fa-lg"></i>
+            </button>
+        {% endif %}
         <h1 class="p-2" style="font-size: 4em; text-align: center; margin-bottom: 0; padding-bottom: 0 !important;">PreyTouch</h1>
         <h4 style="text-align: center; margin-bottom: 1em">{{arena_name}}</h4>
         <div class="row top-border bottom-border" id="all-panels" style="padding-bottom: 0">
