@@ -87,7 +87,7 @@ class Scheduler(threading.Thread):
                 self.run_pose()
                 self.tracking_pose()
 
-            if not t2 or time.time() - t2 >= 60 * 15:  # every 5 minutes
+            if not t2 or time.time() - t2 >= 60 * 15:  # every 15 minutes
                 t2 = time.time()
                 self.agent_update()
 
@@ -115,7 +115,6 @@ class Scheduler(threading.Thread):
         else:
             self.turn_light(config.IR_LIGHT_NAME, 1)
             self.turn_light(config.DAY_LIGHT_NAME, 0)
-
 
     @schedule_method
     def check_scheduled_experiments(self):

@@ -39,7 +39,7 @@ def turn_display_on(board='holes', is_test=False, logger=None):
     if not is_test:
         cmds = [
             'pkill chrome || true',  # kill all existing chrome processes
-            f'{DISPLAY} xrandr --output {config.APP_DISPLAY} --auto --right-of DP-0' +
+            f'{DISPLAY} xrandr --output {config.APP_DISPLAY} --auto' +
             (' --rotate inverted' if config.IS_SCREEN_INVERTED else ''),  # turn touch screen on
             f'{DISPLAY} xinput enable {touch_device_id}',  # enable touch
             f'{DISPLAY} xinput map-to-output {touch_device_id} {config.APP_DISPLAY}',
