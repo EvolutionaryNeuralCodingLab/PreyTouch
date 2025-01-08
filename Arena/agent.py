@@ -145,7 +145,7 @@ class Agent:
                     block_dict_[k] = per_left[0]
 
         json_struct = self.default_struct.copy()
-        for k in ['exit_hole', 'reward_any_touch_prob']:
+        for k in ['exit_hole', 'reward_any_touch_prob', 'bug_types', 'reward_bugs']:
             if k in block_dict_:
                 json_struct[k] = block_dict_.pop(k)
         json_struct['blocks'][0].update(block_dict_)
