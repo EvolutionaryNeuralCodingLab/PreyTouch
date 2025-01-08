@@ -10,6 +10,7 @@
               v-on:mousedown="setCanvasClick($event)">
                 <holes-bug v-for="(value, index) in bugsProps"
                    :key="index"
+                   :bug-id="index"
                    :bugsSettings="bugsSettings"
                    :exit-hole-pos="exitHolePos"
                    :entrance-hole-pos="entranceHolePos"
@@ -76,7 +77,8 @@ export default {
     extraTrialData: function () {
       let d = {
         entrance_hole_pos: this.entranceHolePos,
-        exit_hole_pos: this.exitHolePos
+        exit_hole_pos: this.exitHolePos,
+        canvas_size: [this.canvas.width, this.canvas.height]
       }
       let bug = this.$refs.bugChild[0]
       if (bug.isMoveInCircles) {

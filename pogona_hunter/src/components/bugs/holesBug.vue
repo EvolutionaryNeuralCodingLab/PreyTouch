@@ -21,6 +21,7 @@ export default {
     }
   },
   props: {
+    bugId: Number,
     bugsSettings: Object,
     exitHolePos: Array,
     entranceHolePos: Array
@@ -175,6 +176,7 @@ export default {
         case 'circle':
         case 'circle_accelerate':
           this.theta = this.isRightExit ? (Math.PI + (Math.PI / 5)) : (Math.PI + (2 * Math.PI / 3))
+          this.theta = this.theta + this.bugId * (Math.PI / 5) // fix for cases in which numOfBugs>1
           this.r = (Math.abs(this.xTarget - this.x) * this.bugsSettings.circleRadiusScale)
           this.r0 = [(this.x + this.xTarget) / 2, this.canvas.height * this.bugsSettings.circleHeightScale]
           break
@@ -186,6 +188,8 @@ export default {
         case 'low_horizontal':
         case 'accelerate':
         case 'jump_up':
+          this.y = this.y - this.bugId * (this.bugsSettings.holeSize[1] / 2)
+          this.yTarget = this.yTarget - this.bugId * (this.bugsSettings.holeSize[1] / 2)
           this.directionAngle = this.isRightExit ? 2 * Math.PI : Math.PI
           this.startRetreat()
           break

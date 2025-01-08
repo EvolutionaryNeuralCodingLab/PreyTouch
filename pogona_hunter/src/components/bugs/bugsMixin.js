@@ -1,4 +1,4 @@
-import {distance, randBM, randomRange} from '../../js/helpers'
+import {distance, randBM, randomRange, shuffle} from '../../js/helpers'
 
 export default {
   data() {
@@ -24,6 +24,7 @@ export default {
     }
   },
   props: {
+    bugId: Number,
     bugsSettings: Object
   },
   computed: {
@@ -217,6 +218,12 @@ export default {
     loadNextBugType() {
       if (this.bugsSettings.bugTypes.length === 1) {
         this.currentBugType = this.bugsSettings.bugTypes[0]
+        return
+      } else if (this.bugsSettings.bugTypes.length === this.bugsSettings.numOfBugs) {
+        if (this.bugId === 0) {
+          shuffle(this.bugsSettings.bugTypes)
+        }
+        this.currentBugType = this.bugsSettings.bugTypes[this.bugId]
         return
       }
       let nextBugOptions = this.bugsSettings.bugTypes.filter(bug => bug !== this.currentBugType)
