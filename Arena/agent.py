@@ -149,7 +149,8 @@ class Agent:
             if k in block_dict_:
                 json_struct[k] = block_dict_.pop(k)
         json_struct['blocks'][0].update(block_dict_)
-        json_struct['bug_types'] = self.get_bug_types()
+        if 'bug_types' not in json_struct:
+            json_struct['bug_types'] = self.get_bug_types()
         exp_name = self.save_cached_experiment(json_struct)
         return exp_name
 
