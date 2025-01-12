@@ -10,6 +10,26 @@
       },
       "stepsPerImage": 10
     },
+    "green_cockroach": {
+      "text": "Green Cockroach",
+      "numImagesPerBug": 3,
+      "speed": 3,
+      "radiusRange": {
+        "min": 140,
+        "max": 160
+      },
+      "stepsPerImage": 10
+    },
+    "red_cockroach": {
+      "text": "Red Cockroach",
+      "numImagesPerBug": 3,
+      "speed": 3,
+      "radiusRange": {
+        "min": 140,
+        "max": 160
+      },
+      "stepsPerImage": 10
+    },
     "leaf": {
       "text": "Leaf",
       "numImagesPerBug": 8,
