@@ -20,7 +20,8 @@ export default {
         bugSize: 0, // if 0 config default for bug will be used
         bloodDuration: 2000,
         backgroundColor: '#e8eaf6',
-        rewardAnyTouchProb: 0
+        rewardAnyTouchProb: 0,
+        accelerateMultiplier: 3 // times to increase bug speed in tongue detection
       },
       mediaUrl: '',
       isHandlingTouch: false,

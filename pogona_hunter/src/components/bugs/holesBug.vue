@@ -16,7 +16,6 @@ export default {
     return {
       edgesPolicy: 'inside',
       framesUntilExitFromEntranceHole: 100,
-      accelerateMultiplier: 4,
       circularSpeed: null
     }
   },
@@ -238,9 +237,9 @@ export default {
         }
         this.y = newY
       } else if (this.isAccelerateMovement) {
-        this.vx = this.vx * this.accelerateMultiplier
+        this.vx = this.vx * this.bugsSettings.accelerateMultiplier
       } else if (this.isCircleAccelerateMovement) {
-        this.vTheta = this.vTheta * this.accelerateMultiplier
+        this.vTheta = this.vTheta * this.bugsSettings.accelerateMultiplier
       }
       console.log('jump')
       this.jumpTimeout()
@@ -299,9 +298,9 @@ export default {
         if (this.isJumpUpMovement) {
           this.y = this.exitHolePos[1] + (this.currentBugSize / 2)
         } else if (this.isAccelerateMovement) {
-          this.vx = this.vx / this.accelerateMultiplier
+          this.vx = this.vx / this.bugsSettings.accelerateMultiplier
         } else if (this.isCircleAccelerateMovement) {
-          this.vTheta = this.vTheta / this.accelerateMultiplier
+          this.vTheta = this.vTheta / this.bugsSettings.accelerateMultiplier
         }
         this.setNextAngle(this.directionAngle)
         console.log(this.vx, this.dx, this.currentSpeed)

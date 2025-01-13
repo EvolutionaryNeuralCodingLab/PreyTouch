@@ -84,6 +84,8 @@ export default {
       if (bug.isMoveInCircles) {
         d['circle_radius'] = bug.r
         d['circle_position'] = bug.r0
+      } else if (bug.isAccelerateMovement || bug.isCircleAccelerateMovement) {
+        d['accelerate_multiplier'] = this.bugsSettings.accelerateMultiplier
       }
       return d
     }
