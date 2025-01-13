@@ -252,10 +252,15 @@ export default {
           this.entranceHolePos[1] <= this.y && this.y <= (this.entranceHolePos[1] + this.holeSize[1])
     },
     isInsideExitHoleBoundaries() {
-      return this.exitHolePos[0] <= this.x && this.x <= (this.exitHolePos[0] + this.holeSize[0]) &&
-          this.exitHolePos[1] <= this.y && this.y <= (this.exitHolePos[1] + this.holeSize[1])
+      // this.xTarget = this.exitHolePos[0] + (this.bugsSettings.holeSize[0] / 2)
+      // this.yTarget = this.exitHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
+      let xEdge = this.xTarget - (this.bugsSettings.holeSize[0] / 2)
+      let yEdge = this.yTarget - (this.bugsSettings.holeSize[1] / 2)
+      return xEdge <= this.x && this.x <= (xEdge + this.holeSize[0]) &&
+          yEdge <= this.y && this.y <= (yEdge + this.holeSize[1])
     },
     checkHoleRetreat() {
+      // check if the trial duration is over and start the retreat
       if (!this.isHoleRetreatStarted && this.frameCounter > this.numFramesToRetreat) {
         this.startRetreat()
       }
