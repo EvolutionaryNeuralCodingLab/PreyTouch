@@ -1,4 +1,4 @@
-import {randomRange} from '../../js/helpers'
+import {randomRange, getKeyWithMinFirstArrayValue} from '../../js/helpers'
 import { v4 as uuidv4 } from 'uuid'
 
 export default {
@@ -7,7 +7,7 @@ export default {
       configOptions: require('../../config.json'),
       bugsProps: [],
       bugsSettings: {
-        numOfBugs: process.env.NUM_BUGS,
+        numOfBugs: 2, // process.env.NUM_BUGS,
         trialID: null,
         trialDBId: null,
         numTrials: null, // deprecated. Trials are governed by the experiment
@@ -15,7 +15,7 @@ export default {
         iti: 5,
         bugTypes: ['cockroach', 'green_beetle'],
         rewardBugs: 'cockroach',
-        movementType: 'circle',
+        movementType: 'low_horizontal',
         speed: 0, // if 0 config default for bug will be used
         bugSize: 0, // if 0 config default for bug will be used
         bloodDuration: 2000,
@@ -122,6 +122,7 @@ export default {
     },
     clearBoard() {
       this.bugsSettings.numOfBugs = 0
+      this.bugsProps = []
       if (this.animationHandler) {
         this.$refs.bugChild = []
         cancelAnimationFrame(this.animationHandler)
@@ -191,16 +192,24 @@ export default {
       this.isHandlingTouch = true
       x -= this.canvas.offsetLeft
       y -= this.canvas.offsetTop
+      let strikeDistances = {}
+      let isRewardAnyTouch = Math.random() < this.bugsSettings.rewardAnyTouchProb
       for (let i = 0; i < this.$refs.bugChild.length; i++) {
         let bug = this.$refs.bugChild[i]
         if (bug.isDead || bug.isRetreated) {
           continue
         }
         let isRewardBug = this.bugsSettings.rewardBugs.includes(bug.currentBugType)
-        let isHit = bug.isHit(x, y)
-        let isRewardAnyTouch = Math.random() < this.bugsSettings.rewardAnyTouchProb
+        strikeDistances[i] = [bug.hitDistance(x, y), bug.isHit(x, y), isRewardBug]
+      }
+      if (Object.keys(strikeDistances).length > 0) {
+        // Get the bug with the minimum distance from the touch point
+        let i = Number(getKeyWithMinFirstArrayValue(strikeDistances))
+        let bug = this.$refs.bugChild[i]
+        let isHit = strikeDistances[i][1]
+        let isRewardBug = strikeDistances[i][2]
         if ((isHit || isRewardAnyTouch) && !this.isClimbing) {
-          this.destruct(i, x, y, isRewardBug)
+            this.destruct(i, x, y, isRewardBug)
         }
         this.logTouch(x, y, bug, isHit, isRewardBug, isRewardAnyTouch)
       }

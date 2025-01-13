@@ -187,8 +187,8 @@ export default {
         case 'low_horizontal':
         case 'accelerate':
         case 'jump_up':
-          this.y = this.y - this.bugId * (this.bugsSettings.holeSize[1] / 2)
-          this.yTarget = this.yTarget - this.bugId * (this.bugsSettings.holeSize[1] / 2)
+          this.y = this.y - this.bugId * this.currentBugSize
+          this.yTarget = this.yTarget - this.bugId * this.currentBugSize
           this.directionAngle = this.isRightExit ? 2 * Math.PI : Math.PI
           this.startRetreat()
           break

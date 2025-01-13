@@ -168,6 +168,9 @@ export default {
         clearTimeout(fadeTimeout)
       }, fadeTimeoutValue)
     },
+    hitDistance(x, y) {
+      return distance(x, y, this.x, this.y)
+    },
     isHit(x, y) {
       return distance(x, y, this.x, this.y) <= this.currentBugSize / 1.5
     },
