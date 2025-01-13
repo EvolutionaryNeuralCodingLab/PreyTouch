@@ -18,7 +18,7 @@ from websockets.sync.client import connect
 from cache import CacheColumns as cc, RedisCache
 import config
 from loggers import get_logger, get_process_logger
-from utils import Serializer, run_in_thread, run_command
+from utils import Serializer, run_in_thread, run_command, send_telegram_message
 from db_models import ORM
 from periphery_integration import PeripheryIntegrator, ArenaListener, MQTTListener
 
@@ -381,6 +381,7 @@ class WebSocketServer(mp.Process):
             asyncio.run(self.main_loop())
         except Exception as e:
             print(f'websocket server stopped running!; {e}')
+            send_telegram_message('WebSocket server stopped running!')
 
     async def echo(self, websocket):
         self.connections.add(websocket)

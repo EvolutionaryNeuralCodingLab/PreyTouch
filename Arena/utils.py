@@ -332,7 +332,6 @@ class KalmanFilterScratch:
 
 def send_telegram_message(message: str):
     if not config.TELEGRAM_TOKEN:
-        print(f'please specify TELEGRAM_TOKEN in .env file; cancel message send')
         return
     headers = {'Content-Type': 'application/json'}
     data_dict = {'chat_id': config.TELEGRAM_CHAT_ID,
