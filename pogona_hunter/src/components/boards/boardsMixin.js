@@ -7,7 +7,7 @@ export default {
       configOptions: require('../../config.json'),
       bugsProps: [],
       bugsSettings: {
-        numOfBugs: 2, // process.env.NUM_BUGS,
+        numOfBugs: process.env.NUM_BUGS,
         trialID: null,
         trialDBId: null,
         numTrials: null, // deprecated. Trials are governed by the experiment
@@ -234,14 +234,13 @@ export default {
       console.log('Touch event was sent to the server')
     },
     destruct(bugIndex, x, y, isRewardBug) {
-      let currentBugs = this.$refs.bugChild
-      currentBugs[bugIndex].isDead = true
+      this.$refs.bugChild[bugIndex].isDead = true
       if (isRewardBug) {
         this.$refs.audio1.play()
         this.$store.commit('increment')
       }
       const bloodTimeout = setTimeout(() => {
-        this.$refs.bugChild = currentBugs.filter((items, index) => bugIndex !== index)
+        this.$refs.bugChild = this.$refs.bugChild.filter((items, index) => bugIndex !== index)
         if (this.$refs.bugChild.length === 0) {
           this.endTrial()
         }
