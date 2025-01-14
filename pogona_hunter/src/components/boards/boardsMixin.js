@@ -27,6 +27,7 @@ export default {
       isHandlingTouch: false,
       isRewardGiven: false,
       isClimbing: false,
+      isBloodOnScreen: false, // bug is with blood on screen so avoid any other hits until blood goes away
       afterRewardTimeout: 40 * 1000,
       touchesCounter: 0,
       canvasParams: {
@@ -112,9 +113,11 @@ export default {
       this.initDrawing()
       this.spawnBugs(this.bugsSettings.numOfBugs)
       this.$nextTick(function () {
-        console.log('start animation...')
-        this.dumpTrialData()
-        this.animate()
+        if (this.$refs.bugChild) {
+          console.log('start animation...')
+          this.dumpTrialData()
+          this.animate()
+        }
       })
     },
     initDrawing() {
@@ -208,7 +211,7 @@ export default {
         let bug = this.$refs.bugChild[i]
         let isHit = strikeDistances[i][1]
         let isRewardBug = strikeDistances[i][2]
-        if ((isHit || isRewardAnyTouch) && !this.isClimbing) {
+        if ((isHit || isRewardAnyTouch) && !this.isClimbing && !this.isBloodOnScreen) {
             this.destruct(i, x, y, isRewardBug)
         }
         this.logTouch(x, y, bug, isHit, isRewardBug, isRewardAnyTouch)
@@ -235,12 +238,15 @@ export default {
     },
     destruct(bugIndex, x, y, isRewardBug) {
       this.$refs.bugChild[bugIndex].isDead = true
+      this.isBloodOnScreen = true
       if (isRewardBug) {
         this.$refs.audio1.play()
         this.$store.commit('increment')
       }
       const bloodTimeout = setTimeout(() => {
         this.$refs.bugChild = this.$refs.bugChild.filter((items, index) => bugIndex !== index)
+        this.isBloodOnScreen = false
+        console.log(`Number of bugs left: ${this.$refs.bugChild.length}  (bug ID ${bugIndex} was removed)`)
         if (this.$refs.bugChild.length === 0) {
           this.endTrial()
         }
