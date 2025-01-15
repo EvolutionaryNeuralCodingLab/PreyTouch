@@ -37,10 +37,36 @@
                 </div>
             </div>
         </div>
-        <div class="row">
+        <div class="row form-group">
+            <div class="col-sm-7">
+                <label for="scheduleTypeSelect" class="col-form-label">Schedule Type</label>
+                <select id="scheduleTypeSelect" class="form-control">
+                    <option value="experiment">Experiment</option>
+                    <option value="switch">Switch</option>
+                </select>
+            </div>
+        </div>
+        <div class="row" id="cachedExperimentsSelectScheduleSection">
             <div class="col-sm-7">
                 <label for="cachedExperimentsSelectSchedule" class="col-form-label">Experiment Name</label>
                 <select id="cachedExperimentsSelectSchedule" class="form-control">
+                </select>
+            </div>
+        </div>
+        <div class="row" id="switchSelectScheduleSection">
+            <div class="col-sm-7">
+                <label for="switchNameSelectSchedule" class="col-form-label">Switch Name</label>
+                <select id="switchNameSelectSchedule" class="form-control">
+                    {% for toggle in toggels %}
+                        <option value="{{toggle}}">{{toggle}}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-7">
+                <label for="switchStateSelectSchedule" class="col-form-label">Switch State</label>
+                <select id="switchStateSelectSchedule" class="form-control">
+                    <option value="on">ON</option>
+                    <option value="off">OFF</option>
                 </select>
             </div>
         </div>
@@ -54,3 +80,39 @@
         </div>
     </div>
 </form>
+
+<script>
+    $("#isRepeatSchedule").change(() => {
+        let isRepeat = $("#isRepeatSchedule").is(":checked")
+        if (isRepeat) {
+            $("#repeatScheduleSection").show()
+        } else {
+            $("#repeatScheduleSection").hide()
+        }
+    }).trigger('change')
+
+    $("#scheduleTypeSelect").change(() => {
+        let scheduleType = $("#scheduleTypeSelect").val()
+        if (scheduleType === "experiment") {
+            $("#cachedExperimentsSelectScheduleSection").show()
+            $("#switchSelectScheduleSection").hide()
+        } else if (scheduleType === "switch") {
+            $("#cachedExperimentsSelectScheduleSection").hide()
+            $("#switchSelectScheduleSection").show()
+        }
+    }).trigger('change')
+
+    $("#saveScheduleButton").click(() => {
+        let experimentName = $("#cachedExperimentsSelectSchedule").val()
+        if ($("#scheduleTypeSelect").val() === 'switch') {
+            experimentName = `SWITCH:${$("#switchNameSelectSchedule").val()},${$("#switchStateSelectSchedule").val()}`
+        }
+        $.post('/commit_schedule', {
+                start_date: $("#datetimepicker1").data().date,
+                experiment_name: experimentName,
+                every: $("#isRepeatSchedule").is(":checked") ? Number($("#scheduleEveryMinutes").val()) : 0,
+                end_date: $("#datetimepicker2").data().date
+        })
+        $("#scheduleModal").modal('toggle');
+    });
+</script>

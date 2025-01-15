@@ -129,6 +129,10 @@ class Scheduler(threading.Thread):
                     if exp_name.startswith('LightSTIM'):
                         stim_cmd = exp_name.replace('LightSTIM:', '')
                         LightSTIM().run_stim_command(stim_cmd)
+                    # schedule of periphery switches (in case the name starts with "SWITCH:")
+                    elif exp_name.startswith('SWITCH'):
+                        switch_name, switch_state = exp_name.replace('SWITCH:', '').split(',')
+                        self.periphery.switch(switch_name, int(switch_state == 'on'))
                     else:  # otherwise, start the cached experiment
                         self.arena_mgr.start_cached_experiment(m.group('name'))
 

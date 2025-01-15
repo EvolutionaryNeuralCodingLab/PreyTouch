@@ -46,13 +46,15 @@ def index():
     cached_experiments = sorted([c.stem for c in Path(config.CACHED_EXPERIMENTS_DIR).glob('*.json')])
     with open('../pogona_hunter/src/config.json', 'r') as f:
         app_config = json.load(f)
+
+    is_cam_trigger, summary_animal_ids = False, {}
     if arena_mgr is None:
         cameras = list(config.cameras.keys())
-        is_cam_trigger, summary_animal_ids = False, []
     else:
         cameras = list(arena_mgr.units.keys())
         is_cam_trigger = arena_mgr.is_cam_trigger_setup()
-        summary_animal_ids = arena_mgr.orm.get_animal_ids_for_summary()
+        if not config.DISABLE_DB:
+            summary_animal_ids = arena_mgr.orm.get_animal_ids_for_summary()
 
     if config.IS_ANALYSIS_ONLY:
         toggels, feeders, cameras = [], [], []
