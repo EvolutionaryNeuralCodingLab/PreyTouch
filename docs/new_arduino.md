@@ -107,12 +107,18 @@ python main.py --list-ports
     "serial_number": "0E4273DD51534C5036202020FF072035"
 }
 ```
+3. Upload the code to the arduinos
+```console
+cd periphery
+python main.py --upload
+```
+Notice. This operation can disconnect the server from the internet.
 
-3. Restart the periphery container
-
+4. Build and Restart the periphery container
+The periphery docker container needs to be re-build for loading the new periphery.json file.
 ```console
 cd docker/
-docker-compose restart periphery
+docker-compose up -d --build periphery
 ```
 
-4. Restart PreyTouch
+5. Restart PreyTouch
