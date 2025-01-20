@@ -99,6 +99,7 @@ class TrialScanner:
         fig.tight_layout()
         if is_save:
             fig.savefig(cache_path.with_suffix('.png'), bbox_inches='tight')
+            plt.close(fig)
         else:
             plt.show()
 
