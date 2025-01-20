@@ -650,29 +650,34 @@ class ORM:
             orm_res = s.query(Block, Experiment).join(
                 Experiment, Experiment.id == Block.experiment_id).filter(
                 Block.block_type == 'bugs',
-                not_(Experiment.animal_id.ilike('%test%'))
+                not_(Experiment.animal_id.ilike('%test%')),
+                Experiment.animal_id.isnot(None)
             ).all()
 
             if not orm_res:
                 return {}
 
             for blk, exp in orm_res:
-                res.append({'block_id': blk.id, 'date': exp.start_time, 'animal_id': exp.animal_id})
+                res.append({'block_id': blk.id, 'date': exp.start_time, 'animal_id': exp.animal_id, 'arena': exp.arena})
 
             res = pd.DataFrame(res)
             res['exp_day'] = res.date.dt.strftime('%Y-%m-%d')
 
-        res = res.groupby('animal_id').exp_day.apply(lambda x: sorted(np.unique(x), reverse=True)).to_dict()
+        res = res.groupby(['arena', 'animal_id']).exp_day.apply(lambda x: sorted(np.unique(x), reverse=True))
+        res = {key: group.droplevel(0).to_dict() for key, group in res.groupby(level=0)}
         today = date.today().strftime('%Y-%m-%d')
-        if current_animal_id in res.keys():
-            days = res.pop(current_animal_id)
-            if today not in days:
-                days = [today] + days
-        else:
-            days = [today]
-        d = {current_animal_id: days}
-        d.update(res)
-        return d
+        if current_animal_id and current_animal_id != 'test':
+            arena_dict = res.get(config.ARENA_NAME, {})
+            if current_animal_id in arena_dict.keys():
+                days = arena_dict.pop(current_animal_id)
+                if today not in days:
+                    days = [today] + days
+            else:
+                days = [today]
+            d = {current_animal_id: days}
+            d.update(arena_dict)
+            res[config.ARENA_NAME] = d
+        return res
 
     def today_summary(self):
         summary = {}

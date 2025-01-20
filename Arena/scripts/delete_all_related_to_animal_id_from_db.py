@@ -48,7 +48,7 @@ def upload_predictions():
 def main(animal_id):
     orm = ORM()
     with orm.session() as s:
-        for e in s.query(Experiment).filter_by(animal_id=animal_id).all():
+        for e in tqdm(s.query(Experiment).filter_by(animal_id=animal_id).all()):
             for blk in e.blocks:
                 for strk in blk.strikes:
                     s.delete(strk)
@@ -67,9 +67,9 @@ def main(animal_id):
 
 
 if __name__ == '__main__':
-    # main(animal_id='PV87')
+    main(animal_id=None)
     # download_predictions(predictor_name='pogona_head_local')
-    upload_predictions()
+    # upload_predictions()
 
     # experiments = {
     #     16: 'random',

@@ -12,11 +12,15 @@
 
             <div class="modal-body">
                 <div class="row m-1">
+                    <label for="arenaForSummarySelect">Arena</label>
+                    <select id="arenaForSummarySelect" style="margin-left: 0.5em" autocomplete="off">
+                        {% for arena in summary_animal_ids.keys() %}
+                            <option value="{{ arena }}">{{ arena }}</option>
+                        {% endfor %}
+                    </select>
+
                     <label for="animalIdsForSummarySelect">Animal ID</label>
                     <select id="animalIdsForSummarySelect" style="margin-left: 0.5em" autocomplete="off">
-                        {% for animal_id in summary_animal_ids.keys() %}
-                            <option value="{{ animal_id }}">{{ animal_id }}</option>
-                        {% endfor %}
                     </select>
 
                     <label for="dateForSummarySelect" style="margin-left: 1em">Day</label>
@@ -41,13 +45,32 @@
 <script>
     let animalIdsSummaryData = JSON.parse('{{ summary_animal_ids|tojson|safe }}')
 
+    $("#arenaForSummarySelect").change(() => {
+        let selectedArena = $("#arenaForSummarySelect").val()
+        if (selectedArena) {
+            $(`#animalIdsForSummarySelect option`).remove()
+            let $el = $("#animalIdsForSummarySelect")
+            $.each(Object.keys(animalIdsSummaryData[selectedArena]), (i, animal_id) => {
+                $el.append($("<option></option>").attr("value", animal_id).text(animal_id))
+            })
+            $(`#dateForSummarySelect option`).remove()
+            let $dateEl = $("#dateForSummarySelect")
+            let selectedAnimal = $el.val()
+            $.each(animalIdsSummaryData[selectedArena][selectedAnimal], (i, day) => {
+                $dateEl.append($("<option></option>").attr("value", day).text(day))
+            })
+        }
+    }).trigger('change')
+
     $("#animalIdsForSummarySelect").change(() => {
         let selectedAnimal = $("#animalIdsForSummarySelect").val()
-        $(`#dateForSummarySelect option`).remove()
-        let $el = $("#dateForSummarySelect")
-        $.each(animalIdsSummaryData[selectedAnimal], (i, day) => {
-            $el.append($("<option></option>").attr("value", day).text(day))
-        })
+        if (selectedAnimal) {
+            $(`#dateForSummarySelect option`).remove()
+            let $el = $("#dateForSummarySelect")
+            $.each(animalIdsSummaryData[$("#arenaForSummarySelect").val()][selectedAnimal], (i, day) => {
+                $el.append($("<option></option>").attr("value", day).text(day))
+            })
+        }
     }).trigger('change')
 
     $("#updateAnimalSummary").click(() => {
@@ -56,6 +79,10 @@
             day: $("#dateForSummarySelect").val()
         }).done((data) => {
             $("#animalSummaryText").html(data)
+            var tds = document.getElementsByTagName('td');
+            for(var i=0; i<tds.length; i++) {
+              tds[i].contentEditable = 'true';
+            }
         }).fail((data) => {
           $("#animalSummaryText").text(data.responseText)
       })
