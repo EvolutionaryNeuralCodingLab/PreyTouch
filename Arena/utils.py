@@ -363,7 +363,7 @@ def format_strikes_df(strike_df):
     }, precision=0).set_table_styles([
         {'selector': 'td', 'props': [('border-style', 'solid'), ('border-width', '1px')]},
         {'selector': 'th', 'props': [('text-align', 'center'), ('border-style', 'solid'), ('border-width', '1px')]}
-    ]).set_properties(**{'text-align': 'center'}).hide(axis='index').apply(highlight, axis=1).to_html()
+    ]).set_properties(**{'text-align': 'center'}).hide(axis='index').apply(highlight, axis=1).to_html(table_uuid='strikes_table')
     return strk_html
 
 
@@ -381,7 +381,7 @@ def format_trials_df(tr_df):
     }, precision=0).set_table_styles([
         {'selector': 'td', 'props': [('border-style', 'solid'), ('border-width', '1px')]},
         {'selector': 'th', 'props': [('text-align', 'center'), ('border-style', 'solid'), ('border-width', '1px')]}
-    ]).set_properties(**{'text-align': 'center'}).apply(highlight, axis=1).to_html()
+    ]).set_properties(**{'text-align': 'center'}).apply(highlight, axis=1).to_html(table_uuid='trials_table')
     return tr_html
 
 

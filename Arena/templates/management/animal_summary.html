@@ -79,8 +79,9 @@
             day: $("#dateForSummarySelect").val()
         }).done((data) => {
             $("#animalSummaryText").html(data)
-            var tds = document.getElementsByTagName('td');
-            for(var i=0; i<tds.length; i++) {
+            // make the analysis_error cells in the table editable
+            let tds = $("td[id^=T_strikes_table_][id$=_col5]")
+            for (let i=0; i<tds.length; i++) {
               tds[i].contentEditable = 'true';
             }
         }).fail((data) => {

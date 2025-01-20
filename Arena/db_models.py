@@ -607,8 +607,8 @@ class ORM:
                    not_(Experiment.animal_id.ilike('%test%'))]
         if animal_id:
             filters.append(Experiment.animal_id == animal_id)
-        cols = ['id', 'time', 'is_hit', 'bug_type', 'movement_type', 'bug_speed',  'x', 'y', 'bug_x', 'bug_y', 'bug_size',
-                'in_block_trial_id', 'is_climbing', 'block_id', 'trial_id', 'video_id', 'analysis_error']
+        cols = ['id', 'time', 'is_hit', 'bug_type', 'movement_type', 'analysis_error', 'bug_speed',  'x', 'y', 'bug_x', 'bug_y', 'bug_size',
+                'in_block_trial_id', 'is_climbing', 'block_id', 'trial_id', 'video_id']
         df = []
         with self.session() as s:
             orm_res = s.query(Strike, Block, Experiment).join(
