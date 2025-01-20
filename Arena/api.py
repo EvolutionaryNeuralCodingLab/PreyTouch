@@ -36,6 +36,8 @@ from analysis.strikes.strikes import StrikeAnalyzer
 import matplotlib
 matplotlib.use('Agg')
 app = Flask('ArenaAPI')
+# prevent sort of keys by the tojson jinja function
+app.jinja_env.policies['json.dumps_kwargs']['sort_keys'] = False
 cache: RedisCache = None
 arena_mgr: ArenaManager = None
 periphery_mgr: PeripheryIntegrator = None
@@ -46,7 +48,6 @@ config_envs = config.env.get_all_from_cache()
 @app.route('/')
 def index():
     """Video streaming ."""
-    cached_experiments = sorted([c.stem for c in Path(config.CACHED_EXPERIMENTS_DIR).glob('*.json')])
     with open('../pogona_hunter/src/config.json', 'r') as f:
         app_config = json.load(f)
 
