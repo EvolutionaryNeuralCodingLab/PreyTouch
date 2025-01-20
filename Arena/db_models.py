@@ -658,7 +658,8 @@ class ORM:
                 return {}
 
             for blk, exp in orm_res:
-                res.append({'block_id': blk.id, 'date': exp.start_time, 'animal_id': exp.animal_id, 'arena': exp.arena})
+                if exp.animal_id and exp.arena:
+                    res.append({'block_id': blk.id, 'date': exp.start_time, 'animal_id': exp.animal_id, 'arena': exp.arena})
 
             res = pd.DataFrame(res)
             res['exp_day'] = res.date.dt.strftime('%Y-%m-%d')
