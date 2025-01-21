@@ -133,9 +133,10 @@ class Scheduler(threading.Thread):
                     elif exp_name.startswith('SWITCH:'):
                         switch_name, switch_state = exp_name.replace('SWITCH:', '').split(',')
                         self.periphery.switch(switch_name, int(switch_state == 'on'))
+                    # schedule of agent activation
                     elif exp_name.startswith('AGENT:'):
-                        agent_state = int(exp_name.replace('AGENT:', ''))
-                        cache.set(cc.HOLD_AGENT, not agent_state)
+                        agent_state = exp_name.replace('AGENT:', '')
+                        cache.set(cc.HOLD_AGENT, agent_state == 'off')
                     else:  # otherwise, start the cached experiment
                         self.arena_mgr.start_cached_experiment(m.group('name'))
 
