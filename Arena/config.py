@@ -157,6 +157,7 @@ NUM_ARUCO_MARKERS = env.int('NUM_ARUCO_MARKERS', 150, group='Calibration', desc=
 DISABLE_SCHEDULER = env.bool('DISABLE_SCHEDULER', False, group='Scheduler', desc='Disable the scheduler')
 SCHEDULER_DATE_FORMAT = env('SCHEDULER_DATE_FORMAT', "%d/%m/%Y %H:%M", group='Scheduler', desc='Scheduler date format or how dates are shown in the schedules panel')
 MAX_COMPRESSION_THREADS = env.int('MAX_COMPRESSION_THREADS', 2, group='Scheduler', desc='Number of threads to be used for video compression')
+IS_COMPRESSION_DISABLED = env.bool('IS_COMPRESSION_DISABLED', False, group='Scheduler', desc='Disable the scheduled compressions of videos')
 SCHEDULE_EXPERIMENTS_END_TIME = env('SCHEDULE_EXPERIMENTS_END_TIME', '19:00', group='Scheduler', desc='last hour of a day to schedule experiments')
 IS_AGENT_ENABLED = env.bool('IS_AGENT_ENABLED', 0, group='Scheduler', desc='Enable the agent to schedule experiments automatically')
 AGENT_MIN_DURATION_BETWEEN_PUBLISH = env.int('AGENT_MIN_DURATION_BETWEEN_PUBLISH', 2 * 60 * 60, group='Scheduler', desc='Minimum duration in seconds between publish meassages by the agent')
