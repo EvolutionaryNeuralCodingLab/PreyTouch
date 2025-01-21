@@ -43,6 +43,7 @@
                 <select id="scheduleTypeSelect" class="form-control">
                     <option value="experiment">Experiment</option>
                     <option value="switch">Switch</option>
+                    <option value="agent">Agent</option>
                 </select>
             </div>
         </div>
@@ -67,6 +68,15 @@
                 <select id="switchStateSelectSchedule" class="form-control">
                     <option value="on">ON</option>
                     <option value="off">OFF</option>
+                </select>
+            </div>
+        </div>
+        <div class="row" id="agentSelectScheduleSection">
+            <div class="col-sm-7">
+                <label for="agentStateSelectSchedule" class="col-form-label">Agent State</label>
+                <select id="agentStateSelectSchedule" class="form-control">
+                    <option value="1">ON</option>
+                    <option value="0">OFF</option>
                 </select>
             </div>
         </div>
@@ -96,16 +106,25 @@
         if (scheduleType === "experiment") {
             $("#cachedExperimentsSelectScheduleSection").show()
             $("#switchSelectScheduleSection").hide()
+            $("#agentSelectScheduleSection").hide()
         } else if (scheduleType === "switch") {
             $("#cachedExperimentsSelectScheduleSection").hide()
             $("#switchSelectScheduleSection").show()
+            $("#agentSelectScheduleSection").hide()
+        } else if (scheduleType === "agent") {
+            $("#cachedExperimentsSelectScheduleSection").hide()
+            $("#switchSelectScheduleSection").hide()
+            $("#agentSelectScheduleSection").show()
         }
     }).trigger('change')
 
     $("#saveScheduleButton").click(() => {
         let experimentName = $("#cachedExperimentsSelectSchedule").val()
-        if ($("#scheduleTypeSelect").val() === 'switch') {
+        let scheduleType = $("#scheduleTypeSelect").val()
+        if (scheduleType === 'switch') {
             experimentName = `SWITCH:${$("#switchNameSelectSchedule").val()},${$("#switchStateSelectSchedule").val()}`
+        } else if (scheduleType === 'agent') {
+            experimentName = `AGENT:${$("#agentStateSelectSchedule").val()}}`
         }
         $.post('/commit_schedule', {
                 start_date: $("#datetimepicker1").data().date,
