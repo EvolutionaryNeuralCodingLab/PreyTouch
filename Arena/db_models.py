@@ -821,7 +821,7 @@ if __name__ == '__main__':
     # delete_duplicates(VideoPrediction, 'video_id')
     # DWH().commit()
     # DWH().update_model(Strike, ['prediction_distance', 'calc_speed', 'projected_strike_coords', 'projected_leap_coords'])
-    DWH().update_model(VideoPrediction, ['data'], model='front_head_only_resnet_152')
+    # DWH().update_model(VideoPrediction, ['data'], model='front_head_only_resnet_152')
     DWH().commit()
     sys.exit(0)
 
