@@ -50,3 +50,5 @@ Arena/Prediction/Yolo4/libdarknet.so
 
 Arena/configurations/*.json
 Arena/configurations/archive
+
+*/node_modules/*
