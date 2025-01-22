@@ -8,6 +8,5 @@ module.exports = merge(prodEnv, {
   ROUTER_MODE: '"history"',
   MOVEMENT_TYPE: '"low_horizontal"',
   BUG_TYPES: '["green_cockroach", "red_cockroach"]',
-  REWARD_BUGS: '"green_cockroach"',
-  IS_KILLING_ALL_BY_ONE_HIT: true
+  REWARD_BUGS: '"green_cockroach"'
 })
