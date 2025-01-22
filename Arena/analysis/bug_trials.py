@@ -32,7 +32,7 @@ class TrialScanner:
             return
 
         print(f'Found {len(block_ids)} blocks for trials analysis.')
-        errors = []
+        errors = {}
         for block_id, (cache_path, trials) in block_ids.items():
             res, trials_images = [], {}
             for trial_id, strikes_times in (tqdm(trials.items(), desc=cache_path.as_posix()) if self.is_tqdm else trials.items()):
@@ -41,9 +41,10 @@ class TrialScanner:
                     trials_images[trial_id] = [cv2.resize(image, (0,0), fx=image_shrink, fy=image_shrink) for image in images]
                     res.append(tdf)
                 except Exception as e:
-                    errors.append(f'Error for trial {trial_id}: {e}')
+                    errors.setdefault(str(e), []).append(str(trial_id))
             if self.is_debug:
-                print('\n'.join(errors))
+                for err, trial_ids in errors.items():
+                    print(f'{err}; Trials:{",".join(trial_ids)}')
             time.sleep(0.1)
             if not res:
                 print(f'None of the {len(trials)} trials of block {block_id} were processed successfully.')
@@ -75,7 +76,7 @@ class TrialScanner:
         if strikes_times is None:
             strikes_times = self.get_strike_times_for_trial(trial_id)
         ld = Loader(trial_id, config.NIGHT_POSE_CAMERA, is_use_db=self.is_use_db, is_trial=True, raise_no_pose=True,
-                    orm=self.orm)
+                    orm=self.orm, is_debug=False)
         pose_df = (pd.concat([ld.frames_df[['time', 'bug_x', 'bug_y', 'angle']].droplevel(1, axis=1),
                                    ld.frames_df['nose']],
                              axis=1).reset_index().rename(columns={'index': 'frame_id', 'prob': 'pose_prob'}))
