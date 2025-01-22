@@ -617,7 +617,9 @@ class ORM:
             for strk, blk, exp in orm_res:
                 d = {c: strk.__dict__.get(c) if c in strk.__dict__ else blk.__dict__.get(c) for c in cols}
                 df.append(d)
-            df = pd.DataFrame(df).sort_values(by='time')
+            df = pd.DataFrame(df)
+            if not df.empty:
+                df = df.sort_values(by='time')
         return df
 
     def get_trials_for_day(self, day_string=None, animal_id=None) -> pd.DataFrame:
