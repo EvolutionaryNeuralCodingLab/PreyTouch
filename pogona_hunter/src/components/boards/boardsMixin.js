@@ -16,7 +16,7 @@ export default {
         bugTypes: process.env.BUG_TYPES || ['cockroach', 'green_beetle'],
         rewardBugs: process.env.REWARD_BUGS || 'cockroach',
         movementType: process.env.MOVEMENT_TYPE || 'circle',
-        speed: 2, // if 0 config default for bug will be used
+        speed: 0, // if 0 config default for bug will be used
         bugSize: 0, // if 0 config default for bug will be used
         bloodDuration: 2000,
         backgroundColor: '#e8eaf6',
