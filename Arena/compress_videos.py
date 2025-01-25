@@ -35,20 +35,7 @@ def compress(video_db_id, logger, orm):
         source = Path(v.path).resolve()
         try:
             assert source.exists(), f'video does not exist'
-            dest = source.with_suffix('.mp4')
-
-            logger.info(f'start video compression of {source}')
-            t0 = time.time()
-            reader = iio.get_reader(source.as_posix())
-            fps = reader.get_meta_data()['fps']
-            writer = iio.get_writer(dest.as_posix(), format="FFMPEG", mode="I",
-                                    fps=fps, codec="libx264", quality=5,
-                                    macro_block_size=8,  # to work with 1440x1080 image size
-                                    ffmpeg_log_level="error")
-            for im in reader:
-                writer.append_data(im)
-            logger.info(f'Finished compression of {dest} in {(time.time() - t0) / 60:.1f} minutes')
-
+            dest = compress_video_file(source, logger)
             v.path = str(dest)
             v.compression_status = 1
             source.unlink()
@@ -64,6 +51,25 @@ def compress(video_db_id, logger, orm):
             if reader is not None:
                 reader.close()
             time.sleep(2)
+
+
+def compress_video_file(vid_path, logger=None):
+    print_func = logger.info if logger is not None else print
+    source = Path(vid_path)
+    dest = source.with_suffix('.mp4')
+
+    print_func(f'start video compression of {source}')
+    t0 = time.time()
+    reader = iio.get_reader(source.as_posix())
+    fps = reader.get_meta_data()['fps']
+    writer = iio.get_writer(dest.as_posix(), format="FFMPEG", mode="I",
+                            fps=fps, codec="libx264", quality=5,
+                            macro_block_size=8,  # to work with 1440x1080 image size
+                            ffmpeg_log_level="error")
+    for im in reader:
+        writer.append_data(im)
+    print_func(f'Finished compression of {dest} in {(time.time() - t0) / 60:.1f} minutes')
+    return dest
 
 
 def main():
@@ -96,15 +102,7 @@ def clear_missing_videos():
 
 
 if __name__ == "__main__":
-    import logging
-    orm = ORM()
-    logger_ = logging.getLogger('compress')
-    logger_.addHandler(logging.StreamHandler())
-    logger_.setLevel(logging.DEBUG)
-    vids = get_videos_ids_for_compression(orm)
-    logger_.info(f'found {len(vids)} videos to compress')
-    compress(vids, logger_, orm)
-
+    compress_video_file('/data/PreyTouch/output/experiments/PV80/20250116/block5/videos/right_20250116T130047.avi')
     # main()
     # foo()
     # clear_missing_videos()

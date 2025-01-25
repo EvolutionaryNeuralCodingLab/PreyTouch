@@ -157,9 +157,9 @@ class Loader:
 
     def set_video_path(self, vid):
         video_path = Path(vid.path).resolve()
-        # fix for cases in which the analysis runs from other servers
-        if DEFAULT_OUTPUT_DIR != config.OUTPUT_DIR and video_path.as_posix().startswith(DEFAULT_OUTPUT_DIR):
-            video_path = Path(video_path.as_posix().replace(DEFAULT_OUTPUT_DIR, config.OUTPUT_DIR))
+        # # fix for cases in which the analysis runs from other servers
+        # if DEFAULT_OUTPUT_DIR != config.OUTPUT_DIR and video_path.as_posix().startswith(DEFAULT_OUTPUT_DIR):
+        #     video_path = Path(video_path.as_posix().replace(DEFAULT_OUTPUT_DIR, config.OUTPUT_DIR))
         if self.is_dwh:
             # TODO: move to config
             video_path = Path(f'/media/sil2/Data/regev/experiments/{self.arena_name}/' + '/'.join(video_path.parts[-5:]))

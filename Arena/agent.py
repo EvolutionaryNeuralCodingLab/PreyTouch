@@ -103,19 +103,25 @@ class Agent:
                 self.history[trial_name]['counts'] = 0
 
     def load_history(self):
+        # create a dict of movement types and their relevant trial names
+        movements = {}
+        for trial_name, trial_dict in self.trials.items():
+            movements.setdefault(trial_dict['movement_type'], []).append(trial_name)
+
         with self.orm.session() as s:
             exps = s.query(Experiment).filter_by(animal_id=self.animal_id).all()
             for exp in exps:
                 for blk in exp.blocks:
-                    if blk.movement_type in self.trials:
-                        count_key = self.history[blk.movement_type]['key']
-                        counts = self.history[blk.movement_type]['counts']
-                        if isinstance(counts, dict):  # case of per
-                            for metric_name, metric_counts in counts.items():
-                                if getattr(blk, metric_name) in metric_counts:
-                                    metric_counts[getattr(blk, metric_name)] += len(getattr(blk, count_key))
-                        elif isinstance(counts, int):
-                            self.history[blk.movement_type]['counts'] += len(getattr(blk, count_key))
+                    if blk.movement_type in movements:
+                        for trial_name in movements[blk.movement_type]:
+                            count_key = self.history[trial_name]['key']
+                            counts = self.history[trial_name]['counts']
+                            if isinstance(counts, dict):  # case of per
+                                for metric_name, metric_counts in counts.items():
+                                    if getattr(blk, metric_name) in metric_counts:
+                                        metric_counts[getattr(blk, metric_name)] += len(getattr(blk, count_key))
+                            elif isinstance(counts, int):
+                                self.history[trial_name]['counts'] += len(getattr(blk, count_key))
 
     def publish(self, msg):
         last_publish = self.cache.get(cc.LAST_TIME_AGENT_MESSAGE)

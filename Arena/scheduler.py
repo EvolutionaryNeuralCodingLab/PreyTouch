@@ -126,9 +126,17 @@ class Scheduler(threading.Thread):
                 if (schedule_date - datetime.now()).total_seconds() <= 0:
                     exp_name = m.group('name')
                     # lights stimulation (in case the name starts with "LightSTIM:")
-                    if exp_name.startswith('LightSTIM'):
+                    if exp_name.startswith('LightSTIM:'):
                         stim_cmd = exp_name.replace('LightSTIM:', '')
                         LightSTIM().run_stim_command(stim_cmd)
+                    # schedule of periphery switches (in case the name starts with "SWITCH:")
+                    elif exp_name.startswith('SWITCH:'):
+                        switch_name, switch_state = exp_name.replace('SWITCH:', '').split(',')
+                        self.periphery.switch(switch_name, int(switch_state == 'on'))
+                    # schedule of agent activation
+                    elif exp_name.startswith('AGENT:'):
+                        agent_state = exp_name.replace('AGENT:', '')
+                        cache.set(cc.HOLD_AGENT, agent_state == 'off')
                     else:  # otherwise, start the cached experiment
                         self.arena_mgr.start_cached_experiment(m.group('name'))
 
@@ -244,7 +252,7 @@ class Scheduler(threading.Thread):
 
     @schedule_method
     def compress_videos(self):
-        if self.is_in_range('cameras_on') or not self.is_compression_thread_available() or config.DISABLE_DB:
+        if self.is_in_range('cameras_on') or not self.is_compression_thread_available() or config.DISABLE_DB or config.IS_COMPRESSION_DISABLED:
             return
 
         videos = get_videos_ids_for_compression(self.arena_mgr.orm, sort_by_size=True)

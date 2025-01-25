@@ -607,8 +607,8 @@ class ORM:
                    not_(Experiment.animal_id.ilike('%test%'))]
         if animal_id:
             filters.append(Experiment.animal_id == animal_id)
-        cols = ['id', 'time', 'is_hit', 'bug_type', 'movement_type', 'bug_speed',  'x', 'y', 'bug_x', 'bug_y', 'bug_size',
-                'in_block_trial_id', 'is_climbing', 'block_id', 'trial_id', 'video_id', 'analysis_error']
+        cols = ['id', 'time', 'is_hit', 'bug_type', 'movement_type', 'analysis_error', 'bug_speed',  'x', 'y', 'bug_x', 'bug_y', 'bug_size',
+                'in_block_trial_id', 'is_climbing', 'block_id', 'trial_id', 'video_id']
         df = []
         with self.session() as s:
             orm_res = s.query(Strike, Block, Experiment).join(
@@ -618,6 +618,8 @@ class ORM:
                 d = {c: strk.__dict__.get(c) if c in strk.__dict__ else blk.__dict__.get(c) for c in cols}
                 df.append(d)
             df = pd.DataFrame(df)
+            if not df.empty:
+                df = df.sort_values(by='time')
         return df
 
     def get_trials_for_day(self, day_string=None, animal_id=None) -> pd.DataFrame:
@@ -650,29 +652,35 @@ class ORM:
             orm_res = s.query(Block, Experiment).join(
                 Experiment, Experiment.id == Block.experiment_id).filter(
                 Block.block_type == 'bugs',
-                not_(Experiment.animal_id.ilike('%test%'))
+                not_(Experiment.animal_id.ilike('%test%')),
+                Experiment.animal_id.isnot(None)
             ).all()
 
             if not orm_res:
                 return {}
 
             for blk, exp in orm_res:
-                res.append({'block_id': blk.id, 'date': exp.start_time, 'animal_id': exp.animal_id})
+                if exp.animal_id and exp.arena:
+                    res.append({'block_id': blk.id, 'date': exp.start_time, 'animal_id': exp.animal_id, 'arena': exp.arena})
 
             res = pd.DataFrame(res)
             res['exp_day'] = res.date.dt.strftime('%Y-%m-%d')
 
-        res = res.groupby('animal_id').exp_day.apply(lambda x: sorted(np.unique(x), reverse=True)).to_dict()
+        res = res.groupby(['arena', 'animal_id']).exp_day.apply(lambda x: sorted(np.unique(x), reverse=True))
+        res = {key: group.droplevel(0).to_dict() for key, group in res.groupby(level=0)}
         today = date.today().strftime('%Y-%m-%d')
-        if current_animal_id in res.keys():
-            days = res.pop(current_animal_id)
-            if today not in days:
-                days = [today] + days
-        else:
-            days = [today]
-        d = {current_animal_id: days}
-        d.update(res)
-        return d
+        if current_animal_id and current_animal_id != 'test':
+            arena_dict = res.get(config.ARENA_NAME, {})
+            if current_animal_id in arena_dict.keys():
+                days = arena_dict.pop(current_animal_id)
+                if today not in days:
+                    days = [today] + days
+            else:
+                days = [today]
+            d = {current_animal_id: days}
+            d.update(arena_dict)
+            res[config.ARENA_NAME] = d
+        return res
 
     def today_summary(self):
         summary = {}
@@ -815,7 +823,7 @@ if __name__ == '__main__':
     # delete_duplicates(VideoPrediction, 'video_id')
     # DWH().commit()
     # DWH().update_model(Strike, ['prediction_distance', 'calc_speed', 'projected_strike_coords', 'projected_leap_coords'])
-    DWH().update_model(VideoPrediction, ['data'], model='front_head_only_resnet_152')
+    # DWH().update_model(VideoPrediction, ['data'], model='front_head_only_resnet_152')
     DWH().commit()
     sys.exit(0)
 

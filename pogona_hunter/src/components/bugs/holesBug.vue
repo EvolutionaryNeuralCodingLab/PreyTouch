@@ -226,7 +226,10 @@ export default {
       return distance(x, y, this.x, this.y) <= this.currentBugSize / 1.5
     },
     jump() {
-      if (!(this.isJumpUpMovement || this.isAccelerateMovement || this.isCircleAccelerateMovement) || this.isDead || this.isJumped) {
+      if (!(this.isJumpUpMovement || this.isAccelerateMovement || this.isCircleAccelerateMovement) ||
+          this.isDead ||
+          this.isJumped ||
+          (this.isCircleAccelerateMovement && this.isHoleRetreatStarted)) {
         return
       }
       this.isJumped = true

@@ -1,11 +1,14 @@
 import os, sys
 import re
+import base64
 import requests
 import json
 import serial
 import time
 import psutil
 import threading
+from io import BytesIO
+from PIL import Image
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -354,12 +357,13 @@ def format_strikes_df(strike_df):
         else:
             return ['background-color: #F8B88B'] * len(s)  # pastel orange
 
+    strike_df['id'] = strike_df.id.apply(lambda x: f'<a href="{config.MANAGEMENT_URL}/get_strike_analysis/{x}" target="_blank" rel="noopener noreferrer">{x}</a>')
     strk_html = strike_df.style.format({
         'time': lambda x: x.strftime('%H:%M:%S') if not pd.isna(x) else 'NaT'
     }, precision=0).set_table_styles([
         {'selector': 'td', 'props': [('border-style', 'solid'), ('border-width', '1px')]},
         {'selector': 'th', 'props': [('text-align', 'center'), ('border-style', 'solid'), ('border-width', '1px')]}
-    ]).set_properties(**{'text-align': 'center'}).hide(axis='index').apply(highlight, axis=1).to_html()
+    ]).set_properties(**{'text-align': 'center'}).hide(axis='index').apply(highlight, axis=1).to_html(table_uuid='strikes_table')
     return strk_html
 
 
@@ -370,13 +374,14 @@ def format_trials_df(tr_df):
         else:
             return ['background-color: white'] * len(s)
 
+    tr_df['block_id'] = tr_df.block_id.apply(lambda x: f'<a href="{config.MANAGEMENT_URL}/get_block_analysis/{x}" target="_blank" rel="noopener noreferrer">{x}</a>')
     tr_html = tr_df.set_index(['block_id', 'id']).style.format({
         'start_time': lambda x: x.strftime('%H:%M:%S') if not pd.isna(x) else 'NaT',
         'end_time': lambda x: x.strftime('%H:%M:%S') if not pd.isna(x) else 'NaT'
     }, precision=0).set_table_styles([
         {'selector': 'td', 'props': [('border-style', 'solid'), ('border-width', '1px')]},
         {'selector': 'th', 'props': [('text-align', 'center'), ('border-style', 'solid'), ('border-width', '1px')]}
-    ]).set_properties(**{'text-align': 'center'}).apply(highlight, axis=1).to_html()
+    ]).set_properties(**{'text-align': 'center'}).apply(highlight, axis=1).to_html(table_uuid='trials_table')
     return tr_html
 
 
@@ -406,3 +411,10 @@ def get_psycho_files():
 
 def calc_cpu_percent(pid):
     return psutil.Process(pid).cpu_percent(0.1)
+
+
+def convert_image_to_b64(img):
+    pil_img = Image.fromarray(img)
+    buff = BytesIO()
+    pil_img.save(buff, format="JPEG")
+    return base64.b64encode(buff.getvalue()).decode("utf-8")

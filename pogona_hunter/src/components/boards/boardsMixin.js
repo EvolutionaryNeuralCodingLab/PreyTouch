@@ -13,15 +13,16 @@ export default {
         numTrials: null, // deprecated. Trials are governed by the experiment
         trialDuration: 5,
         iti: 5,
-        bugTypes: ['cockroach', 'green_beetle'],
-        rewardBugs: 'cockroach',
-        movementType: 'low_horizontal',
+        bugTypes: process.env.BUG_TYPES || ['cockroach', 'green_beetle'],
+        rewardBugs: process.env.REWARD_BUGS || 'cockroach',
+        movementType: process.env.MOVEMENT_TYPE || 'circle',
         speed: 0, // if 0 config default for bug will be used
         bugSize: 0, // if 0 config default for bug will be used
         bloodDuration: 2000,
         backgroundColor: '#e8eaf6',
         rewardAnyTouchProb: 0,
-        accelerateMultiplier: 3 // times to increase bug speed in tongue detection
+        accelerateMultiplier: 3, // times to increase bug speed in tongue detection
+        isKillingAllByOneHit: process.env.IS_KILLING_ALL_BY_ONE_HIT // if true, all bugs will disapear when one is hit successfully
       },
       mediaUrl: '',
       isHandlingTouch: false,
@@ -252,6 +253,11 @@ export default {
         }
         clearTimeout(bloodTimeout)
       }, this.bugsSettings.bloodDuration)
+
+      if (this.bugsSettings.isKillingAllByOneHit) {
+        this.$refs.bugChild = currentBugs.filter((_, index) => bugIndex === index)
+        console.log(this.$refs.bugChild)
+      }
     },
     endTrial() {
       // endTrial can be called only after: 1) bug caught [destruct method], 2) trial time reached

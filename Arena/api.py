@@ -22,7 +22,7 @@ import sentry_sdk
 import config
 import utils
 from cache import RedisCache, CacheColumns as cc
-from utils import titlize, turn_display_on, turn_display_off, get_sys_metrics, get_psycho_files, calc_cpu_percent
+import utils
 from experiment import ExperimentCache
 from arena import ArenaManager
 from loggers import init_logger_config, create_arena_handler
@@ -30,9 +30,14 @@ from calibration import CharucoEstimator, Calibrator
 from periphery_integration import PeripheryIntegrator, LightSTIM
 from agent import Agent
 from analysis.pose import run_predict
+from analysis.bug_trials import TrialScanner
+from analysis.strikes.loader import Loader
+from analysis.strikes.strikes import StrikeAnalyzer
 import matplotlib
 matplotlib.use('Agg')
 app = Flask('ArenaAPI')
+# prevent sort of keys by the tojson jinja function
+app.jinja_env.policies['json.dumps_kwargs']['sort_keys'] = False
 cache: RedisCache = None
 arena_mgr: ArenaManager = None
 periphery_mgr: PeripheryIntegrator = None
@@ -43,16 +48,17 @@ config_envs = config.env.get_all_from_cache()
 @app.route('/')
 def index():
     """Video streaming ."""
-    cached_experiments = sorted([c.stem for c in Path(config.CACHED_EXPERIMENTS_DIR).glob('*.json')])
     with open('../pogona_hunter/src/config.json', 'r') as f:
         app_config = json.load(f)
+
+    is_cam_trigger, summary_animal_ids = False, {}
     if arena_mgr is None:
         cameras = list(config.cameras.keys())
-        is_cam_trigger, summary_animal_ids = False, []
     else:
         cameras = list(arena_mgr.units.keys())
         is_cam_trigger = arena_mgr.is_cam_trigger_setup()
-        summary_animal_ids = arena_mgr.orm.get_animal_ids_for_summary()
+        if not config.DISABLE_DB:
+            summary_animal_ids = arena_mgr.orm.get_animal_ids_for_summary()
 
     if config.IS_ANALYSIS_ONLY:
         toggels, feeders, cameras = [], [], []
@@ -65,7 +71,7 @@ def index():
                            config=app_config, log_channel=config.ui_console_channel, reward_types=config.reward_types,
                            experiment_types=config.experiment_types, media_files=list_media(), min_calib_images=config.MIN_CALIBRATION_IMAGES,
                            blank_rec_types=config.blank_rec_types, config_envs=config_envs, predictors=predictors,
-                           max_blocks=config.api_max_blocks_to_show, toggels=toggels, psycho_files=get_psycho_files(),
+                           max_blocks=config.api_max_blocks_to_show, toggels=toggels, psycho_files=utils.get_psycho_files(),
                            extra_time_recording=config.EXTRA_TIME_RECORDING, feeders=feeders, configurations=confs,
                            is_light_stim=config.LIGHT_STIM_SERIAL is not None, is_cam_trigger=is_cam_trigger,
                            summary_animal_ids=summary_animal_ids, is_log_file=Path(config.LOGGER_FILEPATH).exists(),
@@ -109,15 +115,15 @@ def check():
                     else:
                         proc_name = 'cam'
                     proc_name += f'({p.pid})'
-                    proc_cpus[proc_name] = f'{calc_cpu_percent(p.pid):.1f}'
+                    proc_cpus[proc_name] = f'{utils.calc_cpu_percent(p.pid):.1f}'
                 except:
                     continue
             res.setdefault('processes_cpu', {})[f'CU-{cam_name}'] = proc_cpus
         if 'websocket_server' in arena_mgr.threads:
             p = arena_mgr.threads['websocket_server']
-            res.setdefault('processes_cpu', {})['WebSocket'] = {f'server({p.pid})': f'{calc_cpu_percent(p.pid):.1f}'}
+            res.setdefault('processes_cpu', {})['WebSocket'] = {f'server({p.pid})': f'{utils.calc_cpu_percent(p.pid):.1f}'}
 
-    res.update(get_sys_metrics())
+    res.update(utils.get_sys_metrics())
     return jsonify(res)
 
 
@@ -256,6 +262,29 @@ def animal_day_summary():
     except Exception as e:
         arena_mgr.logger.exception(e)
         return Response('Error loading animal summary', status=500)
+
+
+@app.route('/get_block_analysis/<block_id>', methods=['GET'])
+def get_block_analysis(block_id):
+    try:
+        ts = TrialScanner(is_debug=False)
+        img = ts.plot_cached_block_results(block_id)
+        img_b64 = utils.convert_image_to_b64(img)
+    except Exception:
+        img_b64 = ''
+    return render_template('block_analysis.html', block_id=block_id, image=img_b64)
+
+
+@app.route('/get_strike_analysis/<strike_id>', methods=['GET'])
+def get_strike_analysis(strike_id):
+    try:
+        ld = Loader(int(strike_id), config.NIGHT_POSE_CAMERA, is_debug=False)
+        sa = StrikeAnalyzer(ld)
+        img = sa.plot_strike_analysis(only_return=True)
+        img_b64 = utils.convert_image_to_b64(img)
+    except Exception:
+        img_b64 = ''
+    return render_template('strike_analysis.html', strike_id=strike_id, image=img_b64)
 
 
 @app.route('/commit_light_stim', methods=['POST'])
@@ -452,9 +481,9 @@ def arena_switch(name, state):
 @app.route('/display/<state>')
 def display(state):
     if state == 'off':
-        stdout = turn_display_off(logger=arena_mgr.logger)
+        stdout = utils.turn_display_off(logger=arena_mgr.logger)
     else:
-        stdout = turn_display_on(logger=arena_mgr.logger)
+        stdout = utils.turn_display_on(logger=arena_mgr.logger)
     return Response('ok')
 
 
@@ -521,7 +550,7 @@ def start_media():
         data = request.json
         if not data or not data.get('media_url'):
             return Response('Unable to find media url')
-        turn_display_on(board='media', logger=arena_mgr.logger)
+        utils.turn_display_on(board='media', logger=arena_mgr.logger)
         time.sleep(2)
         payload = json.dumps({'url': f'{config.MANAGEMENT_URL}/media/{data["media_url"]}'})
         print(payload)
@@ -632,24 +661,6 @@ def video_feed():
     """Video streaming route. Put this in the src attribute of an img tag."""
     return Response(arena_mgr.stream(),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
-
-
-@app.route('/strike_analysis/<strike_id>')
-def get_strike_analysis(strike_id):
-    from analysis.strikes import StrikeAnalyzer, Loader
-    ld = Loader(strike_id, 'front', is_debug=False)
-    sa = StrikeAnalyzer(ld)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        img = sa.plot_strike_analysis(only_return=True)
-    img = Image.fromarray(img.astype('uint8'))
-    # create file-object in memory
-    file_object = io.BytesIO()
-    # write PNG in file-object
-    img.save(file_object, 'PNG')
-    # move to beginning of file so `send_file()` it will read from start
-    file_object.seek(0)
-    return send_file(file_object, mimetype='image/PNG')
 
 
 def initialize():
