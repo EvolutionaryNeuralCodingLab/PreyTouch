@@ -255,7 +255,7 @@ export default {
       }, this.bugsSettings.bloodDuration)
 
       if (this.bugsSettings.isKillingAllByOneHit) {
-        this.$refs.bugChild = currentBugs.filter((_, index) => bugIndex === index)
+        this.$refs.bugChild = this.$refs.bugChild.filter((_, index) => bugIndex === index)
         console.log(this.$refs.bugChild)
       }
     },
