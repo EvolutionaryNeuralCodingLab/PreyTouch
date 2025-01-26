@@ -11,6 +11,7 @@ Arena/events
 Arena/bin
 .env*
 *.weights
+*.ipynb
 *.avi
 *.mp4
 *.pth
