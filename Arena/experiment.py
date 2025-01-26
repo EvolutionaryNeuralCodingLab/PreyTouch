@@ -212,6 +212,7 @@ class Block:
     background_color: str = ''
     block_type: str = 'bugs'  # options: 'bugs', 'blank', 'media', 'psycho'
 
+    num_of_bugs: int = 1
     movement_type: str = None
     bug_speed: [int, list] = None
     bug_size: int = None
@@ -536,7 +537,7 @@ class Block:
     @property
     def bug_options(self) -> dict:
         return {
-            'numOfBugs': 1,
+            'numOfBugs': self.num_of_bugs,
             'trialID': 1,  # default value, changed in init_bugs
             'trialDBId': 1, # default value, changed in init_bugs
             'numTrials': self.num_trials,

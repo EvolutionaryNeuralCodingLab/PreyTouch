@@ -1,4 +1,4 @@
-import {randomRange} from '../../js/helpers'
+import {randomRange, getKeyWithMinFirstArrayValue} from '../../js/helpers'
 import { v4 as uuidv4 } from 'uuid'
 
 export default {
@@ -28,6 +28,7 @@ export default {
       isHandlingTouch: false,
       isRewardGiven: false,
       isClimbing: false,
+      isBloodOnScreen: false, // bug is with blood on screen so avoid any other hits until blood goes away
       afterRewardTimeout: 40 * 1000,
       touchesCounter: 0,
       canvasParams: {
@@ -113,9 +114,11 @@ export default {
       this.initDrawing()
       this.spawnBugs(this.bugsSettings.numOfBugs)
       this.$nextTick(function () {
-        console.log('start animation...')
-        this.dumpTrialData()
-        this.animate()
+        if (this.$refs.bugChild) {
+          console.log('start animation...')
+          this.dumpTrialData()
+          this.animate()
+        }
       })
     },
     initDrawing() {
@@ -123,6 +126,7 @@ export default {
     },
     clearBoard() {
       this.bugsSettings.numOfBugs = 0
+      this.bugsProps = []
       if (this.animationHandler) {
         this.$refs.bugChild = []
         cancelAnimationFrame(this.animationHandler)
@@ -192,16 +196,24 @@ export default {
       this.isHandlingTouch = true
       x -= this.canvas.offsetLeft
       y -= this.canvas.offsetTop
+      let strikeDistances = {}
+      let isRewardAnyTouch = Math.random() < this.bugsSettings.rewardAnyTouchProb
       for (let i = 0; i < this.$refs.bugChild.length; i++) {
         let bug = this.$refs.bugChild[i]
         if (bug.isDead || bug.isRetreated) {
           continue
         }
         let isRewardBug = this.bugsSettings.rewardBugs.includes(bug.currentBugType)
-        let isHit = bug.isHit(x, y)
-        let isRewardAnyTouch = Math.random() < this.bugsSettings.rewardAnyTouchProb
-        if ((isHit || isRewardAnyTouch) && !this.isClimbing) {
-          this.destruct(i, x, y, isRewardBug)
+        strikeDistances[i] = [bug.hitDistance(x, y), bug.isHit(x, y), isRewardBug]
+      }
+      if (Object.keys(strikeDistances).length > 0) {
+        // Get the bug with the minimum distance from the touch point
+        let i = Number(getKeyWithMinFirstArrayValue(strikeDistances))
+        let bug = this.$refs.bugChild[i]
+        let isHit = strikeDistances[i][1]
+        let isRewardBug = strikeDistances[i][2]
+        if ((isHit || isRewardAnyTouch) && !this.isClimbing && !this.isBloodOnScreen) {
+            this.destruct(i, x, y, isRewardBug)
         }
         this.logTouch(x, y, bug, isHit, isRewardBug, isRewardAnyTouch)
       }
@@ -226,14 +238,16 @@ export default {
       console.log('Touch event was sent to the server')
     },
     destruct(bugIndex, x, y, isRewardBug) {
-      let currentBugs = this.$refs.bugChild
-      currentBugs[bugIndex].isDead = true
+      this.$refs.bugChild[bugIndex].isDead = true
+      this.isBloodOnScreen = true
       if (isRewardBug) {
         this.$refs.audio1.play()
         this.$store.commit('increment')
       }
       const bloodTimeout = setTimeout(() => {
-        this.$refs.bugChild = this.$refs.bugChild.filter((_, index) => bugIndex !== index)
+        this.$refs.bugChild = this.$refs.bugChild.filter((items, index) => bugIndex !== index)
+        this.isBloodOnScreen = false
+        console.log(`Number of bugs left: ${this.$refs.bugChild.length}  (bug ID ${bugIndex} was removed)`)
         if (this.$refs.bugChild.length === 0) {
           this.endTrial()
         }

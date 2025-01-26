@@ -28,3 +28,17 @@ export function shuffle(array) {
       array[randomIndex], array[currentIndex]];
   }
 }
+
+export function getKeyWithMinFirstArrayValue(obj) {
+  if (Object.keys(obj).length === 0) {
+    console.warn('Object is empty');
+    return
+  }
+  return Object.keys(obj).reduce((minKey, currentKey) => {
+    // Ensure the value is an array with at least one element
+    if (!Array.isArray(obj[currentKey]) || obj[currentKey].length === 0) {
+      throw new Error(`Value for key "${currentKey}" is not a valid array with at least one element.`);
+    }
+    return obj[currentKey][0] < obj[minKey][0] ? currentKey : minKey;
+  });
+}
