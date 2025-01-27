@@ -78,13 +78,17 @@ class Trainer:
             train_ds, test_ds = torch.utils.data.random_split(self.dataset, [1-self.test_size, self.test_size])
             indices = train_ds.indices
             self.test_indices = test_ds.indices
+            test_loader = self._get_loader(idx=test_ds.indices)
         else:
             indices = np.arange(len(self.dataset))
+            test_loader = None
 
         if self.is_shuffle_dataset:
             indices = np.random.permutation(indices)
 
-        y_vals = pd.Series(self.dataset.y).sort_index().values
+        y_vals = pd.Series(self.dataset.targets).sort_index().values
+        if self.test_size:
+            y_vals = y_vals[indices]
         for fold, (train_idx, val_idx) in enumerate(splits.split(indices, y_vals)):
             f_best_score_, f_best_model_, f_metrics, best_history = None, None, dict(), None
             self.model = self.get_model()
@@ -107,8 +111,14 @@ class Trainer:
                     if not f_best_score_ or self.is_better_score_(score, f_best_score_):
                         f_best_score_ = score
                         f_best_model_ = self.model.state_dict()
-            self.model.load_state_dict(f_best_model_)
-            self.history.append({'model_state': f_best_model_, 'score': f_best_score_, 'metrics': f_metrics})
+
+                self.model.load_state_dict(f_best_model_)
+                fold_res = {'model_state': f_best_model_, 'score': f_best_score_, 'metrics': f_metrics}
+                if test_loader is not None:
+                    test_score = self.val_epoch(test_loader, loss_fn)[self.monitored_metric]
+                    fold_res['test_score'] = test_score
+                    print(f' Test Score={test_score:.2f}')
+                self.history.append(fold_res)
 
         chosen_fold_id = self.get_best_model()
         self.print(f'Chosen model is of Fold#{chosen_fold_id+1}')
@@ -161,18 +171,24 @@ class Trainer:
     def convert_inputs(self, x, y):
         return x.to(self.device).float(), y.to(self.device).float()
 
-    def get_training_loaders(self, train_idx=None, val_idx=None):
+    def _get_loader(self, idx=None, dataset=None):
         params = {'batch_size': self.batch_size, 'num_workers': self.num_loader_workers, 'drop_last': True}
+        if idx is not None:
+            sampler = SubsetRandomSampler(idx)
+            return DataLoader(self.dataset, sampler=sampler, **params)
+        elif dataset is not None:
+            return DataLoader(dataset, **params)
+        else:
+            raise Exception('Must provide either idx or dataset to dataloader')
+
+    def get_training_loaders(self, train_idx=None, val_idx=None):
         if train_idx is not None:
-            train_sampler = SubsetRandomSampler(train_idx)
-            val_sampler = SubsetRandomSampler(val_idx)
-            train_loader = DataLoader(self.dataset, sampler=train_sampler, **params)
-            val_loader = DataLoader(self.dataset, sampler=val_sampler, **params)
+            train_loader = self._get_loader(idx=train_idx)
+            val_loader = self._get_loader(idx=val_idx)
         else:
             datasets = self.train_val_dataset(self.dataset, val_split=0.25)
-            train_loader = DataLoader(datasets['train'], **params)
-            val_loader = DataLoader(datasets['val'], **params)
-
+            train_loader = self._get_loader(dataset=datasets['train'])
+            val_loader = self._get_loader(dataset=datasets['val'])
         return train_loader, val_loader
 
     def load(self):
@@ -222,7 +238,11 @@ class Trainer:
 
     def get_best_model(self):
         algo = np.argmin if self.monitored_metric_algo == 'min' else np.argmax
-        return int(algo([h['score'] for h in self.history]))
+        if self.history and 'test_score' in self.history[0]:
+            key = 'test_score'
+        else:
+            key = 'score'
+        return int(algo([h[key] for h in self.history]))
 
     def print_dataset_info(self, datasets: dict):
         for key, dataset in datasets.items():
@@ -309,8 +329,8 @@ class ClassificationTrainer(Trainer):
         y_true, y_pred, y_score = y_true.cpu().numpy(), y_pred.cpu().numpy(), y_score.cpu().numpy()
         return {
             'auc': roc_auc_score(y_true, y_score),
-            'recall': recall_score(y_true, y_pred),
-            'precision': precision_score(y_true, y_pred),
+            'recall': recall_score(y_true, y_pred, zero_division=0),
+            'precision': precision_score(y_true, y_pred, zero_division=0),
             'accuracy': balanced_accuracy_score(y_true, y_pred)
         }
 
