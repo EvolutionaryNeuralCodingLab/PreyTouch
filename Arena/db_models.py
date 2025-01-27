@@ -147,6 +147,7 @@ class Block(Base):
     movement_type = Column(String)
     holes_height_scale = Column(Float, nullable=True)
     background_color = Column(String, nullable=True)
+    tags = Column(String, nullable=True, default='')
     strikes = relationship('Strike')
     trials = relationship('Trial')
     videos = relationship('Video')
@@ -169,6 +170,7 @@ class Trial(Base):
     trial_bugs = Column(String, nullable=True)
     bug_sizes = Column(String, nullable=True)
     extra = Column(JSON, nullable=True)
+    tags = Column(String, nullable=True, default='')
     strikes = relationship('Strike')
     dwh_key = Column(Integer, nullable=True)
 
@@ -207,6 +209,7 @@ class Strike(Base):
     strike_frame = Column(Integer, nullable=True)
     leap_frame = Column(Integer, nullable=True)
     arena = Column(String)
+    tags = Column(String, nullable=True, default='')
     block_id = Column(Integer, ForeignKey('blocks.id'), nullable=True)
     trial_id = Column(Integer, ForeignKey('trials.id'), nullable=True)
     video_id = Column(Integer, ForeignKey('videos.id'), nullable=True)

@@ -1,4 +1,5 @@
 import sys
+import tempfile
 import time
 from pathlib import Path
 import yaml
@@ -25,7 +26,9 @@ class BugTrialsAnalyzer:
         self.tongue_model = self.init_tongue_model()
         self.orm = ORM()
 
-    def run(self, block_id=None, is_cache=True):
+    def run(self, block_id=None, block_path=None, is_cache=True):
+        if block_path and not block_id:
+            block_id = self.get_block_id_from_block_path(block_path)
         block_ids = self.scan(block_id=block_id, is_cache=is_cache)
         if not block_ids:
             print('No blocks found in DB scan; aborting.')
@@ -49,6 +52,7 @@ class BugTrialsAnalyzer:
                 print(f'None of the {len(trials)} trials of block {block_id} were processed successfully.')
                 continue
             res = pd.concat(res)
+            res['time'] = res.time.astype('datetime64[us]')
             res.to_parquet(cache_path)
             self.plot_cached_block_results(block_id, is_overwrite=True)
 
@@ -73,7 +77,7 @@ class BugTrialsAnalyzer:
     def run_on_trial(self, trial_id, strikes_times=None):
         if strikes_times is None:
             strikes_times = self.get_strike_times_for_trial(trial_id)
-        ld = Loader(trial_id, config.NIGHT_POSE_CAMERA, is_use_db=self.is_use_db, is_trial=True, raise_no_pose=True,
+        ld = Loader(trial_id, self.get_tongue_camera(), is_use_db=self.is_use_db, is_trial=True, raise_no_pose=True,
                     orm=self.orm, is_debug=False)
         pose_df = (pd.concat([ld.frames_df[['time', 'bug_x', 'bug_y', 'angle']].droplevel(1, axis=1),
                                    ld.frames_df['nose']],
@@ -91,65 +95,91 @@ class BugTrialsAnalyzer:
             tdf['trial_num'] = tr.in_block_trial_id
         return tdf
 
-    def plot_cached_block_results(self, block_id, is_overwrite=False, is_show=False):
+    def plot_cached_block_results(self, block_id=None, block_path=None, is_overwrite=False, is_show=False):
+        if block_path and not block_id:
+            block_id = self.get_block_id_from_block_path(block_path)
+            print(f'Block ID found: {block_id}')
         block_path, trials_data = self.get_block_path_and_trials(block_id)
         analysis_cache_path = self.get_trials_analysis_filename(block_path)
         cached_plot_path = analysis_cache_path.with_suffix('.png')
+        return_img_path = cached_plot_path.as_posix()
 
         if not cached_plot_path.exists() or is_overwrite:
             is_analysis = analysis_cache_path.exists()
-            cols = 5 if is_analysis else 3
-            fig, axes = plt.subplots(len(trials_data), cols, figsize=(25, 3 * len(trials_data)),
-                                     gridspec_kw={'width_ratios': [1, 1, 1, 2, 2]})
-            self.plot_trials_images(block_path, axes[:, :3])
+            ratios = [1, 2, 2, 2, 4, 4] if is_analysis else [1, 2, 2, 2]
+            rows, cols = len(trials_data), len(ratios)
+            fig, axes = plt.subplots(rows, cols, figsize=(4*cols, 3*rows), gridspec_kw={'width_ratios': ratios})
+            self.plot_trials_images(block_path, trials_data, axes[:, :4])
+
+            # if pose and tongues data is available, add them to the plot
             if is_analysis:
                 tdf = pd.read_parquet(analysis_cache_path)
-                self.plot_trials_tongues_and_pose(axes[:, 3:], tdf)
-                # save only if analysis exists
-                fig.savefig(cached_plot_path.as_posix(), bbox_inches='tight')
-            if is_show:
-                plt.show()
+                self.plot_trials_tongues_and_pose(axes[:, 4:], tdf)
             else:
+                return_img_path = f'{tempfile.NamedTemporaryFile(delete=False).name}.png'
+            fig.tight_layout()
+            fig.savefig(return_img_path, bbox_inches='tight')
+            if not is_show:
                 plt.close(fig)
-        return cv2.imread(cached_plot_path.as_posix())
+
+        res_img = cv2.imread(return_img_path)
+        if is_show:
+            window_name = 'Block Results'
+            # cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+            # cv2.imshow(window_name, cv2.resize(res_img, (960, 1300)))
+            cv2.imshow(window_name, res_img)
+            cv2.moveWindow(window_name, 0, 0)
+            while cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) > 0:
+                keycode = cv2.waitKey(50)
+                if keycode > 0:
+                    break
+            cv2.destroyAllWindows()
+        return res_img
 
     @staticmethod
     def plot_trials_tongues_and_pose(axes, tdf):
         trials = tdf.trial_id.unique().tolist()
-        for i, trial_id in enumerate(trials):
+        for trial_id in trials:
             df = tdf.query(f'trial_id=={trial_id}').copy()
+            i = df.trial_num.iloc[0] - 1
             time = (df.time - df.time.iloc[0]).dt.total_seconds().values
             bug_x = df.bug_x.values
             screen_x_lim = np.array([0, int(config.SCREEN_RESOLUTION.split(',')[0])])
             if config.SCREEN_PIX_CM:
                 bug_x = bug_x * config.SCREEN_PIX_CM
                 screen_x_lim = screen_x_lim * config.SCREEN_PIX_CM
-            axes[0].imshow(np.expand_dims(df.tongue_prob.values, axis=0), cmap='coolwarm', vmin=0, vmax=1,
+            axes[i, 0].imshow(np.expand_dims(df.tongue_prob.values, axis=0), cmap='coolwarm', vmin=0, vmax=1,
                            aspect='auto',
                            extent=[time[0], time[-1], *screen_x_lim])
-            axes[0].plot(time, bug_x, color='k', linewidth=2)
-            axes[0].margins(x=0)
-            axes[0].set_xlabel('Trial Time [sec]')
-            axes[0].set_ylabel('ScreenX ' + '[cm]' if config.SCREEN_PIX_CM else '[pixels]')
+            axes[i, 0].plot(time, bug_x, color='k', linewidth=2)
+            axes[i, 0].margins(x=0)
+            axes[i, 0].set_xlabel('Trial Time [sec]')
+            axes[i, 0].set_ylabel('ScreenX ' + '[cm]' if config.SCREEN_PIX_CM else '[pixels]')
 
-            axes[1].plot(time, df.y.values, linewidth=2)
-            axes[1].margins(x=0)
+            axes[i, 1].plot(time, df.y.values, linewidth=2)
+            axes[i, 1].margins(x=0)
             for strike_time in df.query('is_strike').time.values:
                 strike_time = (strike_time - df.time.iloc[0]).total_seconds()
                 for j in [0, 1]:
-                    axes[j].axvline(strike_time, color='tab:green', ls='--')
+                    axes[i, j].axvline(strike_time, color='tab:green', ls='--')
             if config.SCREEN_Y_CM:
-                axes[1].axhline(config.SCREEN_Y_CM, color='tab:orange', ls='--')
+                axes[i, 1].axhline(config.SCREEN_Y_CM, color='tab:orange', ls='--')
 
     @staticmethod
-    def plot_trials_images(block_path, axes):
+    def plot_trials_images(block_path, trials_data, axes):
         trials_images_dir = block_path / 'trials_images'
         if not trials_images_dir.exists():
             raise Exception(f'Trials images do not exist in: {block_path}')
 
+        for _, row in trials_data.reset_index(drop=True).iterrows():
+            i = row.in_block_trial_id - 1
+            text = "\n".join([f'{k}: {v}' for k, v in row.to_dict().items()])
+            axes[i, 0].text(-0.1, 1, text, va='top')
+            axes[i, 0].axis('off')
+
         for image_path in trials_images_dir.glob('*.png'):
             _, trial_num, img_num = image_path.stem.split('_')
-            ax = axes[int(trial_num)-1, int(img_num)]
+            ax = axes[int(trial_num)-1, int(img_num)+1]
             ax.imshow(cv2.imread(image_path.as_posix()))
             ax.axis('off')
 
@@ -163,22 +193,40 @@ class BugTrialsAnalyzer:
             block_path = Path(f'{exp.experiment_path}/block{blk.block_id}')
             trials_data = []
             for tr in blk.trials:
+                row = {}
                 for col in trial_cols:
-                    trials_data.append(getattr(tr, col, None))
+                    row[col] = getattr(tr, col)
+                row['num_strikes'] = len(tr.strikes)
+                row['movement_type'] = blk.movement_type
+                trials_data.append(row)
             trials_data = pd.DataFrame(trials_data)
         return block_path, trials_data
+
+    def get_block_id_from_block_path(self, block_path):
+        block_id = None
+        exp_path = Path(block_path).parent.as_posix()
+        block_number = int(Path(block_path).name.replace('block', ''))
+
+        with self.orm.session() as s:
+            for exp in s.query(Experiment).filter_by(experiment_path=exp_path).all():
+                for blk in exp.blocks:
+                    if blk.block_id == block_number:
+                        block_id = blk.id
+                        break
+        if not block_id:
+            raise Exception(f'could not find block with experiment path: {exp_path}')
+        return block_id
 
     def get_strike_times_for_trial(self, trial_id):
         with self.orm.session() as s:
             tr = s.query(Trial).filter_by(id=trial_id).first()
             return [strk.time for strk in tr.strikes]
 
-    @staticmethod
-    def init_tongue_model() -> TongueTrainer:
+    def init_tongue_model(self) -> TongueTrainer:
         pconfig = config.load_configuration('predict')
         if 'tongue_out' not in pconfig:
             raise Exception('Unable to load tongue_out PredictHandler, since no tongue_out configuration in predict_config')
-        return TongueTrainer(model_path=pconfig['tongue_out']['model_path'])
+        return TongueTrainer(model_path=pconfig['tongue_out']['model_path'], is_debug=self.is_debug)
 
     def predict_tongues(self, ld: Loader):
         res = []
@@ -186,6 +234,16 @@ class BugTrialsAnalyzer:
             label, prob = self.tongue_model.predict(frame)
             res.append({'frame_id': i, 'label': label, 'tongue_prob': prob})
         return pd.DataFrame(res)
+
+    @staticmethod
+    def get_tongue_camera():
+        tongue_cam = config.NIGHT_POSE_CAMERA  # default in case no tongue_out camera configuration
+        conf = config.load_configuration('cameras')
+        for cam_name, cam_dict in conf.items():
+            if 'tongue_out' in cam_dict.get('predictors', {}):
+                tongue_cam = cam_name
+                break
+        return tongue_cam
 
     def load_bug_trajectory(self, tr, parent_path):
         traj = tr.bug_trajectory
@@ -216,8 +274,39 @@ class BugTrialsAnalyzer:
         return Path(parent_dir) / 'trials_analysis.parquet'
 
 
+def create_trial_images_dir(animal_ids=None):
+    orm = ORM()
+    with orm.session() as s:
+        exps = s.query(Experiment)
+        if animal_ids is not None:
+            exps = exps.filter(Experiment.animal_id.in_(animal_ids))
+        for exp in exps.all():
+            for blk in exp.blocks:
+                if blk.block_type != 'bugs':
+                    continue
+                block_path = Path(f'{exp.experiment_path}/block{blk.block_id}')
+                trials_images_dir = block_path / 'trials_images'
+                if trials_images_dir.exists():
+                    continue
+                trials_images_dir.mkdir(parents=True, exist_ok=True)
+                for tr in tqdm(blk.trials, desc=str(block_path)):
+                    trial_num = int(tr.in_block_trial_id)
+                    img_num = 0
+                    ld = Loader(int(tr.id), config.TRIAL_IMAGE_CAMERA, is_debug=False, is_trial=True, orm=orm)
+                    for frame_id, frame in ld.gen_frames_around():
+                        if frame_id in ld.relevant_video_frames + [round(np.mean(ld.relevant_video_frames))]:
+                            frame = cv2.resize(frame, (0, 0), fx=0.2, fy=0.2)
+                            cv2.imwrite(str(trials_images_dir / f'trial_{trial_num}_{img_num}.png'), frame)
+                            img_num += 1
+
+
 if __name__ == "__main__":
-    ts = BugTrialsAnalyzer(animal_ids=['PV51'])
-    ts.run()
-    # ts.run(4909, is_cache=False)
-    # ts.plot_cached_block_results(block_id=4909)
+    # ts = BugTrialsAnalyzer(is_debug=True)
+    # blk_path = '/data/PreyTouch/output/experiments/PV162/20240414/block1'
+    # ts.run(block_path=blk_path, is_cache=False)
+    # ts.run(892, is_cache=False)
+    # ts.plot_cached_block_results(block_path=blk_path, is_show=True, is_overwrite=True)
+    create_trial_images_dir(['PV162'])
+
+    # /data/PreyTouch/output/experiments/PV162/20240413/block1
+    # /data/PreyTouch/output/experiments/PV162/20240414/block1

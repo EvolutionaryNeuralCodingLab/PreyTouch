@@ -29,6 +29,7 @@ from loggers import init_logger_config, create_arena_handler
 from calibration import CharucoEstimator, Calibrator
 from periphery_integration import PeripheryIntegrator, LightSTIM
 from agent import Agent
+from db_models import Block
 from analysis.pose import run_predict
 from analysis.bug_trials import BugTrialsAnalyzer
 from analysis.strikes.loader import Loader
@@ -268,11 +269,16 @@ def animal_day_summary():
 def get_block_analysis(block_id):
     try:
         ts = BugTrialsAnalyzer(is_debug=False)
+        tags = ''
+        with ts.orm.session() as s:
+            blk = s.query(Block).filter(Block.id == int(block_id)).first()
+            tags = blk.tags or ''
         img = ts.plot_cached_block_results(block_id)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img_b64 = utils.convert_image_to_b64(img)
     except Exception:
         img_b64 = ''
-    return render_template('block_analysis.html', block_id=block_id, image=img_b64)
+    return render_template('block_analysis.html', block_id=block_id, image=img_b64, tags=tags)
 
 
 @app.route('/get_strike_analysis/<strike_id>', methods=['GET'])
@@ -285,6 +291,21 @@ def get_strike_analysis(strike_id):
     except Exception:
         img_b64 = ''
     return render_template('strike_analysis.html', strike_id=strike_id, image=img_b64)
+
+
+@app.route('/update_tags/<db_model>', methods=['POST'])
+def update_tags(db_model):
+    import db_models
+    m = getattr(db_models, db_model)
+    model_id = int(request.form['id'])
+    with arena_mgr.orm.session() as s:
+        q = s.query(m).filter_by(id=model_id).first()
+        if q is None:
+            return Response(f'No {db_model} found with id={model_id}', status=404)
+        q.tags = request.form['tags']
+        s.commit()
+        arena_mgr.logger.info(f'Updated tags for {db_model}, id={model_id}: {request.form["tags"]}')
+    return Response('ok')
 
 
 @app.route('/commit_light_stim', methods=['POST'])

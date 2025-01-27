@@ -1,11 +1,27 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <script src="{{ url_for('static', filename='UI_packages/jquery.js') }}" type="text/javascript"></script>
     <meta charset="UTF-8">
     <title>Strike {{ strike_id }} Analysis</title>
 </head>
 <body>
     <h1>Strike {{ strike_id }} Analysis</h1>
+    <div style="margin-bottom: 2em;">
+        <label for="strikeTags">Tags:</label>
+        <input id="strikeTags" value="{{ tags }}" type="text" autocomplete="off">
+        <button id="updateStrikeTags">Update</button>
+    </div>
     <img src="data:image/jpeg;base64,{{ image | safe }}" style="width: 100%" alt="No image found">
 </body>
 </html>
+
+<script>
+    $("#updateStrikeTags").click(() => {
+        $.post('/update_tags/Strike', {'tags': $("#strikeTags").val(), 'id': '{{ strike_id }}'}).done(() => {
+            alert('Tags updated successfully!')
+        }).fail((xhr, textStatus, errorThrown) => {
+            alert(xhr.responseText)
+        })
+    })
+</script>
