@@ -30,7 +30,7 @@ from calibration import CharucoEstimator, Calibrator
 from periphery_integration import PeripheryIntegrator, LightSTIM
 from agent import Agent
 from analysis.pose import run_predict
-from analysis.bug_trials import TrialScanner
+from analysis.bug_trials import BugTrialsAnalyzer
 from analysis.strikes.loader import Loader
 from analysis.strikes.strikes import StrikeAnalyzer
 import matplotlib
@@ -267,7 +267,7 @@ def animal_day_summary():
 @app.route('/get_block_analysis/<block_id>', methods=['GET'])
 def get_block_analysis(block_id):
     try:
-        ts = TrialScanner(is_debug=False)
+        ts = BugTrialsAnalyzer(is_debug=False)
         img = ts.plot_cached_block_results(block_id)
         img_b64 = utils.convert_image_to_b64(img)
     except Exception:

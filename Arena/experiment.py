@@ -8,6 +8,7 @@ import websocket
 import json
 import threading
 import time
+import cv2
 from typing import Union
 import humanize
 import re
@@ -232,6 +233,7 @@ class Block:
     psycho_proc_pid: int = None
 
     blank_rec_type: str = 'trials'  # options: 'trials', 'continuous'
+    trial_images = []
 
     def __post_init__(self):
         self.logger = get_logger(f'{self.experiment_name}-Block {self.block_id}')
@@ -302,8 +304,10 @@ class Block:
                 utils.send_telegram_message(f'Max daily rewards of {config.MAX_DAILY_REWARD} reached; stopping experiment')
                 raise EndExperimentException(f'Max daily rewards of {config.MAX_DAILY_REWARD} reached; stopping experiment')
             self.start_trial(trial_id)
-            self.wait(self.trial_duration, check_visual_app_on=True, label=f'Trial {trial_id}')
+            self.wait(self.trial_duration, check_visual_app_on=True, label=f'Trial {trial_id}',
+                      take_img_after=self.trial_duration/2)
             self.end_trial()
+            self.save_trial_images(trial_id)
             self.wait(self.iti, label='ITI')
 
         self.wait(self.extra_time_recording, label='Extra Time Rec')
@@ -440,11 +444,13 @@ class Block:
             self.cache.publish_command(command, json.dumps(options))
             self.cache.set(cc.IS_VISUAL_APP_ON, True)
             time.sleep(1)  # wait for data to be sent
+        self.take_trial_image()
 
         self.logger.info(f'Trial #{trial_id} started')
 
     def end_trial(self):
         self.hide_visual_app_content()
+        self.take_trial_image()
         time.sleep(1)
 
     def hide_visual_app_content(self):
@@ -464,7 +470,7 @@ class Block:
             with open(f'{self.block_path}/notes.txt', 'w') as f:
                 f.write(self.notes)
 
-    def wait(self, duration, check_visual_app_on=False, label=''):
+    def wait(self, duration, check_visual_app_on=False, label='', take_img_after=None):
         """Sleep while checking for experiment end"""
         if label:
             label = f'({label}): '
@@ -478,7 +484,30 @@ class Block:
             if check_visual_app_on and not self.is_blank_block and not self.cache.get(cc.IS_VISUAL_APP_ON):
                 self.logger.debug('Trial ended')
                 return
+            # If take_img_after is set, and we have not taken 2 images yet, take one now.
+            # This is used for taking a middle trial image during the wait loop
+            if take_img_after and len(self.trial_images) < 2 and time.time() - t0 > take_img_after:
+                self.take_trial_image()
             time.sleep(0.1)
+
+    def take_trial_image(self):
+        if not config.TRIAL_IMAGE_CAMERA:
+            return
+        try:
+            img = self.cam_units[config.TRIAL_IMAGE_CAMERA].get_frame()
+            img = cv2.resize(img, (0, 0), fx=0.2, fy=0.2)
+            self.trial_images.append(img)
+        except Exception as e:
+            self.trial_images.append(None)
+            self.logger.error(f'Error taking trial image: {str(e)}')
+
+    def save_trial_images(self, trial_num):
+        trials_img_dir = Path(f'{self.block_path}/trials_images')
+        trials_img_dir.mkdir(parents=True, exist_ok=True)
+        for i, img in enumerate(self.trial_images):
+            if img is not None:
+                cv2.imwrite(f'{trials_img_dir}/trial_{trial_num}_{i}.png', img)
+        self.trial_images = []
 
     def check_engagement_level(self):
         """check if there are any strikes in the previous 2 hours. If not, give a manual reward"""
