@@ -245,7 +245,11 @@ export default {
         this.$store.commit('increment')
       }
       const bloodTimeout = setTimeout(() => {
-        this.$refs.bugChild = this.$refs.bugChild.filter((items, index) => bugIndex !== index)
+        if (this.bugsSettings.isKillingAllByOneHit) {
+          this.$refs.bugChild = []
+        } else {
+          this.$refs.bugChild = this.$refs.bugChild.filter((items, index) => bugIndex !== index)
+        }
         this.isBloodOnScreen = false
         console.log(`Number of bugs left: ${this.$refs.bugChild.length}  (bug ID ${bugIndex} was removed)`)
         if (this.$refs.bugChild.length === 0) {
@@ -256,7 +260,6 @@ export default {
 
       if (this.bugsSettings.isKillingAllByOneHit) {
         this.$refs.bugChild = this.$refs.bugChild.filter((_, index) => bugIndex === index)
-        console.log(this.$refs.bugChild)
       }
     },
     endTrial() {
