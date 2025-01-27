@@ -610,8 +610,8 @@ class ORM:
                    not_(Experiment.animal_id.ilike('%test%'))]
         if animal_id:
             filters.append(Experiment.animal_id == animal_id)
-        cols = ['id', 'time', 'is_hit', 'bug_type', 'movement_type', 'analysis_error', 'bug_speed',  'x', 'y', 'bug_x', 'bug_y', 'bug_size',
-                'in_block_trial_id', 'is_climbing', 'block_id', 'trial_id', 'video_id']
+        cols = ['id', 'time', 'bug_type', 'movement_type', 'bug_speed', 'tags', 'x', 'y', 'bug_x', 'bug_y', 'bug_size',
+                'in_block_trial_id', 'is_hit', 'is_climbing', 'analysis_error', 'block_id', 'trial_id', 'video_id']
         df = []
         with self.session() as s:
             orm_res = s.query(Strike, Block, Experiment).join(
@@ -619,10 +619,12 @@ class ORM:
                 Experiment, Experiment.id == Block.experiment_id).filter(*filters).all()
             for strk, blk, exp in orm_res:
                 d = {c: strk.__dict__.get(c) if c in strk.__dict__ else blk.__dict__.get(c) for c in cols}
+                d['miss_distance'] = np.sqrt((strk.x - strk.bug_x) ** 2 + (strk.y - strk.bug_y) ** 2)
                 df.append(d)
             df = pd.DataFrame(df)
             if not df.empty:
                 df = df.sort_values(by='time')
+                df.insert(6, 'miss_distance', df.pop('miss_distance'))
         return df
 
     def get_trials_for_day(self, day_string=None, animal_id=None) -> pd.DataFrame:
