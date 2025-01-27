@@ -315,7 +315,7 @@ class ORM:
     def commit_block(self, blk, is_cache_set=True):
         with self.session() as s:
             kwargs = {c.name: getattr(blk, c.name)
-                      for c in Block.__table__.columns if c.name not in ['id', 'end_time', 'dwh_key']
+                      for c in Block.__table__.columns if c.name not in ['id', 'end_time', 'dwh_key', 'tags']
                       and not c.foreign_keys}
             kwargs['experiment_id'] = self.current_experiment_id
             for k in ['reward_bugs', 'bug_types']:  # convert lists to strings
@@ -332,7 +332,7 @@ class ORM:
     @commit_func
     def commit_trial(self, trial_dict):
         kwargs = {c.name: trial_dict.get(c.name)
-                  for c in Trial.__table__.columns if c.name not in ['id', 'dwh_key'] and not c.foreign_keys}
+                  for c in Trial.__table__.columns if c.name not in ['id', 'dwh_key', 'tags'] and not c.foreign_keys}
         kwargs['block_id'] = trial_dict.get('block_id') or self.cache.get(cc.CURRENT_BLOCK_DB_INDEX)
         with self.session() as s:
             trial = Trial(**kwargs)
@@ -403,7 +403,7 @@ class ORM:
     @commit_func
     def commit_strike(self, strike_dict):
         kwargs = {c.name: strike_dict.get(c.name)
-                  for c in Strike.__table__.columns if c.name not in ['id', 'arena', 'dwh_key'] and not c.foreign_keys}
+                  for c in Strike.__table__.columns if c.name not in ['id', 'arena', 'dwh_key', 'tags'] and not c.foreign_keys}
         kwargs['arena'] = config.ARENA_NAME
         kwargs['block_id'] = strike_dict.get('block_id') or self.cache.get(cc.CURRENT_BLOCK_DB_INDEX)
         kwargs['trial_id'] = strike_dict.get('trial_id')
