@@ -269,6 +269,7 @@ def animal_day_summary():
 def get_block_analysis(block_id):
     try:
         ts = BugTrialsAnalyzer(is_debug=False)
+        block_path, _ = ts.get_block_path_and_trials(int(block_id))
         tags = ''
         with ts.orm.session() as s:
             blk = s.query(Block).filter(Block.id == int(block_id)).first()
@@ -278,13 +279,13 @@ def get_block_analysis(block_id):
         img_b64 = utils.convert_image_to_b64(img)
     except Exception:
         img_b64 = ''
-    return render_template('block_analysis.html', block_id=block_id, image=img_b64, tags=tags)
+    return render_template('block_analysis.html', block_id=block_id, image=img_b64, tags=tags, block_path=block_path)
 
 
 @app.route('/get_strike_analysis/<strike_id>', methods=['GET'])
 def get_strike_analysis(strike_id):
     try:
-        ld = Loader(int(strike_id), config.NIGHT_POSE_CAMERA, is_debug=False)
+        ld = Loader(int(strike_id), config.NIGHT_POSE_CAMERA, is_debug=False, sec_before=1, sec_after=1)
         sa = StrikeAnalyzer(ld)
         img = sa.plot_strike_analysis(only_return=True)
         img_b64 = utils.convert_image_to_b64(img)

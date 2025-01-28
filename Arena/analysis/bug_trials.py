@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import config
 from db_models import ORM, Experiment, Block, Trial, not_
+from sqlalchemy import func
 from analysis.strikes.loader import Loader
 from analysis.predictors.tongue_out import TongueTrainer
 
@@ -35,10 +36,9 @@ class BugTrialsAnalyzer:
             return
 
         print(f'Found {len(block_ids)} blocks for trials analysis.')
-        errors = {}
-        for block_id, (cache_path, trials) in block_ids.items():
-            res = []
-            for trial_id, strikes_times in (tqdm(trials.items(), desc=cache_path.as_posix()) if self.is_tqdm else trials.items()):
+        for i, (block_id, (cache_path, trials)) in enumerate(block_ids.items()):
+            res, errors = [], {}
+            for trial_id, strikes_times in (tqdm(trials.items(), desc=f'({i+1}/{len(block_ids)}) {cache_path.as_posix()}') if self.is_tqdm else trials.items()):
                 try:
                     tdf = self.run_on_trial(trial_id, strikes_times)
                     res.append(tdf)
@@ -56,7 +56,7 @@ class BugTrialsAnalyzer:
             res.to_parquet(cache_path)
             self.plot_cached_block_results(block_id, is_overwrite=True)
 
-    def scan(self, is_cache=True, block_id=None):
+    def scan(self, is_cache=True, block_id=None, drop_with_tags=True):
         block_ids = {}
         with self.orm.session() as s:
             filters = [not_(Experiment.animal_id.ilike('%test%')), Block.block_type == 'bugs']
@@ -64,6 +64,8 @@ class BugTrialsAnalyzer:
                 filters.append(Block.id == block_id)
             if self.animal_ids:
                 filters.append(Experiment.animal_id.in_(self.animal_ids))
+            if drop_with_tags:
+                filters.append(func.coalesce(Block.tags, '') == '')
             orm_res = s.query(Block, Experiment).join(
                 Experiment, Experiment.id == Block.experiment_id).filter(*filters).all()
             for blk, exp in orm_res:
@@ -179,8 +181,11 @@ class BugTrialsAnalyzer:
 
         for image_path in trials_images_dir.glob('*.png'):
             _, trial_num, img_num = image_path.stem.split('_')
+            if int(img_num)+1 >= axes.shape[1]:
+                continue
             ax = axes[int(trial_num)-1, int(img_num)+1]
-            ax.imshow(cv2.imread(image_path.as_posix()))
+            img = cv2.imread(image_path.as_posix())
+            ax.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
             ax.axis('off')
 
     def get_block_path_and_trials(self, block_id):
@@ -280,33 +285,46 @@ def create_trial_images_dir(animal_ids=None):
         exps = s.query(Experiment)
         if animal_ids is not None:
             exps = exps.filter(Experiment.animal_id.in_(animal_ids))
+        blocks = []
         for exp in exps.all():
             for blk in exp.blocks:
                 if blk.block_type != 'bugs':
                     continue
                 block_path = Path(f'{exp.experiment_path}/block{blk.block_id}')
                 trials_images_dir = block_path / 'trials_images'
-                if trials_images_dir.exists():
+                if trials_images_dir.exists() and [x for x in trials_images_dir.glob('*.png')]:
                     continue
-                trials_images_dir.mkdir(parents=True, exist_ok=True)
-                for tr in tqdm(blk.trials, desc=str(block_path)):
-                    trial_num = int(tr.in_block_trial_id)
-                    img_num = 0
-                    ld = Loader(int(tr.id), config.TRIAL_IMAGE_CAMERA, is_debug=False, is_trial=True, orm=orm)
+                blocks.append((int(blk.id), trials_images_dir))
+        
+        print(f'Found {len(blocks)} blocks to create trial images for')
+        for i, (block_id, trials_images_dir) in enumerate(blocks):
+            blk = s.query(Block).filter_by(id=block_id).first()
+            trials_images_dir.mkdir(parents=True, exist_ok=True)
+            errors = {}
+            for tr in tqdm(blk.trials, desc=f'({i+1}/{len(blocks)}){trials_images_dir.parent}'):
+                trial_num = int(tr.in_block_trial_id)
+                img_num = 0
+                try:
+                    ld = Loader(int(tr.id), config.TRIAL_IMAGE_CAMERA, is_debug=False, is_trial=True, orm=orm, raise_no_traj=False)
                     for frame_id, frame in ld.gen_frames_around():
                         if frame_id in ld.relevant_video_frames + [round(np.mean(ld.relevant_video_frames))]:
                             frame = cv2.resize(frame, (0, 0), fx=0.2, fy=0.2)
                             cv2.imwrite(str(trials_images_dir / f'trial_{trial_num}_{img_num}.png'), frame)
                             img_num += 1
+                except Exception as exc:
+                    errors.setdefault(str(exc), []).append(str(tr.id))
+            if errors:
+                for err_text, trial_ids in errors.items():
+                    print(f'ERROR: {err_text} for trials: {",".join(trial_ids)}')
 
 
 if __name__ == "__main__":
-    # ts = BugTrialsAnalyzer(is_debug=True)
+    ts = BugTrialsAnalyzer(is_debug=True, animal_ids=['PV51'])
     # blk_path = '/data/PreyTouch/output/experiments/PV162/20240414/block1'
-    # ts.run(block_path=blk_path, is_cache=False)
+    ts.run(is_cache=True)
     # ts.run(892, is_cache=False)
-    # ts.plot_cached_block_results(block_path=blk_path, is_show=True, is_overwrite=True)
-    create_trial_images_dir(['PV162'])
+    # ts.plot_cached_block_results(block_id=1983, is_show=True, is_overwrite=True)
+    # create_trial_images_dir(['PV51'])
 
     # /data/PreyTouch/output/experiments/PV162/20240413/block1
     # /data/PreyTouch/output/experiments/PV162/20240414/block1

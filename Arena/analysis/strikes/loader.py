@@ -22,12 +22,13 @@ class MissingStrikeData(Exception):
 
 
 class Loader:
-    def __init__(self, db_id, cam_name, raise_no_pose=False, is_use_db=True, is_debug=True, orm=None,
+    def __init__(self, db_id, cam_name, raise_no_pose=False, raise_no_traj=True, is_use_db=True, is_debug=True, orm=None,
                  sec_before=3, sec_after=2, is_dwh=False, is_trial=False):
         self.db_id = db_id
         self.is_trial = is_trial
         self.cam_name = cam_name
         self.raise_no_pose = raise_no_pose  # raise exception if no pose data found
+        self.raise_no_traj = raise_no_traj  # raise exception if no bug trajectory data found
         self.is_use_db = is_use_db
         self.is_debug = is_debug
         self.sec_before = sec_before
@@ -87,6 +88,8 @@ class Loader:
     def load_bug_trajectory_data(self, trial, strk):
         self.traj_df = pd.DataFrame(trial.bug_trajectory)
         if self.traj_df.empty:
+            if not self.raise_no_traj:
+                return
             raise MissingStrikeData('traj_df is empty')
         self.traj_df['time'] = pd.to_datetime(self.traj_df.time).dt.tz_localize(None)
         if not self.is_trial:
@@ -194,7 +197,10 @@ class Loader:
             return frame
 
     def gen_frames(self, frame_ids, video_path=None, cam_name=None, frames_map=None):
-        cap = cv2.VideoCapture(video_path or self.video_path.as_posix())
+        video_path = video_path or self.video_path.as_posix()
+        if not Path(video_path).exists():
+            raise Exception(f'Video path does not exist: {video_path}')
+        cap = cv2.VideoCapture(video_path)
         start_frame, end_frame = frame_ids[0], frame_ids[-1]
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
         for i in range(start_frame, end_frame + 1):

@@ -22,11 +22,12 @@ NUM_POSE_FRAMES_PER_STRIKE = 30
 
 class StrikeAnalyzer:
     def __init__(self, loader: Loader = None, payload: dict = None, pose_df: pd.DataFrame = None,
-                 bug_traj: pd.DataFrame = None, is_y_pd=False, smooth_kernel=37, derivative_kernel=37):
+                 bug_traj: pd.DataFrame = None, is_y_pd=False, smooth_kernel=37, derivative_kernel=37, bodypart='nose'):
         self.loader = loader
         self.payload = payload
         self.pose_df = pose_df
         self.bug_traj = bug_traj
+        self.bodypart = bodypart
         self.smooth_kernel = smooth_kernel
         self.derivative_kernel = derivative_kernel
         self.is_y_pd = is_y_pd  # if True, prediction distance is calculated by dy and not euclidean
@@ -166,7 +167,7 @@ class StrikeAnalyzer:
                 h_text += 30
             axes[i].imshow(frame)
             axes[i].set_xticks([]); axes[i].set_yticks([])
-            axes[i].set_title(frame_id)
+            axes[i].set_title(f'{self.pose_df.loc[frame_id, "rel_time"]:.2f}sec')
             # axes[i].set_title('\n'.join(labels))
 
     def plot_kinematics(self, grid):
@@ -179,10 +180,11 @@ class StrikeAnalyzer:
             t = rel_df.rel_time.values
             ax.plot(t, seg, color='k')
             self._plot_strikes_lines(ax, rel_df.rel_time.diff().mean())
-            ax.set_title(f'Nose {label} vs. frame_ids')
+            ax.set_title(f'{self.bodypart} {label} vs. frame_ids')
             ax.set_xlabel('Time around strike [sec]')
             if label == 'position':
-                # ax.set_ylim([750, 950])
+                leap_duration = self.pose_df['rel_time'].loc[self.strike_frame_id] - self.pose_df['rel_time'].loc[self.leap_frame]
+                ax.set_title(f'{self.bodypart} {label} vs. frame_ids\nLeap duration: {leap_duration*1000:.0f}msec')
                 ax.legend()
             elif label == 'acceleration':
                 peaks_idx, _ = find_peaks(seg, height=50, distance=10)
@@ -201,7 +203,7 @@ class StrikeAnalyzer:
         if self.calc_strike_frame in self.relevant_frames:
             ax.axvline(self.pose_df['rel_time'].loc[self.calc_strike_frame], linestyle='--', color='orange',
                        label=f'calc strike frame ({self.calc_strike_frame})')
-        ymin, ymax = ax.get_ylim()
+        # ymin, ymax = ax.get_ylim()
         # for frame_id in self.relevant_frames:
         #     if frame_id in self.tongue_frame_ids:
         #         x = self.pose_df['rel_time'].loc[frame_id]
@@ -322,9 +324,19 @@ class StrikeAnalyzer:
         # t = yf.time.values.astype(np.int64) / 10 ** 9
         # yf.loc[yf.index[2:], 'accl'] = self.calc_derivative(self.calc_derivative(yf.y.values, t), t[1:])
         try:
+            # get the first frame in the pose dataset where y-velocity is not null
             stop_frame_id = self.pose_df[~self.pose_df.velocity_y.isnull()].index[0]
-            v = self.pose_df.loc[stop_frame_id:self.strike_frame_id-10, 'acceleration_y']
-            cross_idx = v[np.sign(v).diff().fillna(0) == 2].index.tolist()
+            # extract the y-velocity from this frame up to 10 frames before the strike frame
+            v = self.pose_df.loc[stop_frame_id:self.strike_frame_id-10, 'velocity_y']
+            # find the index in which the velocity crosses 0 and becomes negative
+            cross_idx = v[np.sign(v).diff().fillna(0) == -2].index.tolist()
+            # if such crossings are found, return the last of them (namely closer to the strike)
+            if len(cross_idx) > 0:
+                return cross_idx[-1]
+            
+            # if no velocity crossings are found, look for acceleration crossings, but this time we look for those which become positive
+            a = self.pose_df.loc[stop_frame_id:self.strike_frame_id-10, 'acceleration_y']
+            cross_idx = a[np.sign(a).diff().fillna(0) == 2].index.tolist()
             if len(cross_idx) > 0:
                 return cross_idx[-1]
         except Exception:
@@ -556,7 +568,7 @@ class StrikeScanner:
         errors = []
         for sid in tqdm(strikes_ids, desc='Strikes Scan'):
             try:
-                ld = Loader(sid, self.cam_name, is_debug=False, orm=self.orm, is_use_db=False)
+                ld = Loader(sid, self.cam_name, is_debug=False, orm=self.orm, is_use_db=False, sec_before=1, sec_after=1)
                 sa = StrikeAnalyzer(ld)
                 if self.is_plot_summary:
                     sa.plot_strike_analysis(only_save_to=self.output_dir.as_posix())
@@ -680,19 +692,20 @@ def print_strikes_ids(animal_id, movement_type=None, is_hit=None, bug_type=None)
 
 
 if __name__ == '__main__':
-    # CircleMultiTrialAnalysis().plot_circle_strikes()
-    # ld = Loader(5968, 'front')
-    # sa = StrikeAnalyzer(ld)
+    # ld = Loader(5790, 'front', sec_before=1, sec_after=1)
+    # sa = StrikeAnalyzer(ld, bodypart='nose')
     # sa.plot_strike_analysis()
+    
+    StrikeScanner(is_skip_committed=False).scan()
+    
     # delete_duplicate_strikes('PV80')
 
     # print_strikes_ids('PV163', movement_type='jump_up', bug_type='green_beetle')
     # orm = ORM()
     # with orm.session() as s:
     #     print(set([blk.movement_type for blk in s.query(Block).all()]))
-    play_strikes(3554, cam_name='back', is_dwh=False, sec_after=4, sec_before=2, between_frames_delay=0.016, save_video=True)
+    # play_strikes(3554, cam_name='back', is_dwh=False, sec_after=4, sec_before=2, between_frames_delay=0.016, save_video=True)
 
-    # StrikeScanner().scan()
     # time2feeder(),
     # extract_bad_annotated_strike_frames('PV85')#, movement_type='random')
     # short_predict('PV80')
