@@ -17,3 +17,4 @@ Open-source software for prey catching experiments with a touch screen.
 - [Adding custom detection model](docs/custom_detection_model.md)
 - [Configurations](docs/configurations.md)
 - [PsychoPy Integration](docs/psychopy.md)
+- [Troubleshooting](docs/troubleshooting.md)
