@@ -147,6 +147,7 @@ class Block(Base):
     movement_type = Column(String)
     holes_height_scale = Column(Float, nullable=True)
     background_color = Column(String, nullable=True)
+    agent_label = Column(String, nullable=True)  # The key in the trials dict of the agent_config
     tags = Column(String, nullable=True, default='')
     strikes = relationship('Strike')
     trials = relationship('Trial')
@@ -780,11 +781,11 @@ class DWH:
                     dwh_rec = dwh_s.query(db_model).filter_by(id=rec.dwh_key).first()
                     if dwh_rec is None:  # object does not exist on dwh
                         rec.dwh_key = None
-                        local_s.commit()
                     else:
                         for c in columns:
                             setattr(dwh_rec, c, getattr(rec, c))
-                        dwh_s.commit()
+                local_s.commit()
+                dwh_s.commit()
                 print(f'Finished updating columns={columns} for {db_model.__name__}; Total rows updated: {total}')
 
     @staticmethod
@@ -827,7 +828,7 @@ def delete_duplicates(model, col):
 if __name__ == '__main__':
     # delete_duplicates(VideoPrediction, 'video_id')
     # DWH().commit()
-    # DWH().update_model(Strike, ['prediction_distance', 'calc_speed', 'projected_strike_coords', 'projected_leap_coords'])
+    # DWH().update_model(Strike, ['prediction_distance', 'leap_frame'])
     # DWH().update_model(VideoPrediction, ['data'], model='front_head_only_resnet_152')
     DWH().commit()
     sys.exit(0)
