@@ -155,7 +155,7 @@ class TrajClassifier(ClassificationTrainer):
     monitored_metric_algo: str = 'min'
     num_loader_workers: int = 0
     threshold: float = 0
-    is_iti: bool = True  # ITI dataset instead of strikes
+    is_iti: bool = False  # ITI dataset instead of strikes
     is_resample: bool = True  # resample trajectories to have equal number of samples from each class
     dataset_path: str = TRAJ_DIR
     movement_type: str = 'random_low_horizontal'
@@ -257,7 +257,7 @@ class TrajClassifier(ClassificationTrainer):
 
     def load_data(self):
         if not self.is_iti:
-            filename = 'trajs_10s_after'
+            filename = 'trajs_before_after_10s_strike'
         else:
             filename = 'trajs_10s_iti'
         with open(f'{self.dataset_path}/{filename}.pkl', 'rb') as f:
