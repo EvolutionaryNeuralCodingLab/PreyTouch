@@ -104,24 +104,25 @@ class Agent:
 
     def load_history(self):
         # create a dict of movement types and their relevant trial names
-        movements = {}
-        for trial_name, trial_dict in self.trials.items():
-            movements.setdefault(trial_dict['movement_type'], []).append(trial_name)
+        agent_trial_names = list(self.trials.keys())
+        # movements = {}
+        # for trial_name, trial_dict in self.trials.items():
+        #     movements.setdefault(trial_dict['movement_type'], []).append(trial_name)
 
         with self.orm.session() as s:
             exps = s.query(Experiment).filter_by(animal_id=self.animal_id).all()
             for exp in exps:
                 for blk in exp.blocks:
-                    if blk.movement_type in movements:
-                        for trial_name in movements[blk.movement_type]:
-                            count_key = self.history[trial_name]['key']
-                            counts = self.history[trial_name]['counts']
-                            if isinstance(counts, dict):  # case of per
-                                for metric_name, metric_counts in counts.items():
-                                    if getattr(blk, metric_name) in metric_counts:
-                                        metric_counts[getattr(blk, metric_name)] += len(getattr(blk, count_key))
-                            elif isinstance(counts, int):
-                                self.history[trial_name]['counts'] += len(getattr(blk, count_key))
+                    if blk.agent_label in agent_trial_names:
+                        trial_name = blk.agent_label
+                        count_key = self.history[trial_name]['key']
+                        counts = self.history[trial_name]['counts']
+                        if isinstance(counts, dict):  # case of per
+                            for metric_name, metric_counts in counts.items():
+                                if getattr(blk, metric_name) in metric_counts:
+                                    metric_counts[getattr(blk, metric_name)] += len(getattr(blk, count_key))
+                        elif isinstance(counts, int):
+                            self.history[trial_name]['counts'] += len(getattr(blk, count_key))
 
     def publish(self, msg):
         last_publish = self.cache.get(cc.LAST_TIME_AGENT_MESSAGE)
@@ -140,6 +141,7 @@ class Agent:
     def create_cached_experiment(self):
         # load the agent config
         block_dict_ = self.trials[self.next_trial_name].copy()
+        block_dict_['agent_label'] = self.next_trial_name
         count_dict = block_dict_.pop('count')
         for k, v in block_dict_.copy().items():
             if isinstance(v, str) and v.startswith('per_'):
