@@ -226,6 +226,7 @@ class Block:
     reward_type: str = 'always'
     reward_bugs: list = None
     reward_any_touch_prob: float = 0.0
+    agent_label: str = None
 
     media_url: str = ''
 
