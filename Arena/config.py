@@ -152,6 +152,7 @@ MIN_CALIBRATION_IMAGES = env.int('MIN_CALIBRATION_IMAGES', 7, group='Calibration
 CHESSBOARD_DIM = env.list('CHESSBOARD_DIM', [9, 6], group='Calibration', desc='Dimensions of calibration chessboard', subcast=int)
 ARUCO_MARKER_SIZE = env.float('ARUCO_MARKER_SIZE', 2.25, group='Calibration', desc='Size of single aruco marker in centimeters')
 NUM_ARUCO_MARKERS = env.int('NUM_ARUCO_MARKERS', 150, group='Calibration', desc='Number of Charuco markers on the board')
+USE_LOCAL_CALIBRATION = env.bool('USE_LOCAL_CALIBRATION', True, group='Calibration', desc='Use the calibration artifacts saved on this machine, and not the ones in the experiment output folder')
 
 # Scheduler
 DISABLE_SCHEDULER = env.bool('DISABLE_SCHEDULER', False, group='Scheduler', desc='Disable the scheduler')

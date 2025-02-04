@@ -76,12 +76,13 @@ class ArenaPose:
     """
 
     def __init__(self, cam_name, predictor, is_use_db=True, orm=None, model_path=None, commit_bodypart='head',
-                 is_dwh=False, is_raise_no_caliber=True):
+                 is_dwh=False, is_raise_no_caliber=True, is_debug=False):
         self.cam_name = cam_name
         self.predictor = predictor
         self.model_path = model_path
         self.is_use_db = is_use_db
         self.is_dwh = is_dwh
+        self.is_debug = is_debug
         self.is_raise_no_caliber = is_raise_no_caliber
         self.load_predictor()
         self.last_commit = None
@@ -94,35 +95,33 @@ class ArenaPose:
         self.predictions = []
         self.current_position = (None, None)
         self.current_velocity = None
-        self.is_initialized = False
         self.example_writer = None
         self.logger = get_logger('ArenaPose')
 
-    def init(self, img, caliber_only=False):
-        """
-        Initialize the pose estimator and caliber.
-
-        Args:
-            img (numpy.ndarray): The image to use for initialization.
-            caliber_only (bool, optional): Whether to only initialize the calibrator and not the predictor. Defaults to False.
-
-        Raises:
-            Exception: If the caliber could not be initialized, an exception is raised.
-
-        """
+    def init(self, img, calibration_dir=None, caliber_only=False, video_path=None):
+        # initialize the predictor
         if not caliber_only:
             self.predictor.init(img)
-        if self.cam_name:
-            self.caliber = CharucoEstimator(self.cam_name, is_debug=False)
-            self.caliber.init(img)
-            if not self.caliber.is_on:
-                msg = 'Could not initiate caliber; closing ArenaPose'
-                if self.is_raise_no_caliber:
-                    raise Exception(msg)
-                else:
-                    self.caliber = None
-                    print('Caliber could no loaded. Working without pose calibration')
-        self.is_initialized = True
+
+        # initialize the calibrator
+        self.caliber = CharucoEstimator(self.cam_name, is_debug=self.is_debug, calibration_dir=calibration_dir)
+        self.caliber.init(img)
+        if not self.caliber.is_on:
+            msg = 'Could not initiate caliber; closing ArenaPose'
+            if self.is_raise_no_caliber:
+                raise Exception(msg)
+            else:
+                self.caliber = None
+                print('Caliber could no loaded. Working without pose calibration')
+
+        # in case there's no given calibration dir, try to find the calibration
+        # locally in CALIBRATION_DIR according to the date of the video file
+        if calibration_dir is None and self.caliber is not None:
+            self.load_caliber_by_date(video_path=video_path)
+
+    def init_kalman(self, fps):
+        self.kalman = Kalman(dt=1 / fps)
+        self.predictions = []
 
     def init_from_video(self, video_path: [str, Path], caliber_only=False):
         """
@@ -142,21 +141,16 @@ class ArenaPose:
         ret, frame = cap.read()
         if frame is None:
             raise Exception('Video has 0 frames')
-        self.init(frame, caliber_only=caliber_only)
+        self.init(frame, caliber_only=caliber_only, video_path=video_path)
         cap.release()
 
-    def change_aruco_markers(self, vid_date=None, video_path: str = None):
-        """
-        Change the loaded markers to match the video date.
-
-        Args:
-            video_path (str): The path to the video file.
-
-        """
-        if video_path:
+    def load_caliber_by_date(self, vid_date=None, video_path: str = None):
+        """Change the loaded markers to match the video date"""
+        if video_path:  # extract the date from the video name
             if not re.match(r'\w+_\d{8}T\d{6}', Path(video_path).stem):
                 return
             cam_name, vid_date = Path(video_path).stem.split('_')
+
         try:
             self.caliber.set_image_date_and_load(vid_date)
         except Exception as e:
@@ -165,6 +159,16 @@ class ArenaPose:
             else:
                 print(f'No caliber loaded: {e}')
                 self.caliber = None
+
+    @staticmethod
+    def get_calibration_dir(video_path):
+        calib_dir = Path(video_path).parent / 'calibrations'
+        if calib_dir.exists():
+            return calib_dir
+        else:
+            if not config.USE_LOCAL_CALIBRATION:
+                raise Exception(f'Found no calibration directory in {calib_dir} and USE_LOCAL_CALIBRATION is False')
+            return
 
     def load(self, video_path=None, video_db_id=None, only_load=False, prefix=''):
         """
@@ -210,8 +214,7 @@ class ArenaPose:
     def _load_from_local_files(self, video_path: Path, only_load=False, prefix=''):
         if isinstance(video_path, str):
             video_path = Path(video_path)
-        # if not self.is_initialized:
-        #     self.init_from_video(video_path, caliber_only=True)
+
         cache_path = self.get_predicted_cache_path(video_path)
         if cache_path.exists():
             pose_df = pd.read_parquet(cache_path)
@@ -221,10 +224,6 @@ class ArenaPose:
             else:
                 raise MissingFile(f'Pose cache file does not exist')
         return pose_df
-
-    def start_new_session(self, fps):
-        self.kalman = Kalman(dt=1/fps)
-        self.predictions = []
 
     def load_predictor(self):
         if isinstance(self.predictor, str):
@@ -249,6 +248,7 @@ class ArenaPose:
         db_video_id, video_path = self.check_video_inputs(db_video_id, video_path)
         frames_times = self.load_frames_times(db_video_id, video_path)
         bug_traj = self.load_bug_trajectory(db_video_id, video_path)
+        calibration_dir = self.get_calibration_dir(video_path)
 
         pose_df = []
         cap = cv2.VideoCapture(video_path)
@@ -257,16 +257,17 @@ class ArenaPose:
             self.tag_error_video(video_path, 'video has 0 frames')
             return
         fps = cap.get(cv2.CAP_PROP_FPS)
-        self.start_new_session(fps)
-        iters = range(n_frames)
+        self.init_kalman(fps)
+
         if not is_tqdm:
             self.logger.info(f'Start video prediction of {video_path}')
+        is_initialized = False
+        iters = range(n_frames)
         for frame_id in (tqdm(iters, desc=f'{prefix}{Path(video_path).stem}') if is_tqdm else iters):
             ret, frame = cap.read()
-            if not self.is_initialized:
-                self.init(frame)
-                if self.caliber is not None:
-                    self.change_aruco_markers(video_path=video_path)
+            if not is_initialized:
+                self.init(frame, calibration_dir=calibration_dir, video_path=video_path)
+                is_initialized = True
 
             timestamp = frames_times.loc[frame_id, 'time'].timestamp()
             pred_row, _ = self.predictor.predict(frame, frame_id)
@@ -288,18 +289,18 @@ class ArenaPose:
         return pose_df
 
     def predict_frame(self, frame, frame_date=None, is_plot_preds=False) -> pd.DataFrame:
-        self.init(frame)
+        self.init(frame, calibration_dir=config.CALIBRATION_DIR)
         pred_row, frame = self.predictor.predict(frame, 0, is_plot_preds=is_plot_preds)
 
         if frame_date is not None and self.caliber is not None:
-            self.change_aruco_markers(frame_date)
+            self.load_caliber_by_date(frame_date)
             bodyparts = pred_row.columns.get_level_values(0).unique().tolist()
             for bp in bodyparts:
                 row = pred_row[bp].iloc[0]
                 x, y = self.caliber.get_location(row['cam_x'], row['cam_y'])
                 pred_row[(bp, 'x')] = x
                 pred_row[(bp, 'y')] = y
-        
+
         return frame, pred_row
 
     def tag_error_video(self, vid_path, msg):
@@ -387,7 +388,7 @@ class ArenaPose:
             'Asia/Jerusalem').dt.tz_localize(None)
         frames_ts.index = frames_ts.index.astype(int)
         return frames_ts
-    
+
     def load_bug_trajectory(self, db_video_id: int, video_path: str):
         if self.is_use_db:
             bug_trajs = []
@@ -461,7 +462,7 @@ class ArenaPose:
             raise MissingFile(f'No prediction cache found under: {cache_path}')
         pose_df = pd.read_parquet(cache_path)
         return pose_df
-    
+
     def save_predicted_video(self, pose_df: pd.DataFrame, video_path: str) -> None:
         """
         Save predicted pose data as a parquet file.
@@ -556,7 +557,7 @@ class DLCArenaPose(ArenaPose):
                 and all(p[(bp, 'prob')] >= 0.8 for bp in self.lizard_head_bodyparts) \
                 and not np.isnan(p[bug_x_col]) \
                 and config.SCREEN_Y_CM is not None:
-            pred_row[('dev_angle', '')] = self.calc_gaze_deviation_angle(ang=p[('angle', '')], bug_x=p[bug_x_col], 
+            pred_row[('dev_angle', '')] = self.calc_gaze_deviation_angle(ang=p[('angle', '')], bug_x=p[bug_x_col],
                                                                          x=p[('nose', 'x')], y=p[('nose', 'y')])
         else:
             pred_row[('dev_angle', '')] = np.nan
@@ -1215,7 +1216,7 @@ def run_predict_process(pred_name, images, cam_name, image_date, res_dict, is_ba
             imgdata = img.split(',')[1]
             img = base64.b64decode(imgdata)
             img = np.array(Image.open(BytesIO(img)))
-        
+
         img, pdf = ap.predict_frame(img, image_date, is_plot_preds=True)
         l.append((img, pdf))
     res_dict['images'] = l
@@ -1272,17 +1273,9 @@ class VideoPoseScanner:
                 torch.cuda.empty_cache()
 
     def predict_video(self, video_path, prefix='', is_tqdm=True):
-        pose_df = self.dlc.predict_video(video_path=video_path, is_create_example_video=False, 
+        pose_df = self.dlc.predict_video(video_path=video_path, is_create_example_video=False,
                                          prefix=prefix, is_tqdm=is_tqdm)
         return pose_df
-        
-    
-    def commit_video_prediction(self, video_path, pose_df):
-        pose_df = pose_df.dropna(subset=[('nose', 'x')])
-        animal_id_ = Path(video_path).parts[-5]
-        video_id, _ = self.dlc.check_video_inputs(None, video_path)
-        start_time = datetime.datetime.fromtimestamp(pose_df.iloc[0][('time', '')])
-        self.orm.commit_video_predictions(self.dlc.predictor.model_name, pose_df, video_id, start_time, animal_id_)
 
     def get_videos_to_predict(self, skip_committed=True):
         if self.is_use_db:
@@ -1304,7 +1297,7 @@ class VideoPoseScanner:
                     or vid.animal_id in ['test'] \
                     or (self.animal_ids and vid.animal_id not in self.animal_ids):
                     continue
-                
+
                 blk = s.query(Block).filter_by(id=vid.block_id).first()
                 if config.NIGHT_POSE_RUN_ONLY_BUG_SESSIONS:
                     if blk is None or blk.block_type != 'bugs':
@@ -1318,7 +1311,7 @@ class VideoPoseScanner:
                     vid_exp_dir = os.path.join(*video_path.parts[:-5])
                     if vid_exp_dir != config.EXPERIMENTS_DIR:
                         video_path = Path(video_path.as_posix().replace(vid_exp_dir, config.EXPERIMENTS_DIR))
-                
+
                 if video_path.exists():
                     if skip_committed and self.dlc.get_predicted_cache_path(video_path).exists():
                         # commit if the prediction file exists, but not committed yet
@@ -1337,7 +1330,7 @@ class VideoPoseScanner:
                     videos.append(video_path)
 
         return videos
-    
+
     def _get_videos_to_predict_from_files(self, experiments_dir=None, is_skip_predicted=True):
         experiments_dir = experiments_dir or config.EXPERIMENTS_DIR
         exp_path = Path(experiments_dir)
@@ -1362,6 +1355,13 @@ class VideoPoseScanner:
             videos.append(vid_path)
         return videos
 
+    def commit_video_prediction(self, video_path, pose_df):
+        pose_df = pose_df.dropna(subset=[('nose', 'x')])
+        animal_id_ = Path(video_path).parts[-5]
+        video_id, _ = self.dlc.check_video_inputs(None, video_path)
+        start_time = datetime.datetime.fromtimestamp(pose_df.iloc[0][('time', '')])
+        self.orm.commit_video_predictions(self.dlc.predictor.model_name, pose_df, video_id, start_time, animal_id_)
+
     def scan_video_predictions(self):
         """search for uncommitted video predictions in the database"""
         assert self.is_use_db
@@ -1371,7 +1371,7 @@ class VideoPoseScanner:
                 if not vid.path.endswith('.mp4') or not vid.animal_id.startswith('PV') \
                     or (self.animal_ids and vid.animal_id not in self.animal_ids):
                     continue
-                    
+
                 pose_df = self.dlc.load(vid.path)
                 self.commit_video_prediction()
 
@@ -1412,7 +1412,7 @@ class VideoPoseScanner:
         self.logger.info(f'found {len(videos)}/{len(videos)} to fix calibration')
         is_initialized = False
         for i, video_path in enumerate(videos):
-            self.dlc.start_new_session(60)
+            self.dlc.init_kalman(60)
             if not is_initialized:
                 self.dlc.init_from_video(video_path, caliber_only=True)
                 is_initialized = True
@@ -1447,7 +1447,8 @@ if __name__ == '__main__':
     # VideoPoseScanner().predict_all(max_videos=20, is_tqdm=True)
     # VideoPoseScanner(cam_name='top', animal_ids=['PV157'], is_use_db=False)
     # VideoPoseScanner(cam_name='top', animal_ids=['PV157'], is_use_db=False).predict_video('/data/Pogona_Pursuit/output/experiments/PV157/20240307/block2/videos/top_20240307T141316.mp4')
-    VideoPoseScanner(cam_name='top', animal_ids=['PV157'], is_use_db=True, only_strikes_vids=False).predict_all()
+    DLCArenaPose('top', is_use_db=False, is_debug=True).predict_video(video_path='/media/sil2/Data/regev/experiments/reptilearn5/PV91c/20250121/block1/videos/top_20250121T133059.mp4')
+    # VideoPoseScanner(cam_name='top', is_use_db=False, only_strikes_vids=False).predict_all()
     # VideoPoseScanner(animal_id='PV163').add_bug_trajectory(videos=[Path('/media/reptilearn4/experiments/PV163/20240201/block10/videos/front_20240201T173016.mp4')])
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/Archive/front/20221205T093815_front.png', 0)
     # print(run_predict('pogona_head', [img]))

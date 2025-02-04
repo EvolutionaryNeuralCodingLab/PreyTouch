@@ -24,7 +24,7 @@ class CalibrationError(Exception):
 
 
 class Calibrator:
-    def __init__(self, cam_name, resize_dim=None):
+    def __init__(self, cam_name, resize_dim=None, calibration_dir=None):
         self.cam_name = cam_name
         self.logger = get_logger('calibrator')
         self.calib_params = {
@@ -38,7 +38,7 @@ class Calibrator:
         self.newcameramtx = None
         self.resize_dim = resize_dim
         self.calib_images_date = None
-        self.current_undistort_folder = Path(config.CALIBRATION_DIR) / 'undistortion' / self.cam_name
+        self.current_undistort_folder = Path(calibration_dir or config.CALIBRATION_DIR) / 'undistortion' / self.cam_name
         if not self.current_undistort_folder.exists():
             self.current_undistort_folder.mkdir(parents=True, exist_ok=True)
         self.load_calibration()  # load the latest undistortion calibration
@@ -51,7 +51,7 @@ class Calibrator:
         objp[:, :2] = np.mgrid[:config.CHESSBOARD_DIM[0], :config.CHESSBOARD_DIM[1]].T.reshape(-1, 2)
 
         self.set_calib_date(calib_date)
-        img_files = self.get_calib_images(img_dir)
+        img_files = self.get_images_for_undistortion(img_dir)
 
         self.logger.info(f'start camera {self.cam_name} calibration with {len(img_files)} images')
         # Arrays to store object points and image points from all the images.
@@ -75,7 +75,7 @@ class Calibrator:
         ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, (w, h), None, None)
         if not ret:
             raise CalibrationError('calibrateCamera failed')
-        
+
         # save calibration params to class
         for k in self.calib_params.copy().keys():
             self.calib_params[k] = locals().get(k)
@@ -92,7 +92,7 @@ class Calibrator:
     def set_calib_date(self, calib_date=None):
         if calib_date is None:
             calib_date = datetime.now()
-        
+
         self.calib_images_date = calib_date
         self.load_calibration()
 
@@ -109,7 +109,7 @@ class Calibrator:
             undistorted_img = self.undistort_image(gray)
             axes[i, 1].imshow(cv2.cvtColor(undistorted_img, cv2.COLOR_GRAY2RGB))
             axes[i, 1].axis('off')
-        
+
         fig.tight_layout()
         fig.savefig(self.calib_results_image_path, bbox_inches='tight')
         plt.close(fig)
@@ -146,13 +146,13 @@ class Calibrator:
         with self.calib_params_path.open('wb') as f:
             pickle.dump(self.calib_params, f)
 
-    def get_calib_images(self, calib_dir=None):
+    def get_images_for_undistortion(self, calib_dir=None):
         calib_dir = Path(calib_dir) or (Path(config.CALIBRATION_DIR) / self.cam_name)
         if not calib_dir.exists():
             raise CalibrationError(f'{calib_dir} not exist')
         img_files = list(calib_dir.glob('*.png'))
         if len(img_files) < config.MIN_CALIBRATION_IMAGES:
-            raise CalibrationError(f'found only {len(img_files)} images for calibration, '
+            raise CalibrationError(f'found only {len(img_files)} images for undistortion, '
                                    f'expected {config.MIN_CALIBRATION_IMAGES}')
         else:
             self.logger.info(f'found {len(img_files)} images for calibration in {calib_dir}')
@@ -172,7 +172,8 @@ class Calibrator:
 
 
 class CharucoEstimator:
-    def __init__(self, cam_name, resize_dim=None, logger=None, is_debug=True, is_undistort=False):
+    def __init__(self, cam_name, resize_dim=None, logger=None, is_debug=True, is_undistort=False,
+                 calibration_dir=None):
         self.cam_name = cam_name
         self.resize_dim = resize_dim
         self.resize_scale = None
@@ -182,13 +183,10 @@ class CharucoEstimator:
         self.id_key = 'id'
         self.cached_params = ['homography']
 
-        self.current_realworld_folder = Path(config.CALIBRATION_DIR) / 'real_world' / self.cam_name
+        self.current_realworld_folder = Path(calibration_dir or config.CALIBRATION_DIR) / 'real_world' / self.cam_name
         if not self.current_realworld_folder.exists():
             self.current_realworld_folder.mkdir(parents=True, exist_ok=True)
-        self.calibrator = Calibrator(cam_name, resize_dim=resize_dim)
-        self.mtx = self.calibrator.calib_params['mtx']
-        self.dist = self.calibrator.calib_params['dist']
-        self.newcam_mtx = self.calibrator.newcameramtx
+        self.calibrator = Calibrator(cam_name, resize_dim=resize_dim, calibration_dir=calibration_dir)
 
         self.arucoDict = cv2.aruco.Dictionary_get(ARUCO_DICT)
         self.arucoParams = cv2.aruco.DetectorParameters_create()
@@ -230,7 +228,9 @@ class CharucoEstimator:
         if self.resize_scale:
             frame_x, frame_y = self.resize_scale[0] * frame_x, self.resize_scale[1] * frame_y
         if is_undistort:
-            uv = cv2.undistortPoints(np.array([frame_x, frame_y]).astype('float32'), self.mtx, self.dist, None, self.newcam_mtx).ravel()
+            uv = cv2.undistortPoints(np.array([frame_x, frame_y]).astype('float32'), self.calibrator.calib_params['mtx'],
+                                     self.calibrator.calib_params['dist'], None,
+                                     self.calibrator.newcameramtx).ravel()
         else:
             uv = [frame_x, frame_y]
         uv_1 = np.array([[*uv,1]], dtype=np.float32).T
@@ -317,7 +317,7 @@ class CharucoEstimator:
         min_markers_amount = 60
         if len(marker_ids) < min_markers_amount:
             raise Exception(f'Not enough detected markers: {len(marker_ids)} < {min_markers_amount}')
-        
+
         missing_aruco = [m for m in ARUCO_IDS if m not in marker_ids]
         print(f'The following markers were not detected: {missing_aruco}')
 
@@ -346,7 +346,7 @@ class CharucoEstimator:
                 row += 1
                 is_even_row = not is_even_row
                 col = 0
-                
+
         df = pd.DataFrame(df).set_index('marker_id')
         df['z'] = 0
         df = df.loc[marker_ids.ravel()][['x', 'y', 'z']].values
@@ -437,11 +437,24 @@ def get_last_artifact(search_folder, cache_prefix, image_date=None):
         p_date = datetime.strptime(p_date, DATE_FORMAT)
         if image_date and p_date > image_date:
             continue
-        
+
         if last_date is None or p_date > last_date:
             last_date = p_date
             last_path = p
     return last_path
+
+
+def put_calibrations_dir_in_experiments(experiments_dir, cams, skip_existing=True):
+    for vid_dir in Path(experiments_dir).rglob('videos'):
+        if not vid_dir.is_dir():
+            continue
+        calib_dir = vid_dir / 'calibrations'
+        if skip_existing and calib_dir.exists():
+            continue
+
+        for cam_name in cams:
+            CharucoEstimator(cam_name)
+
 
 
 def main():
