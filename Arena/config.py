@@ -42,6 +42,8 @@ IS_CHECK_SCREEN_MAPPING = env.bool('IS_CHECK_SCREEN_MAPPING', True, group='Appli
 APP_SCREEN = env('APP_SCREEN', ':0', group='Application', desc='Application screen address')
 APP_DISPLAY = env('APP_DISPLAY', 'HDMI-0', group='Application', desc='Application screen display')
 TEST_SCREEN = env('TEST_SCREEN', ':1.0', group='Application', desc='Screen address to be used for running test experiments')
+EXTRA_SCREEN_SETTINGS = env('EXTRA_SCREEN_SETTINGS', '', group='Application', desc='Additional settings for the screen. For example: "--right-of DP-0"')
+CHROME_DESKTOP_ENVS = env('CHROME_DESKTOP_ENVS', '', group='Application', desc='Additional environment variables for Chrome. Example: HOME=/home/user')
 SCREEN_RESOLUTION = env('SCREEN_RESOLUTION', '1920,1080', group='Application', desc='Resolution of the screen. Write with comma and no spaces.')  # must be written with comma
 SCREEN_DISPLACEMENT = env('SCREEN_DISPLACEMENT', '000', group='Application', desc='Screen displacement. Used if more than one screen in connected to the server')  # used for displacing the screen contents in multi screen setup
 
