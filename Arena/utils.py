@@ -42,7 +42,7 @@ def turn_display_on(board='holes', is_test=False, logger=None):
     if not is_test:
         cmds = [
             'pkill chrome || true',  # kill all existing chrome processes
-            f'{DISPLAY} xrandr --output {config.APP_DISPLAY} --auto' +
+            f'{DISPLAY} xrandr --output {config.APP_DISPLAY} --auto {config.EXTRA_SCREEN_SETTINGS}' +
             (' --rotate inverted' if config.IS_SCREEN_INVERTED else ''),  # turn touch screen on
             f'{DISPLAY} xinput enable {touch_device_id}',  # enable touch
             f'{DISPLAY} xinput map-to-output {touch_device_id} {config.APP_DISPLAY}',
@@ -50,8 +50,9 @@ def turn_display_on(board='holes', is_test=False, logger=None):
         ]
     # Pogona hunter
     if board != 'psycho':
+        prefix = f'{config.CHROME_DESKTOP_ENVS} ' if config.CHROME_DESKTOP_ENVS else ''
         cmds += [
-            f'scripts/start_pogona_hunter.sh {board} {config.SCREEN_RESOLUTION} {screen} {config.SCREEN_DISPLACEMENT} --kiosk'
+            f'{prefix}scripts/start_pogona_hunter.sh {board} {config.SCREEN_RESOLUTION} {screen} {config.SCREEN_DISPLACEMENT} --kiosk'
         ]
     if logger is not None:
         logger.info(f'Turning display {config.APP_DISPLAY} on')

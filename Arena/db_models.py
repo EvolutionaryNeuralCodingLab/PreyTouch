@@ -456,7 +456,7 @@ class ORM:
             elif not vid.predictions:
                 self.logger.warning(f'No video predictions found for update: {video_stem}')
                 return
-            
+
             vps = [vp for vp in vid.predictions if vp.model == model]
             if not vps:
                 self.logger.warning(f'No video predictions found for update: {video_stem}, model: {model}')
@@ -584,7 +584,7 @@ class ORM:
 
     @staticmethod
     def _parse_day_string(day_string):
-        if day_string is None:
+        if not day_string:
             day = date.today()
         else:
             day = datetime.strptime(day_string, '%Y-%m-%d').date()
