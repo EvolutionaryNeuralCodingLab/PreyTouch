@@ -279,33 +279,40 @@ class BugTrialsAnalyzer:
         return Path(parent_dir) / 'trials_analysis.parquet'
 
 
-def create_trial_images_dir(animal_ids=None):
-    orm = ORM()
-    with orm.session() as s:
-        exps = s.query(Experiment)
-        if animal_ids is not None:
-            exps = exps.filter(Experiment.animal_id.in_(animal_ids))
+class TrialImagesCreator:
+    def __init__(self):
+        self.orm = ORM()
+    
+    def scan(self, animal_ids):
         blocks = []
-        for exp in exps.all():
-            for blk in exp.blocks:
-                if blk.block_type != 'bugs':
-                    continue
-                block_path = Path(f'{exp.experiment_path}/block{blk.block_id}')
-                trials_images_dir = block_path / 'trials_images'
-                if trials_images_dir.exists() and [x for x in trials_images_dir.glob('*.png')]:
-                    continue
-                blocks.append((int(blk.id), trials_images_dir))
+        with self.orm.session() as s:
+            exps = s.query(Experiment)
+            if animal_ids is not None:
+                exps = exps.filter(Experiment.animal_id.in_(animal_ids))
+            for exp in exps.all():
+                for blk in exp.blocks:
+                    if blk.block_type != 'bugs':
+                        continue
+                    images_dir = self.get_images_dir(s, blk, exp=exp)
+                    if images_dir.exists() and [x for x in images_dir.glob('*.png')]:
+                        continue
+                    blocks.append(int(blk.id))
         
         print(f'Found {len(blocks)} blocks to create trial images for')
-        for i, (block_id, trials_images_dir) in enumerate(blocks):
+        for i, block_id in enumerate(blocks):
+            self.save_images(block_id, desc_prefix=f'({i+1}/{len(blocks)}) ')
+    
+    def save_images(self, block_id, desc_prefix=''):
+        errors = {}
+        with self.orm.session() as s:
             blk = s.query(Block).filter_by(id=block_id).first()
+            trials_images_dir = self.get_images_dir(s, blk)
             trials_images_dir.mkdir(parents=True, exist_ok=True)
-            errors = {}
-            for tr in tqdm(blk.trials, desc=f'({i+1}/{len(blocks)}){trials_images_dir.parent}'):
-                trial_num = int(tr.in_block_trial_id)
-                img_num = 0
+            for tr in tqdm(blk.trials, desc=f'{desc_prefix}{trials_images_dir.parent}'):
                 try:
-                    ld = Loader(int(tr.id), config.TRIAL_IMAGE_CAMERA, is_debug=False, is_trial=True, orm=orm, raise_no_traj=False)
+                    img_num = 0
+                    trial_num = int(tr.in_block_trial_id)
+                    ld = Loader(int(tr.id), config.TRIAL_IMAGE_CAMERA, is_debug=False, is_trial=True, orm=self.orm, raise_no_traj=False)
                     for frame_id, frame in ld.gen_frames_around():
                         if frame_id in ld.relevant_video_frames + [round(np.mean(ld.relevant_video_frames))]:
                             frame = cv2.resize(frame, (0, 0), fx=0.2, fy=0.2)
@@ -316,12 +323,21 @@ def create_trial_images_dir(animal_ids=None):
             if errors:
                 for err_text, trial_ids in errors.items():
                     print(f'ERROR: {err_text} for trials: {",".join(trial_ids)}')
+    
+    @staticmethod                
+    def get_images_dir(s, blk, exp=None):
+        if exp is None:
+            exp = s.query(Experiment).filter_by(id=blk.experiment_id).first()
+        block_path = Path(f'{exp.experiment_path}/block{blk.block_id}')
+        return Path(block_path) / 'trials_images'
+
 
 
 if __name__ == "__main__":
-    ts = BugTrialsAnalyzer(is_debug=True, animal_ids=['PV51'])
+    TrialImagesCreator().save_images(1758)
+    # ts = BugTrialsAnalyzer(is_debug=True, animal_ids=['PV51'])
     # blk_path = '/data/PreyTouch/output/experiments/PV162/20240414/block1'
-    ts.run(is_cache=True)
+    # ts.run(is_cache=True)
     # ts.run(892, is_cache=False)
     # ts.plot_cached_block_results(block_id=1983, is_show=True, is_overwrite=True)
     # create_trial_images_dir(['PV51'])
