@@ -297,8 +297,8 @@ class Loader:
                     between_frames_delay=None, save_video=False):
         n_frames_back = n_frames_back if n_frames_back is not None else self.n_frames_back
         n_frames_forward = n_frames_forward if n_frames_forward is not None else self.n_frames_forward
-        start_frame = max([self.strike_frame_id - n_frames_back], self.relevant_video_frames[0])
-        end_frame = min([self.strike_frame_id + n_frames_forward], self.relevant_video_frames[1])
+        start_frame = max(self.strike_frame_id - n_frames_back, self.relevant_video_frames[0])
+        end_frame = min(self.strike_frame_id + n_frames_forward, self.relevant_video_frames[1])
         self._play(start_frame, end_frame, cam_name=cam_name, annotations=annotations,
                    between_frames_delay=between_frames_delay, save_video=save_video)
 
