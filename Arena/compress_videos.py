@@ -1,6 +1,8 @@
+import logging
 import imageio.v2 as iio
 from pathlib import Path
-from db_models import ORM, Video, VideoPrediction, PoseEstimation
+from db_models import ORM, Experiment, Video, VideoPrediction, PoseEstimation
+import config
 import time
 
 
@@ -101,8 +103,35 @@ def clear_missing_videos():
                 s.commit()
 
 
+def compress_directory(dir_path, logger_):
+    orm = ORM()
+    with orm.session() as s:
+        for p in Path(dir_path).rglob('*.avi'):
+            vid = s.query(Video).filter_by(path=p.as_posix()).first()
+            if vid is None:
+                print(f'counld not find video in DB: {p}')
+                continue
+            compress(vid.id, logger_, orm)
+            
+
+def fix_wrong_vid_paths_in_db():
+    orm = ORM()
+    with orm.session() as s:
+        for p in Path(config.EXPERIMENTS_DIR).rglob('*.avi'):
+            vid = s.query(Video).filter_by(path=p.as_posix()).first()
+            if vid is None:
+                q = p.with_suffix('').as_posix()[:-1] + '%'
+                vid = s.query(Video).filter(Video.path.ilike(q)).first()
+                if vid is not None:
+                    vid.path = p.as_posix()
+                    print(f'Videos name mismatch:\n{p.name} -> {Path(vid.path).name}')
+        s.commit()
+
+
 if __name__ == "__main__":
-    compress_video_file('/data/PreyTouch/output/experiments/PV80/20250116/block5/videos/right_20250116T130047.avi')
-    # main()
-    # foo()
-    # clear_missing_videos()
+    # fix_wrong_vid_paths_in_db()
+    logger_ = logging.getLogger(__name__)
+    logger_.setLevel(logging.DEBUG)
+    handler = logging.StreamHandler()
+    logger_.addHandler(handler)
+    
