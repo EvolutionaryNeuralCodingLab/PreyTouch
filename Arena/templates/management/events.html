@@ -1,6 +1,5 @@
 <div class="col" id="events_column">
     {% include "management/configurations.html" %}
-    {% include "management/animal_summary.html" %}
     <h4 style="text-align: center;">Events</h4>
 
     {% for name in toggels %}
@@ -40,9 +39,6 @@
     </div>
     <div class="row mb-2">
         <button id="reward" type="button" class="btn btn-sm btn-primary mx-auto">Reward</button>
-    </div>
-    <div class="row mb-2">
-        <button id="animalSummary" type="button" class="btn btn-sm btn-primary mx-auto">Animal Summary</button>
     </div>
     <div class="row mb-2">
         <button data-toggle="modal" data-target="#calibrationsModal" class="btn btn-sm btn-primary mx-auto">Calibration</button>
@@ -196,12 +192,6 @@
         $.get('/reward', function (data) {
             console.log('>> Reward sent manually')
         })
-    })
-
-    $("#animalSummary").click(function (e) {
-        $("#animalIdsForSummarySelect").val($("#animalIdsForSummarySelect option:first").val()).trigger('change')
-        $("#updateAnimalSummary").click()
-        $('#animalSummaryModal').modal('toggle')
     })
 
     $("#init_bugs").click(function (e) {

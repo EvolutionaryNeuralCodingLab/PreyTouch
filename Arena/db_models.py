@@ -51,29 +51,6 @@ class Animal(Base):
     end_time = Column(DateTime, nullable=True)
     sex = Column(String)
     arena = Column(String)
-    bug_types = Column(String)
-    reward_bugs = Column(String)
-    background_color = Column(String)
-    reward_any_touch_prob = Column(Float, default=0)
-    exit_hole = Column(String, nullable=True)
-    audit = relationship('AnimalSettingsHistory')
-    dwh_key = Column(Integer, nullable=True)
-
-
-class AnimalSettingsHistory(Base):
-    __tablename__ = 'animal_settings'
-
-    id = Column(Integer, primary_key=True)
-    time = Column(DateTime)
-    animal_id = Column(String)
-    sex = Column(String)
-    arena = Column(String)
-    bug_types = Column(String)
-    reward_bugs = Column(String)
-    background_color = Column(String)
-    reward_any_touch_prob = Column(Float, default=0)
-    exit_hole = Column(String, nullable=True)
-    animal_id_key = Column(Integer, ForeignKey('animals.id'))
     dwh_key = Column(Integer, nullable=True)
 
 
@@ -289,9 +266,6 @@ def commit_func(method):
     return wrapped
 
 
-ANIMAL_SETTINGS_LISTS = ['bug_types', 'reward_bugs']
-
-
 class ORM:
     def __init__(self):
         self.engine = get_engine()
@@ -481,24 +455,12 @@ class ORM:
             s.add(pe)
             s.commit()
 
-    def extract_animal_settings(self, **data):
-        kwargs = {}
-        for k, v in data.items():
-            if k in ANIMAL_SETTINGS_LISTS:
-                v = ','.join(v or [])
-            kwargs[k] = v
-        return kwargs
-
     @commit_func
     def commit_animal_id(self, **data):
         with self.session() as s:
-            kwargs = self.extract_animal_settings(**data)
-            kwargs['arena'] = config.ARENA_NAME
-            animal = Animal(start_time=datetime.now(), **kwargs)
+            data['arena'] = config.ARENA_NAME
+            animal = Animal(start_time=datetime.now(), **data)
             s.add(animal)
-            animal_settings = AnimalSettingsHistory(time=datetime.now(),
-                                                    animal_id_key=animal.id, **kwargs)
-            s.add(animal_settings)
             s.commit()
             self.cache.set(cc.CURRENT_ANIMAL_ID, data['animal_id'])
             self.cache.set(cc.CURRENT_ANIMAL_ID_DB_INDEX, animal.id)
@@ -506,18 +468,13 @@ class ORM:
     @commit_func
     def update_animal_id(self, **kwargs):
         with self.session() as s:
-            data = self.extract_animal_settings(**kwargs)
             db_index = self.cache.get(cc.CURRENT_ANIMAL_ID_DB_INDEX)
             if db_index is None:
                 return
             animal_model = s.query(Animal).filter_by(id=db_index).first()
             if animal_model is None:
                 return
-            if 'end_time' not in kwargs:
-                animal_settings = AnimalSettingsHistory(time=datetime.now(),
-                                                        animal_id_key=animal_model.id, **data)
-                s.add(animal_settings)
-            for k, v in data.items():
+            for k, v in kwargs.items():
                 setattr(animal_model, k, v)
             s.commit()
 
@@ -525,15 +482,12 @@ class ORM:
             self.cache.delete(cc.CURRENT_ANIMAL_ID)
             self.cache.delete(cc.CURRENT_ANIMAL_ID_DB_INDEX)
 
-    def get_animal_settings(self, animal_id):
+    def get_animal_data(self, animal_id):
         with self.session() as s:
             animal = s.query(Animal).filter_by(animal_id=animal_id, arena=config.ARENA_NAME).order_by(
                 desc(Animal.start_time)).first()
             if animal is not None:
                 animal_dict = {k: v for k, v in animal.__dict__.items() if not k.startswith('_')}
-                for k, v in animal_dict.copy().items():
-                    if k in ANIMAL_SETTINGS_LISTS:
-                        animal_dict[k] = v.split(',')
             else:
                 if animal_id != 'test':
                     self.logger.error('No Animal was found')
@@ -712,7 +666,7 @@ class ORM:
 
 
 class DWH:
-    commit_models = [Animal, AnimalSettingsHistory, Experiment, Block, Trial, Strike, Video, VideoPrediction]
+    commit_models = [Animal, Experiment, Block, Trial, Strike, Video, VideoPrediction]
 
     def __init__(self):
         self.logger = get_logger('dwh')

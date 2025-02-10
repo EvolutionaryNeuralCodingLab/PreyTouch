@@ -213,17 +213,12 @@ class Block {
 const mainFields = {
   // name: new FieldObject('experimentName', Field),
   animal_id: new FieldObject('animalId', Field),
-  bug_types: new FieldObject('bugTypeSelect', MultiSelectField),
   time_between_blocks: new FieldObject('timeBetweenBlocks', NumericalField),
   extra_time_recording: new FieldObject('extraTimeRecording', NumericalField),
   cameras: new FieldObject('cameras', Cameras),
   num_blocks: new FieldObject('numBlocks', NumericalField),
   is_identical_blocks: new FieldObject('isIdenticalBlocks', CheckField),
   is_test: new FieldObject('isTest', CheckField),
-  reward_bugs: new FieldObject('rewardBugSelect', MultiSelectField, {}),
-  background_color: new FieldObject('backgroundColor', Field),
-  exit_hole: new FieldObject('exitHolePositionSelect', Field),
-  reward_any_touch_prob: new FieldObject('rewardAnyTouchProb', NumericalField)
 }
 
 const blockFields = {
@@ -240,6 +235,12 @@ const blockFields = {
     movement_type: new FieldObject('movementTypeSelect', Field),
     is_default_bug_size: new FieldObject('isDefaultBugSize', CheckField),
     bug_size: new FieldObject('bugSize', NumericalField, {is_default_bug_size: false}),
+    exit_hole: new FieldObject('exitHolePositionSelect', Field),
+    reward_any_touch_prob: new FieldObject('rewardAnyTouchProb', NumericalField),
+    bug_types: new FieldObject('bugTypeSelect', MultiSelectField),
+    reward_bugs: new FieldObject('rewardBugSelect', MultiSelectField, {}),
+    background_color: new FieldObject('backgroundColor', Field),
+    accelerate_multiplier: new FieldObject('accelerateMultiplier', NumericalField),
     holes_height_scale: new FieldObject('holesHeight', NumericalField),
     circle_height_scale: new FieldObject('circleHeight', NumericalField),
     circle_radius_scale: new FieldObject('circleRadius', NumericalField)
@@ -258,9 +259,4 @@ const blockFields = {
 const _animalIDFiels = {
   animal_id: new FieldObject('animalId', Field),
   sex: new FieldObject('animalSex', Field),
-  exit_hole: new FieldObject('exitHolePositionSelect', Field),
-  reward_any_touch_prob: new FieldObject('rewardAnyTouchProb', NumericalField),
-  bug_types: new FieldObject('bugTypeSelect', MultiSelectField),
-  reward_bugs: new FieldObject('rewardBugSelect', MultiSelectField, {}),
-  background_color: new FieldObject('backgroundColor', Field),
 }

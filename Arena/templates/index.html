@@ -471,28 +471,28 @@
             }
         }).trigger('change')
 
-        // bug types listener
-        let $bugType = $(`#bugTypeSelect`)
-        $bugType.bsMultiSelect()
-        $bugType.change(() => {
-            let $rewardBug = $(`#rewardBugDiv`)
-            $(`#rewardBugSelect option`).remove()
-            if ($bugType.val().length <= 1) {
-                $rewardBug.hide()
-            } else {
-                let $el = $(`#rewardBugSelect`)
-                $(`#bugTypeSelect option`).each(function (v) {
-                    if (this.selected) {
-                        $el.append($("<option></option>").attr("value", this.value).text(this.text)).attr('selected', true);
-                    }
-                });
-                $el.bsMultiSelect("UpdateData")
-                $rewardBug.show()
-            }
-        })
-
         // Inside block listeners
         for (let i = 1; i <= maxBlocks; i++) {
+            // bug types listener
+            let $bugType = $(`#bugTypeSelect${i}`)
+            $bugType.bsMultiSelect()
+            $bugType.change(() => {
+                let $rewardBug = $(`#rewardBugDiv${i}`)
+                $(`#rewardBugSelect${i} option`).remove()
+                if ($bugType.val().length <= 1) {
+                    $rewardBug.hide()
+                } else {
+                    let $el = $(`#rewardBugSelect${i}`)
+                    $(`#bugTypeSelect${i} option`).each(function (v) {
+                        if (this.selected) {
+                            $el.append($("<option></option>").attr("value", this.value).text(this.text)).attr('selected', true);
+                        }
+                    });
+                    $el.bsMultiSelect("UpdateData")
+                    $rewardBug.show()
+                }
+            })
+
             // media or bugs experiment block
             $(`#isDefaultBugSize${i}`).change(function () {
                 if (this.checked) {
@@ -514,6 +514,11 @@
                 } else {
                     $(`#circleHeightDiv${i}`).hide()
                     $(`#circleRadiusDiv${i}`).hide()
+                }
+                if (['jump_up', 'circle_accelerate'].indexOf($movementType.val()) !== -1) {
+                    $(`#accelerateMultiplierDiv${i}`).show()
+                } else {
+                    $(`#accelerateMultiplierDiv${i}`).hide()
                 }
             }
             ).trigger('change')

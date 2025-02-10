@@ -209,14 +209,14 @@ def update_reward_count():
 @app.route('/update_animal_id', methods=['POST'])
 def update_animal_id():
     data = request.json
-    animal_id = data['animal_id']
+    new_animal_id = data['animal_id']
     current_animal_id = cache.get(cc.CURRENT_ANIMAL_ID)
-    if animal_id != current_animal_id:
+    if new_animal_id != current_animal_id:
         if current_animal_id:
             arena_mgr.orm.update_animal_id(end_time=datetime.now())
-        if animal_id:
+        if new_animal_id:
             arena_mgr.orm.commit_animal_id(**data)
-            arena_mgr.logger.info(f'Animal ID was updated to {animal_id} ({data["sex"]})')
+            arena_mgr.logger.info(f'Animal ID was updated to {new_animal_id} ({data["sex"]})')
     else:
         arena_mgr.orm.update_animal_id(**data)
     return Response('ok')
@@ -230,7 +230,7 @@ def get_current_animal():
     if not animal_id:
         arena_mgr.logger.warning('No animal ID is set')
         return jsonify({})
-    animal_dict = arena_mgr.orm.get_animal_settings(animal_id)
+    animal_dict = arena_mgr.orm.get_animal_data(animal_id)
     return jsonify(animal_dict)
 
 
