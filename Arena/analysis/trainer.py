@@ -86,7 +86,7 @@ class Trainer:
         if self.is_shuffle_dataset:
             indices = np.random.permutation(indices)
 
-        y_vals = pd.Series(self.dataset.targets).sort_index().values
+        y_vals = pd.Series(self.dataset.y).sort_index().values
         if self.test_size:
             y_vals = y_vals[indices]
         for fold, (train_idx, val_idx) in enumerate(splits.split(indices, y_vals)):

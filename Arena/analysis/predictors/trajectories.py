@@ -90,8 +90,7 @@ class LizardTrajDataSet(Dataset):
             drop=True)
         # standarize the data over all trajectory observations
         if is_standardize:
-            for col in variables:
-                self.X[col] = (self.X[col] - self.X[col].mean()) / self.X[col].std()
+            self.normalize_trajs()
 
         self.X = self.X.query(f'id in {self.samples}')
         self.y = strk_df[target_name].loc[self.samples]
@@ -140,6 +139,12 @@ class LizardTrajDataSet(Dataset):
             return group.loc[sample_indexes]
 
         self.X = self.X.groupby('id', group_keys=False).apply(_sample)
+
+    def normalize_trajs(self):
+        # we calculate the mean and std over the sequence of -3,3 to match the inputs from previous versions
+        X_ = self.X.query('-3<total_sec<3')
+        for col in self.variables:
+            self.X[col] = (self.X[col] - X_[col].mean()) / X_[col].std()
 
 
 @dataclass
