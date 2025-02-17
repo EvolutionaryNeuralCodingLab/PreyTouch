@@ -325,6 +325,25 @@ class TrajClassifier(ClassificationTrainer):
         ax.set_ylabel('Attention values')
         ax.legend()
 
+    def plot_ablation(self, ax):
+        self.model.eval()
+        dataset = self.get_dataset()
+        ablations = {}
+        for i, feature_name in enumerate(self.feature_names + ['control']):
+            y_true, y_pred = [], []
+            for x, y in dataset:
+                if feature_name != 'control':
+                    x[:, i] = 0.0
+                outputs, _ = self.model(x.to(self.device).unsqueeze(0), is_attn=True)
+                label, prob = self.predict_proba(outputs, is_all_probs=True)
+                y_true.append(y.item())
+                y_pred.append(label.item())
+            acc = accuracy_score(y_true, y_pred)
+            ablations[feature_name] = acc
+
+        ablations = {k: v - ablations['control'] for k, v in ablations.items() if k != 'control'}
+        ax.bar(ablations.keys(), ablations.values())
+
     def all_data_evaluation(self, axes=None, is_test_set=False, is_plot_auc=True, **kwargs):
         if axes is None:
             fig, axes_ = plt.subplots(1, 3, figsize=(18, 4))
@@ -671,11 +690,15 @@ def find_optimal_span(animal_id='PV42', movement_type='random_low_horizontal', d
 
 
 if __name__ == '__main__':
-    tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=(0, 60), is_resample=False,
-                        animal_id='PV91', movement_type='random_low_horizontal', is_hit=False, lstm_layers=4,
-                        dropout_prob=0.3, lstm_hidden_dim=50, is_shuffled_target=True, is_iti=True)
-    tj.train(is_plot=True)
-    tj.check_hidden_states()
+    # tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=(0, 60), is_resample=False,
+    #                     animal_id='PV91', movement_type='random_low_horizontal', is_hit=False, lstm_layers=4,
+    #                     dropout_prob=0.3, lstm_hidden_dim=50, is_shuffled_target=True, is_iti=True)
+    # tj.train(is_plot=True)
+    # tj.check_hidden_states()
+
+    hyperparameters_comparison(animal_id='PV42', movement_type='random_low_horizontal',
+                               feature_names=['x', 'y', 'speed'], sub_section=(-1, 60))
+
     # find_optimal_span(animal_id='PV163', movement_type='random_low_horizontal')
     # run_with_different_seeds('PV91', 'random_low_horizontal', (-1, 60),
     #                          ['x', 'y', 'speed'], n=10)
