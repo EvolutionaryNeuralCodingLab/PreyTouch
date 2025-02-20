@@ -65,7 +65,7 @@
 </div>
 
 <script>
-    const feedersNames = JSON.parse("{{ feeders|tojson }}")
+    const feedersNames = JSON.parse('{{ feeders|tojson|safe }}')
     for (let feeder of feedersNames) {
       let feederLabel = feeder.replace(" ", "-")
       $(`#updateRewardCount-${feederLabel}`).click(() => {

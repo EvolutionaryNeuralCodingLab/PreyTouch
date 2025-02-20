@@ -685,6 +685,28 @@ def video_feed():
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
+@app.route('/strike_video_feed/<int:strike_id>', methods=['GET'])
+def strike_video_feed(strike_id):
+    try:
+        ld = Loader(strike_id, cam_name=config.NIGHT_POSE_CAMERA, raise_no_traj=False, orm=arena_mgr.orm, sec_before=2, sec_after=2)
+        
+        def generate_frames():
+            for _, frame  in ld.gen_frames_around_strike(cam_name=config.TRIAL_IMAGE_CAMERA):
+                success, buffer = cv2.imencode('.jpg', frame)
+                if not success:
+                    continue  # Skip if encoding fails
+
+                # Convert to bytes and yield as a multipart message
+                frame_bytes = buffer.tobytes()
+                yield (b'--frame\r\n'
+                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+        
+        return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    
+    except Exception as exc:
+        return Response(f'Error getting strike video feed: {exc}', status=500)
+
+
 def initialize():
     logger = logging.getLogger(app.name)
     logger.setLevel(logging.DEBUG)

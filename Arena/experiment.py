@@ -36,11 +36,6 @@ class Experiment:
     cam_units: dict
     animal_id: str
     cameras: dict
-    exit_hole: str
-    bug_types: list = field(default_factory=list)
-    reward_bugs: list = field(default_factory=list)
-    reward_any_touch_prob: float = 0.0
-    background_color: str = ''
     num_blocks: int = 1
     name: str = ''
     blocks: list = field(default_factory=list, repr=False)
@@ -59,9 +54,7 @@ class Experiment:
         self.orm = ORM()
         blocks_ids = range(self.first_block, self.first_block + len(self.blocks))
         self.blocks = [Block(i, self.cameras, str(self), self.experiment_path, self.animal_id, self.cam_units, self.orm,
-                             self.cache, bug_types=self.bug_types, reward_bugs=self.reward_bugs, exit_hole=self.exit_hole,
-                             background_color=self.background_color, reward_any_touch_prob=self.reward_any_touch_prob,
-                             extra_time_recording=self.extra_time_recording, **kwargs)
+                             self.cache, extra_time_recording=self.extra_time_recording, **kwargs)
                        for i, kwargs in zip(blocks_ids, self.blocks)]
         self.logger = get_logger('Experiment')
         self.exp_validation = ExperimentValidation(logger=self.logger, cache=self.cache, orm=self.orm)

@@ -12,6 +12,7 @@
         <input id="strikeTags" value="{{ tags }}" type="text" autocomplete="off">
         <button id="updateStrikeTags">Update</button>
     </div>
+    <img src="{{ url_for('strike_video_feed', strike_id=strike_id) }}" alt="Video Stream" width="320" height="210">
     <img src="data:image/jpeg;base64,{{ image | safe }}" style="width: 100%" alt="No image found">
 </body>
 </html>
