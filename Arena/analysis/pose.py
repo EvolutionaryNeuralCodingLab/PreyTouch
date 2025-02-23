@@ -1402,10 +1402,12 @@ class VideoPoseScanner:
             except Exception as exc:
                 self.logger.error(f'{video_path}, {exc}')
 
-    def fix_calibrations(self):
+    def fix_calibrations(self, experiments_dir=None, calibration_dir=None):
         """redo calibration for all video predictions in the database and files"""
-        assert self.is_use_db, 'must set is_use_db to True'
-        videos = self._get_videos_to_predict_from_files(is_skip_predicted=False)
+        # assert self.is_use_db, 'must set is_use_db to True'
+        if calibration_dir is not None:
+            config.CALIBRATION_DIR = calibration_dir
+        videos = self._get_videos_to_predict_from_files(experiments_dir=experiments_dir, is_skip_predicted=False)
         if not videos:
             self.logger.info('No videos found; aborting')
             return
@@ -1425,7 +1427,8 @@ class VideoPoseScanner:
                     new_row = self.dlc.analyze_frame(row['time'].iloc[0], row.copy())
                     zf.loc[i] = new_row.iloc[0]
                 self.dlc.save_predicted_video(zf, video_path)
-                self.orm.update_video_prediction(video_path.stem, self.dlc.predictor.model_name, zf.dropna(subset=[('nose', 'x')]))
+                if self.is_use_db:
+                    self.orm.update_video_prediction(video_path.stem, self.dlc.predictor.model_name, zf.dropna(subset=[('nose', 'x')]))
             except MissingFile as exc:
                 self.logger.error(f'Missing File Error; {exc}')
             except Exception:
@@ -1445,9 +1448,12 @@ if __name__ == '__main__':
     # commit_video_pred_to_db(animal_ids="PV163")
     # VideoPoseScanner().fix_calibrations()
     # VideoPoseScanner().predict_all(max_videos=20, is_tqdm=True)
-    # VideoPoseScanner(cam_name='top', animal_ids=['PV157'], is_use_db=False)
+    VideoPoseScanner(cam_name='front', animal_ids=['PV91b'], is_use_db=False,
+                     model_path="/data/PreyTouch/output/models/deeplabcut/front_head_only_resnet_152"
+                     ).fix_calibrations(experiments_dir='/media/sil2/Data/regev/experiments/reptilearn4',
+                                        calibration_dir='/media/sil2/Data/regev/calibrations/reptilearn4')
     # VideoPoseScanner(cam_name='top', animal_ids=['PV157'], is_use_db=False).predict_video('/data/Pogona_Pursuit/output/experiments/PV157/20240307/block2/videos/top_20240307T141316.mp4')
-    VideoPoseScanner(cam_name='top', animal_ids=['PV157'], is_use_db=True, only_strikes_vids=False).predict_all()
+    # VideoPoseScanner(cam_name='top', animal_ids=['PV157'], is_use_db=True, only_strikes_vids=False).predict_all()
     # VideoPoseScanner(animal_id='PV163').add_bug_trajectory(videos=[Path('/media/reptilearn4/experiments/PV163/20240201/block10/videos/front_20240201T173016.mp4')])
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/Archive/front/20221205T093815_front.png', 0)
     # print(run_predict('pogona_head', [img]))

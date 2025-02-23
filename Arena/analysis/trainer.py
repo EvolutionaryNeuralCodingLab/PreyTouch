@@ -90,7 +90,7 @@ class Trainer:
         if self.test_size:
             y_vals = y_vals[indices]
         for fold, (train_idx, val_idx) in enumerate(splits.split(indices, y_vals)):
-            f_best_score_, f_best_model_, f_metrics, best_history = None, None, dict(), None
+            f_best_score_, f_best_model_, f_metrics, f_chosen_epoch = None, None, dict(), None
             self.model = self.get_model()
             self.model.to(self.device)
             loss_fn = self.get_loss_fn()
@@ -98,7 +98,7 @@ class Trainer:
             scheduler = self.get_scheduler(optimizer)
             train_loader, val_loader = self.get_training_loaders(indices[train_idx], indices[val_idx])
             with tqdm(range(self.num_epochs)) as pbar:
-                for _ in pbar:
+                for epoch_id in pbar:
                     epoch_metrics = dict()
                     epoch_metrics['train_loss'] = self.train_epoch(train_loader, optimizer, loss_fn)
                     epoch_metrics.update(self.val_epoch(val_loader, loss_fn))
@@ -111,9 +111,10 @@ class Trainer:
                     if not f_best_score_ or self.is_better_score_(score, f_best_score_):
                         f_best_score_ = score
                         f_best_model_ = self.model.state_dict()
+                        f_chosen_epoch = epoch_id + 1
 
                 self.model.load_state_dict(f_best_model_)
-                fold_res = {'model_state': f_best_model_, 'score': f_best_score_, 'metrics': f_metrics}
+                fold_res = {'model_state': f_best_model_, 'score': f_best_score_, 'metrics': f_metrics, 'chosen_epoch': f_chosen_epoch}
                 if test_loader is not None:
                     test_score = self.val_epoch(test_loader, loss_fn)[self.monitored_metric]
                     fold_res['test_score'] = test_score
@@ -265,13 +266,13 @@ class Trainer:
         epochs = np.arange(1, self.num_epochs + 1)
         axes[0].plot(epochs, chosen_metrics['train_loss'], color='k', label='train_loss')
         axes[0].plot(epochs, chosen_metrics['val_loss'], color='purple', label='val_loss')
+        axes[0].axvline(self.history[chosen_fold_id]['chosen_epoch'], color='r', ls='--')
         axes[0].legend()
         axes[0].set_title('Loss')
         # Chosen Model Validation Metrics
-        for k, v in chosen_metrics.items():
-            if k in ['train_loss', 'val_loss']:
-                continue
-            axes[1].plot(epochs, v, label=k)
+        axes[1].plot(epochs, chosen_metrics['accuracy'], color='tab:blue', label='accuracy')
+        axes[1].plot(epochs, chosen_metrics['auc'], color='tab:orange', label='auc')
+        axes[1].axvline(self.history[chosen_fold_id]['chosen_epoch'], color='r', ls='--')
         axes[1].set_title('Validation Metrics')
         axes[1].legend()
         # Comparison of monitored metric

@@ -5,6 +5,7 @@ import itertools
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 from datetime import datetime
 import seaborn as sns
 import torch
@@ -235,7 +236,10 @@ class TrajClassifier(ClassificationTrainer):
         return dataset
 
     def get_optimizer(self):
-        return optim.AdamW(self.model.parameters(), lr=self.learning_rate)
+        return optim.AdamW(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
+
+    def get_scheduler(self, optimizer):
+        return torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode=self.monitored_metric_algo, patience=10)
 
     def get_model(self):
         return LSTMWithAttention(input_dim=len(self.feature_names), hidden_dim=self.lstm_hidden_dim,
@@ -262,7 +266,8 @@ class TrajClassifier(ClassificationTrainer):
 
     def load_data(self):
         if not self.is_iti:
-            filename = 'trajs_before_after_10s_strike'
+            # filename = 'trajs_before_after_10s_strike'
+            filename = 'trajs_before_120_after_60s_strike'
         else:
             filename = 'trajs_10s_iti'
         with open(f'{self.dataset_path}/{filename}.pkl', 'rb') as f:
@@ -282,11 +287,15 @@ class TrajClassifier(ClassificationTrainer):
         return model_name
 
     def summary_plots(self, chosen_fold_id):
-        fig, axes = plt.subplots(2, 3, figsize=(15, 6))
-        self.plot_train_metrics(chosen_fold_id, axes[0, :])
-        self.all_data_evaluation(axes=axes[1, :])
+        # fig, axes = plt.subplots(2, 3, figsize=(15, 6))
+        fig = plt.figure(figsize=(16, 6))
+        outer_gs = gridspec.GridSpec(2, 1, height_ratios=[1, 1], hspace=0.3)
+        gs_top = gridspec.GridSpecFromSubplotSpec(1, 3, subplot_spec=outer_gs[0], wspace=0.1)
+        self.plot_train_metrics(chosen_fold_id, [fig.add_subplot(g) for g in gs_top])
+        gs_bottom = gridspec.GridSpecFromSubplotSpec(1, 4, subplot_spec=outer_gs[1], wspace=0.3)
+        self.all_data_evaluation(axes=[fig.add_subplot(g) for g in gs_bottom])
         fig.suptitle(f'{self.animal_id} {self.movement_type}', fontsize=20)
-        fig.tight_layout()
+        # fig.tight_layout()
         if self.cache_dir:
             fig.savefig(self.cache_dir / 'summary_plots.jpg')
         plt.show()
@@ -323,17 +332,26 @@ class TrajClassifier(ClassificationTrainer):
             ax.axvline(0, color='k', linestyle='--')
         ax.set_xlabel('Time Around Strike [sec]')
         ax.set_ylabel('Attention values')
+        ax.set_title('Attention')
         ax.legend()
 
-    def plot_ablation(self, ax):
+    def plot_ablation(self, ax, segment=None):
         self.model.eval()
         dataset = self.get_dataset()
         ablations = {}
+        if segment is not None:
+            assert len(segment) == 2, 'Segment should be a tuple of start and end times'
+            time_vector = self.sub_section[0] + np.arange(self.sub_section[1] + 1) * (1 / 60)
+            mask = (time_vector >= segment[0]) & (time_vector <= segment[1])
+
         for i, feature_name in enumerate(self.feature_names + ['control']):
             y_true, y_pred = [], []
             for x, y in dataset:
                 if feature_name != 'control':
-                    x[:, i] = 0.0
+                    if segment is not None:
+                        x[mask, i] = 0.0
+                    else:
+                        x[:, i] = 0.0
                 outputs, _ = self.model(x.to(self.device).unsqueeze(0), is_attn=True)
                 label, prob = self.predict_proba(outputs, is_all_probs=True)
                 y_true.append(y.item())
@@ -343,17 +361,19 @@ class TrajClassifier(ClassificationTrainer):
 
         ablations = {k: v - ablations['control'] for k, v in ablations.items() if k != 'control'}
         ax.bar(ablations.keys(), ablations.values())
+        ax.set_title('Ablation')
 
     def all_data_evaluation(self, axes=None, is_test_set=False, is_plot_auc=True, **kwargs):
         if axes is None:
-            fig, axes_ = plt.subplots(1, 3, figsize=(18, 4))
+            fig, axes_ = plt.subplots(1, 4, figsize=(18, 4))
         else:
             axes_ = axes
-        assert len(axes_) == (3 if is_plot_auc else 2)
+        assert len(axes_) == (4 if is_plot_auc else 3)
 
         y_true, y_pred, y_score, attns = self.get_data_for_evaluation(is_test_set)
         att_id = 2 if is_plot_auc else 1
         self.plot_attention(axes_[att_id], attns)
+        self.plot_ablation(axes_[att_id + 1])
 
         y_true_binary = label_binarize(y_true, classes=np.arange(len(self.targets)))
         self.plot_confusion_matrix(y_true, y_pred, ax=axes_[0])
@@ -402,7 +422,7 @@ class TrajClassifier(ClassificationTrainer):
             display.plot(ax=ax, name=str(target))  # plot_chance_level=True
 
         micro_auc = roc_auc_score(y_true_binary, y_score, average="micro")
-        ax.set_title(f"Micro-averaged over all classes: {micro_auc:.2f}")
+        ax.set_title(f"Micro-averaged over all classes: {micro_auc:.2f}", fontsize=12)
 
     def plot_attention_weights(self, attention_weights, trajectory, ax):
         # attention_weights: Tensor of shape (seq_length,)
@@ -524,15 +544,15 @@ def animals_comparison():
 
 
 def hyperparameters_comparison(animal_id='PV91', movement_type='random_low_horizontal', is_resample=False,
-                               sub_section=(-2, 180), feature_names=('x', 'y', 'speed')):
+                               sub_section=(-1, 60), feature_names=('x', 'y', 'speed'), **kwargs):
     from sklearn.model_selection import ParameterGrid
 
     res_df = []
-    grid = ParameterGrid(dict(dropout_prob=[0.1, 0.3, 0.4, 0.6], lstm_layers=[4, 6, 8], lstm_hidden_dim=[50, 100, 150]))
+    grid = ParameterGrid(dict(dropout_prob=[0.05, 0.1, 0.4], lstm_layers=[1, 2, 4, 6], lstm_hidden_dim=[32, 64, 128]))
     for i, params in enumerate(grid):
         print(f'start loop {i+1}/{len(grid)}')
         tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=sub_section, feature_names=feature_names,
-                            is_debug=False, is_resample=is_resample, animal_id=animal_id, movement_type=movement_type, **params)
+                            is_debug=False, is_resample=is_resample, animal_id=animal_id, movement_type=movement_type, **kwargs, **params)
         tj.train(is_plot=False)
         best_i = np.argmin([x['score'] for x in tj.history])
         best_epoch = np.argmin(tj.history[best_i]['metrics']['val_loss'])
@@ -544,6 +564,8 @@ def hyperparameters_comparison(animal_id='PV91', movement_type='random_low_horiz
         acc = accuracy_score(y_true, y_pred)
         res_df.append({'metric': 'overall_accuracy', 'value': acc, 'animal_id': animal_id,
                        'movement_type': movement_type, 'model_path': tj.model_path, **params})
+
+        print(f'{",".join([f"{k}:{v}" for k, v in params.items()])} - Overall Accuracy: {acc:.2f}')
         torch.cuda.empty_cache()
         time.sleep(1)
 
@@ -589,15 +611,12 @@ def find_best_features(movement_type='random_low_horizontal', lstm_layers=4, dro
     res_df.to_csv(filename)
 
 
-def run_with_different_seeds(animal_id, movement_type, sub_section, feature_names, lstm_layers=4,
-                            dropout_prob=0.1, lstm_hidden_dim=100, n=10, is_run_feature_importance=True, is_plot=True,
-                             is_save=True):
+def run_with_different_seeds(animal_id, movement_type, feature_names,
+                             n=10, is_run_feature_importance=True, is_plot=True, is_save=True, **kwargs):
     res = {'metrics': [], 'attention': {}, 'feature_importance': []}
     for s in range(n):
-        tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=sub_section,
-                            is_resample=False, feature_names=feature_names, seed=s, is_debug=False,
-                            animal_id=animal_id, movement_type=movement_type, is_hit=False, lstm_layers=lstm_layers,
-                            dropout_prob=dropout_prob, lstm_hidden_dim=lstm_hidden_dim)
+        tj = TrajClassifier(save_model_dir=TRAJ_DIR, feature_names=feature_names, seed=s,
+                            animal_id=animal_id, movement_type=movement_type, **kwargs)
         tj.train(is_plot=False)
         best_i = np.argmin([x['score'] for x in tj.history])
         best_epoch = np.argmin(tj.history[best_i]['metrics']['val_loss'])
@@ -696,17 +715,20 @@ if __name__ == '__main__':
     # tj.train(is_plot=True)
     # tj.check_hidden_states()
 
-    hyperparameters_comparison(animal_id='PV42', movement_type='random_low_horizontal',
-                               feature_names=['x', 'y', 'speed'], sub_section=(-1, 60))
+    # hyperparameters_comparison(animal_id='all', movement_type='random_low_horizontal', monitored_metric='train_loss', monitored_metric_algo='min',
+    #                            feature_names=['x', 'y', 'speed_x', 'speed_y'], sub_section=(-1, 60))
+    # hyperparameters_comparison(animal_id='PV42', movement_type='random_low_horizontal', monitored_metric='train_loss', monitored_metric_algo='min',
+    #                            feature_names=['x', 'y', 'speed_x', 'speed_y'], sub_section=(-1, 60))
 
     # find_optimal_span(animal_id='PV163', movement_type='random_low_horizontal')
-    # run_with_different_seeds('PV91', 'random_low_horizontal', (-1, 60),
-    #                          ['x', 'y', 'speed'], n=10)
+    run_with_different_seeds('PV42', 'circle', ['x', 'y', 'speed_x', 'speed_y'], n=10,
+                             is_resample=False, lstm_layers=2, dropout_prob=0.1, lstm_hidden_dim=64,
+                             sub_section=(-1, 100), monitored_metric='train_loss', monitored_metric_algo='min', num_epochs=150)
     # find_best_features(movement_type='circle', lstm_layers=6, dropout_prob=0.5, is_resample=True)
     # for movement_type in ['random_low_horizontal', 'circle']:
-    #     for animal_id in ['PV91', 'PV163', 'PV99', 'PV80', 'PV42', 'PV85', 'all']:
+    #     for animal_id in ['PV91', 'PV163', 'PV99', 'PV80', 'PV85', 'all']:  # 'PV42',
     #         hyperparameters_comparison(animal_id=animal_id, movement_type=movement_type,
-    #                                    feature_names=['x', 'y', 'speed'], sub_section=(-2, 120))
+    #                                    feature_names=['x', 'y', 'speed'], sub_section=(-1, 60))
     # animals_comparison()
     # plot_comparison('/Users/regev/PhD/msi/Pogona_Pursuit/output/datasets/trajectories/results_2024-06-24T16:43:58.880310.csv')
 
