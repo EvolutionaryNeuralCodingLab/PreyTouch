@@ -32,7 +32,7 @@ class Agent:
             self.times = agent_config['times']
         else:
             self.trials = {}
-        
+
     def update(self, animal_id=None):
         if not self.trials:
             return
@@ -117,12 +117,18 @@ class Agent:
                         trial_name = blk.agent_label
                         count_key = self.history[trial_name]['key']
                         counts = self.history[trial_name]['counts']
+
+                        if count_key == 'engaged_trials':
+                            blk_count = len([tr for tr in blk.trials if len(tr.strikes) > 0])
+                        else:
+                            blk_count = len(getattr(blk, count_key))
+
                         if isinstance(counts, dict):  # case of per
                             for metric_name, metric_counts in counts.items():
                                 if getattr(blk, metric_name) in metric_counts:
-                                    metric_counts[getattr(blk, metric_name)] += len(getattr(blk, count_key))
+                                    metric_counts[getattr(blk, metric_name)] += blk_count
                         elif isinstance(counts, int):
-                            self.history[trial_name]['counts'] += len(getattr(blk, count_key))
+                            self.history[trial_name]['counts'] += blk_count
 
     def publish(self, msg):
         last_publish = self.cache.get(cc.LAST_TIME_AGENT_MESSAGE)
