@@ -54,7 +54,7 @@ class Trainer:
             self.load()
             self.dataset = None
         else:
-            self.dataset = self.get_dataset()
+            self.dataset = self.get_dataset(is_print_size=True)
 
     def get_model_name(self):
         model_name = self.__module__
@@ -216,7 +216,7 @@ class Trainer:
         if self.test_indices is not None:
             torch.save(self.test_indices, self.model_path / self.test_indices_filename)
 
-    def get_dataset(self):
+    def get_dataset(self, is_print_size=False):
         raise NotImplemented('Must create a method get_dataset')
 
     def get_model(self):

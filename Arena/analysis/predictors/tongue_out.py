@@ -172,7 +172,7 @@ class TongueTrainer(ClassificationTrainer):
     targets = ['no_tongues', 'tongues']
     monitored_metric = 'auc'
 
-    def get_dataset(self):
+    def get_dataset(self, is_print_size=False):
         transforms = [
             Grayscale(),
             Lambda(self.crop_transform),
@@ -181,7 +181,8 @@ class TongueTrainer(ClassificationTrainer):
         ]
         dataset = ImageFolder(self.dataset_path, transform=Compose(transforms))
         info = pd.Series(dataset.targets).value_counts().rename({i: v for i, v in enumerate(self.targets)}).to_dict()
-        print(f'Loaded tongue dataset with: {info}')
+        if is_print_size:
+            print(f'Loaded tongue dataset with: {info}')
         return dataset
 
     def get_model(self):

@@ -52,24 +52,25 @@ class Attention(nn.Module):
 class LSTMWithAttention(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim, num_layers, dropout_prob):
         super(LSTMWithAttention, self).__init__()
-        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True)
+        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True, dropout=dropout_prob)
         self.attention = Attention(hidden_dim)
-        self.batch_norm = nn.BatchNorm1d(hidden_dim)
-        self.dropout = nn.Dropout(dropout_prob)
+        # self.batch_norm = nn.BatchNorm1d(hidden_dim)
+        # self.dropout = nn.Dropout(dropout_prob)
         self.fc = nn.Linear(hidden_dim, output_dim)
 
     def forward(self, x, is_attn=False, is_weighted=False):
         # x shape: (batch_size, seq_length, input_dim)
-        lstm_output, _ = self.lstm(x)
+        lstm_output, (h_n, c_n) = self.lstm(x)
         # lstm_output = lstm_output[:, -1, :]
         # lstm_output shape: (batch_size, seq_length, hidden_dim)
         weighted_sum, attn_weights = self.attention(lstm_output)
+        weighted_sum = h_n[-1]
 
         # Apply batch normalization and dropout
-        x = self.batch_norm(weighted_sum)
-        x = self.dropout(x)
+        # x = self.batch_norm(weighted_sum)
+        # x = self.dropout(x)
         # Final classification layer
-        out = self.fc(x)
+        out = self.fc(weighted_sum)
         if is_attn:
             return out, attn_weights
         elif is_weighted:
@@ -201,7 +202,7 @@ class TrajClassifier(ClassificationTrainer):
         with attrs_path.open('wb') as f:
             pickle.dump(vars(self), f)
 
-    def get_dataset(self):
+    def get_dataset(self, is_print_size=False):
         strk_df, trajs = self.load_data()
         sdf = strk_df.copy()
         sdf = sdf.query(f'{self.target_name} in {list(self.targets)}')
@@ -216,7 +217,8 @@ class TrajClassifier(ClassificationTrainer):
         dataset = LizardTrajDataSet(strk_df, trajs, strikes_ids, self.feature_names, self.targets,
                                     target_name=self.target_name, sub_section=self.sub_section,
                                     is_resample=self.is_resample, is_shuffled_target=self.is_shuffled_target)
-        self.print(f'Traj classes count: {pd.Series(dataset.y).value_counts().sort_index().set_axis(self.targets).to_dict()}')
+        if is_print_size:
+            self.print(f'Traj classes count: {pd.Series(dataset.y).value_counts().sort_index().set_axis(self.targets).to_dict()}')
 
         # set strike index
         example_sid = dataset.X.id.unique()[0]
@@ -238,8 +240,8 @@ class TrajClassifier(ClassificationTrainer):
     def get_optimizer(self):
         return optim.AdamW(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
 
-    def get_scheduler(self, optimizer):
-        return torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode=self.monitored_metric_algo, patience=10)
+    # def get_scheduler(self, optimizer):
+    #     return torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode=self.monitored_metric_algo, patience=10)
 
     def get_model(self):
         return LSTMWithAttention(input_dim=len(self.feature_names), hidden_dim=self.lstm_hidden_dim,
@@ -307,7 +309,7 @@ class TrajClassifier(ClassificationTrainer):
             dataset = Subset(dataset, self.test_indices)
         y_true, y_pred, y_score = [], [], []
         attns = {}
-        for x, y in (tqdm(dataset) if self.is_debug else dataset):
+        for x, y in dataset:
             outputs, attention_weights = self.model(x.to(self.device).unsqueeze(0), is_attn=True)
             attns.setdefault(self.targets[y.item()], []).append(attention_weights.detach().cpu().numpy())
             label, prob = self.predict_proba(outputs, is_all_probs=True)
@@ -335,7 +337,7 @@ class TrajClassifier(ClassificationTrainer):
         ax.set_title('Attention')
         ax.legend()
 
-    def plot_ablation(self, ax, segment=None):
+    def calc_ablation(self, segment=None):
         self.model.eval()
         dataset = self.get_dataset()
         ablations = {}
@@ -360,6 +362,10 @@ class TrajClassifier(ClassificationTrainer):
             ablations[feature_name] = acc
 
         ablations = {k: v - ablations['control'] for k, v in ablations.items() if k != 'control'}
+        return ablations
+
+    def plot_ablation(self, ax, segment=None):
+        ablations = self.calc_ablation(segment=segment)
         ax.bar(ablations.keys(), ablations.values())
         ax.set_title('Ablation')
 
@@ -372,7 +378,8 @@ class TrajClassifier(ClassificationTrainer):
 
         y_true, y_pred, y_score, attns = self.get_data_for_evaluation(is_test_set)
         att_id = 2 if is_plot_auc else 1
-        self.plot_attention(axes_[att_id], attns)
+        # self.plot_attention(axes_[att_id], attns)
+        self.plot_segment_importance(axes_[att_id])
         self.plot_ablation(axes_[att_id + 1])
 
         y_true_binary = label_binarize(y_true, classes=np.arange(len(self.targets)))
@@ -435,6 +442,26 @@ class TrajClassifier(ClassificationTrainer):
         ax.set_xlabel('X Coordinate')
         ax.set_ylabel('Y Coordinate')
         ax.set_title('Attention Weights over Trajectory')
+
+    def plot_segment_importance(self, ax):
+        torch.backends.cudnn.enabled = False
+        self.model.eval()
+        ig = IntegratedGradients(self.model)
+        dataset = self.get_dataset()
+
+        input_tensors = {}
+        for x, y in dataset:
+            y = y.item()
+            input_tensors.setdefault(y, []).append(x.to(self.device))
+        time_vector = self.sub_section[0] + np.arange(self.sub_section[1] + 1) * (1 / 60)
+        segments = []
+        for i, input_tensor in input_tensors.items():
+            input_tensor = torch.stack(input_tensor)
+            attributions, delta = ig.attribute(input_tensor, target=i, return_convergence_delta=True)
+            seg = attributions.mean(dim=0).sum(dim=-1).detach().cpu().numpy()
+            ax.plot(time_vector, seg, label=str(self.targets[i]), alpha=0.5)
+            segments.append(seg)
+        ax.plot(time_vector, np.mean(segments, axis=0), label='Average', color='k', linewidth=3)
 
     def check_hidden_states(self, cols=4, axes=None, fig=None, is_legend=True):
         dataset = self.get_dataset()
@@ -548,7 +575,7 @@ def hyperparameters_comparison(animal_id='PV91', movement_type='random_low_horiz
     from sklearn.model_selection import ParameterGrid
 
     res_df = []
-    grid = ParameterGrid(dict(dropout_prob=[0.05, 0.1, 0.4], lstm_layers=[1, 2, 4, 6], lstm_hidden_dim=[32, 64, 128]))
+    grid = ParameterGrid(dict(dropout_prob=[0.2, 0.4, 0.6], lstm_layers=[2, 3], lstm_hidden_dim=[16, 32, 64]))
     for i, params in enumerate(grid):
         print(f'start loop {i+1}/{len(grid)}')
         tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=sub_section, feature_names=feature_names,
@@ -611,61 +638,55 @@ def find_best_features(movement_type='random_low_horizontal', lstm_layers=4, dro
     res_df.to_csv(filename)
 
 
-def run_with_different_seeds(animal_id, movement_type, feature_names,
+def run_with_different_seeds(animal_id, movement_type, feature_names, sub_section=(-1, 60),
                              n=10, is_run_feature_importance=True, is_plot=True, is_save=True, **kwargs):
-    res = {'metrics': [], 'attention': {}, 'feature_importance': []}
+    res = {'metrics': [], 'attention': {}, 'ablation': []}
     for s in range(n):
-        tj = TrajClassifier(save_model_dir=TRAJ_DIR, feature_names=feature_names, seed=s,
+        print(f'\n>>>>> Start iteration {s+1}/{n} for seed {s}...')
+        tj = TrajClassifier(save_model_dir=TRAJ_DIR, feature_names=feature_names, seed=s, sub_section=sub_section,
                             animal_id=animal_id, movement_type=movement_type, **kwargs)
         tj.train(is_plot=False)
-        best_i = np.argmin([x['score'] for x in tj.history])
-        best_epoch = np.argmin(tj.history[best_i]['metrics']['val_loss'])
-        for metric, l in tj.history[best_i]['metrics'].items():
+        tj.is_debug = False
+        best_fold = tj.get_best_model()
+        best_epoch = tj.history[best_fold]['chosen_epoch'] - 1
+        for metric, l in tj.history[best_fold]['metrics'].items():
             res['metrics'].append({'metric': metric, 'value': l[best_epoch], 'animal_id': animal_id,
                                    'movement_type': movement_type})
+
         y_true, y_pred, y_score, attns = tj.get_data_for_evaluation()
         for bug_speed, a in attns.items():
-            res['attention'].setdefault(bug_speed, []).append(a)
+            res['attention'].setdefault(bug_speed, []).append(np.vstack(a).mean(axis=0))
         res['metrics'].append({'metric': 'overall_accuracy', 'value': accuracy_score(y_true, y_pred),
                                'animal_id': animal_id, 'movement_type': movement_type})
         if is_run_feature_importance:
-            dataset = tj.get_dataset()
-            importance_df = tj.visualize_features_importance(dataset, is_plot=False)
-            res['feature_importance'].append(importance_df)
+            ablations_dict = tj.calc_ablation()
+            res['ablation'].append(ablations_dict)
 
         torch.cuda.empty_cache()
         time.sleep(1)
 
+    # stack the attention vectors to one matrix for each bug speed
     res['metrics'] = pd.DataFrame(res['metrics'])
     for bug_speed in res['attention'].keys():
         res['attention'][bug_speed] = np.vstack(res['attention'][bug_speed])
-    importance = pd.concat(res['feature_importance']).reset_index().rename(columns={'index': 'bug_speed'})
-    imp = importance.groupby('bug_speed')
-    imp = imp.mean().merge(imp.std().rename(columns={k: f'{k}_std' for k in feature_names}), left_on='bug_speed', right_index=True)
-    res['feature_importance'] = imp
+    # convert the ablations dicts into a DataFrame with columns for feature-name and ablation
+    res['ablation'] = pd.DataFrame(res['ablation']).stack().reset_index().rename(columns={0: 'value', 'level_1': 'feature'}).drop(columns='level_0')
 
     if is_plot:
         fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(10, 4))
-
+        # plot all metrics as bars with errors
         sns.barplot(data=res['metrics'], x='metric', y='value', ax=axes[0])
         axes[0].set_xticks(axes[0].get_xticks(), axes[0].get_xticklabels(), rotation=45, ha='right')
-
-        offset = 0.1
-        for j, f in enumerate(feature_names):
-            for k, bug_speed in enumerate(imp.index):
-                axes[1].bar(j + k*offset, imp[f].loc[bug_speed], width=offset)
-                axes[1].errorbar(j + k*offset, imp[f].loc[bug_speed], yerr=imp[f'{f}_std'].loc[bug_speed], fmt="o", color="k")
-        axes[1].set_xticks(np.arange(len(feature_names)))
-        axes[1].set_xticklabels(feature_names)
-
+        # plot ablation results as bars with errors
+        sns.barplot(data=res['ablation'], x='feature', y='value', ax=axes[1])
+        # print attention curves for each bug speed and average attention curve
         mean_att = []
+        time_vector = sub_section[0] + np.arange(sub_section[1] + 1) * (1 / 60)
         for bug_speed, a in res['attention'].items():
             a_avg = a.mean(axis=0)
             mean_att.append(a_avg)
-            print(a_avg)
-            axes[2].plot(a_avg.squeeze(), label=bug_speed, alpha=0.5)
-        axes[2].plot(np.vstack(mean_att).mean(axis=0), color='k', linewidth=2)
-
+            axes[2].plot(time_vector, a_avg.squeeze(), label=bug_speed, alpha=0.5)
+        axes[2].plot(time_vector, np.vstack(mean_att).mean(axis=0), color='k', linewidth=2)
         fig.tight_layout()
         plt.show()
 
@@ -695,7 +716,7 @@ def find_optimal_span(animal_id='PV42', movement_type='random_low_horizontal', d
     for t_start in np.arange(-10, (10-(span/60))+dt, dt):
         print(f'Start training with t_start: {t_start}')
         try:
-            r = run_with_different_seeds(animal_id, movement_type, (t_start, span), ['x', 'y', 'speed'],
+            r = run_with_different_seeds(animal_id, movement_type,  ['x', 'y', 'speed'], sub_section=(t_start, span),
                                      lstm_layers=4, dropout_prob=0.3, lstm_hidden_dim=100, n=n_seeds,
                                      is_run_feature_importance=True, is_plot=False, is_save=False)
             all_res[t_start] = r
@@ -715,15 +736,13 @@ if __name__ == '__main__':
     # tj.train(is_plot=True)
     # tj.check_hidden_states()
 
-    # hyperparameters_comparison(animal_id='all', movement_type='random_low_horizontal', monitored_metric='train_loss', monitored_metric_algo='min',
-    #                            feature_names=['x', 'y', 'speed_x', 'speed_y'], sub_section=(-1, 60))
-    # hyperparameters_comparison(animal_id='PV42', movement_type='random_low_horizontal', monitored_metric='train_loss', monitored_metric_algo='min',
+    # hyperparameters_comparison(animal_id='PV42', movement_type='random_low_horizontal', monitored_metric='val_loss', monitored_metric_algo='min',
     #                            feature_names=['x', 'y', 'speed_x', 'speed_y'], sub_section=(-1, 60))
 
     # find_optimal_span(animal_id='PV163', movement_type='random_low_horizontal')
-    run_with_different_seeds('PV42', 'circle', ['x', 'y', 'speed_x', 'speed_y'], n=10,
-                             is_resample=False, lstm_layers=2, dropout_prob=0.1, lstm_hidden_dim=64,
-                             sub_section=(-1, 100), monitored_metric='train_loss', monitored_metric_algo='min', num_epochs=150)
+    run_with_different_seeds('PV42', 'random_low_horizontal', ['x', 'y', 'speed_x', 'speed_y'], n=10,
+                             is_resample=False, lstm_layers=2, dropout_prob=0.4, lstm_hidden_dim=64, num_epochs=200,
+                             sub_section=(-1, 60), monitored_metric='val_loss', monitored_metric_algo='min')
     # find_best_features(movement_type='circle', lstm_layers=6, dropout_prob=0.5, is_resample=True)
     # for movement_type in ['random_low_horizontal', 'circle']:
     #     for animal_id in ['PV91', 'PV163', 'PV99', 'PV80', 'PV85', 'all']:  # 'PV42',
