@@ -319,7 +319,7 @@ class TrajClassifier(ClassificationTrainer):
         y_true, y_pred, y_score = np.vstack(y_true), np.vstack(y_pred), np.vstack(y_score)
         return y_true, y_pred, y_score, attns
 
-    def all_data_evaluation(self, axes=None, is_test_set=False, is_plot_auc=True, **kwargs):
+    def all_data_evaluation(self, axes=None, is_test_set=False, is_plot_auc=True, is_full_ablation=False, **kwargs):
         if axes is None:
             fig, axes_ = plt.subplots(1, 4, figsize=(18, 4))
         else:
@@ -330,7 +330,7 @@ class TrajClassifier(ClassificationTrainer):
         att_id = 2 if is_plot_auc else 1
         # self.plot_attention(axes_[att_id], attns)
         self.plot_segment_importance(axes_[att_id])
-        self.plot_ablation(axes_[att_id + 1])
+        self.plot_ablation(axes_[att_id + 1], is_only_one_feature=is_full_ablation)
 
         y_true_binary = label_binarize(y_true, classes=np.arange(len(self.targets)))
         self.plot_confusion_matrix(y_true, y_pred, ax=axes_[0])
@@ -351,8 +351,7 @@ class TrajClassifier(ClassificationTrainer):
         ablations = {}
         if segment is not None:
             assert len(segment) == 2, 'Segment should be a tuple of start and end times'
-            time_vector = self.sub_section[0] + np.arange(self.sub_section[1] + 1) * (1 / 60)
-            mask = (time_vector >= segment[0]) & (time_vector <= segment[1])
+            mask = (self.time_vector >= segment[0]) & (self.time_vector <= segment[1])
 
         for i, feature_name in enumerate(self.feature_names + ['control']):
             y_true, y_pred = [], []
@@ -379,8 +378,7 @@ class TrajClassifier(ClassificationTrainer):
         for i in range(len(self.feature_names)):
             if i == feature_id:
                 if segment is not None:
-                    time_vector = self.sub_section[0] + np.arange(self.sub_section[1] + 1) * (1 / 60)
-                    mask = (time_vector >= segment[0]) & (time_vector <= segment[1])
+                    mask = (self.time_vector >= segment[0]) & (self.time_vector <= segment[1])
                     x[~mask, i] = 0.0
             else:
                 x[:, i] = 0.0
@@ -389,7 +387,8 @@ class TrajClassifier(ClassificationTrainer):
 
     def plot_ablation(self, ax, is_only_one_feature=False):
         af = []
-        for seg in [(-1.0, -0.8), (-0.6, -0.4), (-0.3, -0.1)]:
+        for start_t in np.linspace(self.time_vector[0], self.time_vector[-1]-0.2 , 3):
+            seg = (start_t, start_t + 0.2)
             ablations_dict = self.calc_ablation(segment=seg, is_only_one_feature=is_only_one_feature)
             ablations_dict['segment'] = np.mean(seg)
             af.append(ablations_dict)
@@ -456,27 +455,25 @@ class TrajClassifier(ClassificationTrainer):
         for x, y in dataset:
             y = y.item()
             input_tensors.setdefault(y, []).append(x.to(self.device))
-        time_vector = self.sub_section[0] + np.arange(self.sub_section[1] + 1) * (1 / 60)
         segments = []
         for i, input_tensor in input_tensors.items():
             input_tensor = torch.stack(input_tensor)
             attributions, delta = ig.attribute(input_tensor, target=i, return_convergence_delta=True)
             seg = attributions.mean(dim=0).sum(dim=-1).detach().cpu().numpy()
-            ax.plot(time_vector, seg, label=str(self.targets[i]), alpha=0.5)
+            ax.plot(self.time_vector, seg, label=str(self.targets[i]), alpha=0.5)
             segments.append(seg)
-        ax.plot(time_vector, np.mean(segments, axis=0), label='Average', color='k', linewidth=3)
+        ax.plot(self.time_vector, np.mean(segments, axis=0), label='Average', color='k', linewidth=3)
 
     def plot_attention(self, ax, attns):
         mean_att = []
-        time_vector = self.sub_section[0] + np.arange(self.sub_section[1] + 1) * (1 / 60)
         for bug_speed in self.targets:
             att = attns[bug_speed]
             att = np.vstack(att).mean(axis=0)
             att[:8] = np.nan
             mean_att.append(att)
-            ax.plot(time_vector, att, label=f'{bug_speed}cm/sec', alpha=0.4)
+            ax.plot(self.time_vector, att, label=f'{bug_speed}cm/sec', alpha=0.4)
 
-        ax.plot(time_vector, np.vstack(mean_att).mean(axis=0), color='k')
+        ax.plot(self.time_vector, np.vstack(mean_att).mean(axis=0), color='k')
         if self.strike_index:
             ax.axvline(0, color='k', linestyle='--')
         ax.set_xlabel('Time Around Strike [sec]')
@@ -565,6 +562,10 @@ class TrajClassifier(ClassificationTrainer):
                 ax.legend()
 
         return importance_df
+
+    @property
+    def time_vector(self):
+        return self.sub_section[0] + np.arange(self.sub_section[1] + 1) * (1 / 60)
 
 
 def animals_comparison():
@@ -680,7 +681,7 @@ def run_with_different_seeds(animal_id, movement_type, feature_names, sub_sectio
         res['metrics'].append({'metric': 'overall_accuracy', 'value': accuracy_score(y_true, y_pred),
                                'animal_id': animal_id, 'movement_type': movement_type})
         if is_run_feature_importance:
-            ablations_dict = tj.calc_ablation()
+            ablations_dict = tj.calc_ablation(is_only_one_feature=True)
             res['ablation'].append(ablations_dict)
 
         torch.cuda.empty_cache()
