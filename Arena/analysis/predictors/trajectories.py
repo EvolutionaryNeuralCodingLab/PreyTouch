@@ -230,7 +230,7 @@ class TrajClassifier(ClassificationTrainer):
         for n in range(self.kfolds, 1, -1):
             if (len(dataset) / n) > self.batch_size:
                 if self.kfolds != n:
-                    print(f'setting kfolds to {n}')
+                    self.print(f'setting kfolds to {n}')
                     self.kfolds = n
                 break
             if n == 2:
@@ -319,56 +319,6 @@ class TrajClassifier(ClassificationTrainer):
         y_true, y_pred, y_score = np.vstack(y_true), np.vstack(y_pred), np.vstack(y_score)
         return y_true, y_pred, y_score, attns
 
-    def plot_attention(self, ax, attns):
-        mean_att = []
-        time_vector = self.sub_section[0] + np.arange(self.sub_section[1] + 1) * (1 / 60)
-        for bug_speed in self.targets:
-            att = attns[bug_speed]
-            att = np.vstack(att).mean(axis=0)
-            att[:8] = np.nan
-            mean_att.append(att)
-            ax.plot(time_vector, att, label=f'{bug_speed}cm/sec', alpha=0.4)
-
-        ax.plot(time_vector, np.vstack(mean_att).mean(axis=0), color='k')
-        if self.strike_index:
-            ax.axvline(0, color='k', linestyle='--')
-        ax.set_xlabel('Time Around Strike [sec]')
-        ax.set_ylabel('Attention values')
-        ax.set_title('Attention')
-        ax.legend()
-
-    def calc_ablation(self, segment=None):
-        self.model.eval()
-        dataset = self.get_dataset()
-        ablations = {}
-        if segment is not None:
-            assert len(segment) == 2, 'Segment should be a tuple of start and end times'
-            time_vector = self.sub_section[0] + np.arange(self.sub_section[1] + 1) * (1 / 60)
-            mask = (time_vector >= segment[0]) & (time_vector <= segment[1])
-
-        for i, feature_name in enumerate(self.feature_names + ['control']):
-            y_true, y_pred = [], []
-            for x, y in dataset:
-                if feature_name != 'control':
-                    if segment is not None:
-                        x[mask, i] = 0.0
-                    else:
-                        x[:, i] = 0.0
-                outputs, _ = self.model(x.to(self.device).unsqueeze(0), is_attn=True)
-                label, prob = self.predict_proba(outputs, is_all_probs=True)
-                y_true.append(y.item())
-                y_pred.append(label.item())
-            acc = accuracy_score(y_true, y_pred)
-            ablations[feature_name] = acc
-
-        ablations = {k: v - ablations['control'] for k, v in ablations.items() if k != 'control'}
-        return ablations
-
-    def plot_ablation(self, ax, segment=None):
-        ablations = self.calc_ablation(segment=segment)
-        ax.bar(ablations.keys(), ablations.values())
-        ax.set_title('Ablation')
-
     def all_data_evaluation(self, axes=None, is_test_set=False, is_plot_auc=True, **kwargs):
         if axes is None:
             fig, axes_ = plt.subplots(1, 4, figsize=(18, 4))
@@ -394,6 +344,59 @@ class TrajClassifier(ClassificationTrainer):
         # RocCurveDisplay.from_predictions(y_true, y_score, ax=axes_[2])
         if axes is None:
             plt.show()
+
+    def calc_ablation(self, segment=None, is_only_one_feature=False):
+        self.model.eval()
+        dataset = self.get_dataset()
+        ablations = {}
+        if segment is not None:
+            assert len(segment) == 2, 'Segment should be a tuple of start and end times'
+            time_vector = self.sub_section[0] + np.arange(self.sub_section[1] + 1) * (1 / 60)
+            mask = (time_vector >= segment[0]) & (time_vector <= segment[1])
+
+        for i, feature_name in enumerate(self.feature_names + ['control']):
+            y_true, y_pred = [], []
+            for x, y in dataset:
+                if feature_name != 'control':
+                    if is_only_one_feature:
+                        x = self.ablate_all_except(x, segment, i)
+                    else:
+                        if segment is not None:
+                            x[mask, i] = 0.0
+                        else:
+                            x[:, i] = 0.0
+                outputs, _ = self.model(x.to(self.device).unsqueeze(0), is_attn=True)
+                label, prob = self.predict_proba(outputs, is_all_probs=True)
+                y_true.append(y.item())
+                y_pred.append(label.item())
+            acc = accuracy_score(y_true, y_pred)
+            ablations[feature_name] = acc
+
+        ablations = {k: v - ablations['control'] if not is_only_one_feature else v for k, v in ablations.items() if k != 'control'}
+        return ablations
+
+    def ablate_all_except(self, x, segment, feature_id):
+        for i in range(len(self.feature_names)):
+            if i == feature_id:
+                if segment is not None:
+                    time_vector = self.sub_section[0] + np.arange(self.sub_section[1] + 1) * (1 / 60)
+                    mask = (time_vector >= segment[0]) & (time_vector <= segment[1])
+                    x[~mask, i] = 0.0
+            else:
+                x[:, i] = 0.0
+        return x
+
+
+    def plot_ablation(self, ax, is_only_one_feature=False):
+        af = []
+        for seg in [(-1.0, -0.8), (-0.6, -0.4), (-0.3, -0.1)]:
+            ablations_dict = self.calc_ablation(segment=seg, is_only_one_feature=is_only_one_feature)
+            ablations_dict['segment'] = np.mean(seg)
+            af.append(ablations_dict)
+        af = pd.DataFrame(af)
+        af = af.set_index('segment').stack().reset_index().rename(columns={'level_1': 'feature', 0: 'ablation'})
+        sns.barplot(data=af, x='segment', y='ablation', hue='feature', ax=ax)
+        ax.set_xlabel('segment mid [sec]')
 
     def calc_auc(self):
         self.model.eval()
@@ -462,6 +465,24 @@ class TrajClassifier(ClassificationTrainer):
             ax.plot(time_vector, seg, label=str(self.targets[i]), alpha=0.5)
             segments.append(seg)
         ax.plot(time_vector, np.mean(segments, axis=0), label='Average', color='k', linewidth=3)
+
+    def plot_attention(self, ax, attns):
+        mean_att = []
+        time_vector = self.sub_section[0] + np.arange(self.sub_section[1] + 1) * (1 / 60)
+        for bug_speed in self.targets:
+            att = attns[bug_speed]
+            att = np.vstack(att).mean(axis=0)
+            att[:8] = np.nan
+            mean_att.append(att)
+            ax.plot(time_vector, att, label=f'{bug_speed}cm/sec', alpha=0.4)
+
+        ax.plot(time_vector, np.vstack(mean_att).mean(axis=0), color='k')
+        if self.strike_index:
+            ax.axvline(0, color='k', linestyle='--')
+        ax.set_xlabel('Time Around Strike [sec]')
+        ax.set_ylabel('Attention values')
+        ax.set_title('Attention')
+        ax.legend()
 
     def check_hidden_states(self, cols=4, axes=None, fig=None, is_legend=True):
         dataset = self.get_dataset()
