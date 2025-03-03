@@ -94,7 +94,7 @@ class Agent:
     def init_history(self):
         self.history = {}
         for trial_name, trial_dict in self.trials.items():
-            self.history[trial_name] = {'key': trial_dict['count']['key']}
+            self.history[trial_name] = {'key': trial_dict['count']['key'], 'count_target': trial_dict['count']['amount']}
             if 'per' in trial_dict['count']:
                 self.history[trial_name]['counts'] = {}
                 for group_name, group_vals in trial_dict['count']['per'].items():
