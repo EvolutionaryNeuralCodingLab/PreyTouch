@@ -319,7 +319,7 @@ class TrajClassifier(ClassificationTrainer):
         y_true, y_pred, y_score = np.vstack(y_true), np.vstack(y_pred), np.vstack(y_score)
         return y_true, y_pred, y_score, attns
 
-    def all_data_evaluation(self, axes=None, is_test_set=False, is_plot_auc=True, is_full_ablation=False, **kwargs):
+    def all_data_evaluation(self, axes=None, is_test_set=False, is_plot_auc=True, is_full_ablation=True, **kwargs):
         if axes is None:
             fig, axes_ = plt.subplots(1, 4, figsize=(18, 4))
         else:
@@ -445,7 +445,7 @@ class TrajClassifier(ClassificationTrainer):
         ax.set_ylabel('Y Coordinate')
         ax.set_title('Attention Weights over Trajectory')
 
-    def plot_segment_importance(self, ax):
+    def calc_segment_importance(self):
         torch.backends.cudnn.enabled = False
         self.model.eval()
         ig = IntegratedGradients(self.model)
@@ -455,14 +455,19 @@ class TrajClassifier(ClassificationTrainer):
         for x, y in dataset:
             y = y.item()
             input_tensors.setdefault(y, []).append(x.to(self.device))
-        segments = []
+        segments = {}
         for i, input_tensor in input_tensors.items():
             input_tensor = torch.stack(input_tensor)
             attributions, delta = ig.attribute(input_tensor, target=i, return_convergence_delta=True)
             seg = attributions.mean(dim=0).sum(dim=-1).detach().cpu().numpy()
-            ax.plot(self.time_vector, seg, label=str(self.targets[i]), alpha=0.5)
-            segments.append(seg)
-        ax.plot(self.time_vector, np.mean(segments, axis=0), label='Average', color='k', linewidth=3)
+            segments[self.targets[i]] = seg
+        return segments
+
+    def plot_segment_importance(self, ax):
+        segments = self.calc_segment_importance()
+        for bug_speed, seg in segments.items():
+            ax.plot(self.time_vector, seg, label=str(bug_speed), alpha=0.5)
+        ax.plot(self.time_vector, np.mean(list(segments.values()), axis=0), label='Average', color='k', linewidth=3)
 
     def plot_attention(self, ax, attns):
         mean_att = []
@@ -662,7 +667,7 @@ def find_best_features(movement_type='random_low_horizontal', lstm_layers=4, dro
 
 def run_with_different_seeds(animal_id, movement_type, feature_names, sub_section=(-1, 60),
                              n=10, is_run_feature_importance=True, is_plot=True, is_save=True, **kwargs):
-    res = {'metrics': [], 'attention': {}, 'ablation': []}
+    res = {'metrics': [], 'ig': {}, 'ablation': []}
     for s in range(n):
         print(f'\n>>>>> Start iteration {s+1}/{n} for seed {s}...')
         tj = TrajClassifier(save_model_dir=TRAJ_DIR, feature_names=feature_names, seed=s, sub_section=sub_section,
@@ -673,26 +678,34 @@ def run_with_different_seeds(animal_id, movement_type, feature_names, sub_sectio
         best_epoch = tj.history[best_fold]['chosen_epoch'] - 1
         for metric, l in tj.history[best_fold]['metrics'].items():
             res['metrics'].append({'metric': metric, 'value': l[best_epoch], 'animal_id': animal_id,
-                                   'movement_type': movement_type})
+                                   'movement_type': movement_type, 'model_path': tj.model_path})
 
-        y_true, y_pred, y_score, attns = tj.get_data_for_evaluation()
-        for bug_speed, a in attns.items():
-            res['attention'].setdefault(bug_speed, []).append(np.vstack(a).mean(axis=0))
+        y_true, y_pred, y_score, _ = tj.get_data_for_evaluation()
+        ig_segments = tj.calc_segment_importance()
+        for bug_speed, seg in ig_segments.items():
+            res['ig'].setdefault(bug_speed, []).append(seg)
         res['metrics'].append({'metric': 'overall_accuracy', 'value': accuracy_score(y_true, y_pred),
-                               'animal_id': animal_id, 'movement_type': movement_type})
+                               'animal_id': animal_id, 'movement_type': movement_type, 'model_path': tj.model_path})
         if is_run_feature_importance:
-            ablations_dict = tj.calc_ablation(is_only_one_feature=True)
-            res['ablation'].append(ablations_dict)
+            af = []
+            for start_t in np.linspace(tj.time_vector[0], tj.time_vector[-1] - 0.2, 3):
+                seg = (start_t, start_t + 0.2)
+                ablations_dict = tj.calc_ablation(segment=seg, is_only_one_feature=True)
+                ablations_dict['segment'] = np.mean(seg)
+                af.append(ablations_dict)
+            af = pd.DataFrame(af)
+            af = af.set_index('segment').stack().reset_index().rename(columns={'level_1': 'feature', 0: 'ablation'})
+            res['ablation'].append(af)
 
         torch.cuda.empty_cache()
         time.sleep(1)
 
-    # stack the attention vectors to one matrix for each bug speed
     res['metrics'] = pd.DataFrame(res['metrics'])
-    for bug_speed in res['attention'].keys():
-        res['attention'][bug_speed] = np.vstack(res['attention'][bug_speed])
+    # stack the ig vectors to one matrix for each bug speed
+    for bug_speed in res['ig'].keys():
+        res['ig'][bug_speed] = np.vstack(res['ig'][bug_speed])
     # convert the ablations dicts into a DataFrame with columns for feature-name and ablation
-    res['ablation'] = pd.DataFrame(res['ablation']).stack().reset_index().rename(columns={0: 'value', 'level_1': 'feature'}).drop(columns='level_0')
+    res['ablation'] = pd.concat(res['ablation'])
 
     if is_plot:
         fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(10, 4))
@@ -700,15 +713,16 @@ def run_with_different_seeds(animal_id, movement_type, feature_names, sub_sectio
         sns.barplot(data=res['metrics'], x='metric', y='value', ax=axes[0])
         axes[0].set_xticks(axes[0].get_xticks(), axes[0].get_xticklabels(), rotation=45, ha='right')
         # plot ablation results as bars with errors
-        sns.barplot(data=res['ablation'], x='feature', y='value', ax=axes[1])
-        # print attention curves for each bug speed and average attention curve
-        mean_att = []
+        sns.barplot(data=res['ablation'], x='segment', y='ablation', hue='feature', ax=axes[1])
+        axes[1].set_xlabel('segment mid [sec]')
+        # print ig curves for each bug speed and average ig curve
+        mean_ig = []
         time_vector = sub_section[0] + np.arange(sub_section[1] + 1) * (1 / 60)
-        for bug_speed, a in res['attention'].items():
+        for bug_speed, a in res['ig'].items():
             a_avg = a.mean(axis=0)
-            mean_att.append(a_avg)
+            mean_ig.append(a_avg)
             axes[2].plot(time_vector, a_avg.squeeze(), label=bug_speed, alpha=0.5)
-        axes[2].plot(time_vector, np.vstack(mean_att).mean(axis=0), color='k', linewidth=2)
+        axes[2].plot(time_vector, np.vstack(mean_ig).mean(axis=0), color='k', linewidth=2)
         fig.tight_layout()
         plt.show()
 
@@ -762,9 +776,28 @@ if __name__ == '__main__':
     #                            feature_names=['x', 'y', 'speed_x', 'speed_y'], sub_section=(-1, 60))
 
     # find_optimal_span(animal_id='PV163', movement_type='random_low_horizontal')
-    run_with_different_seeds('PV42', 'random_low_horizontal', ['x', 'y', 'speed_x', 'speed_y'], n=10,
-                             is_resample=False, lstm_layers=2, dropout_prob=0.4, lstm_hidden_dim=64, num_epochs=200,
-                             sub_section=(-1, 60), monitored_metric='val_loss', monitored_metric_algo='min')
+
+    for animal_id in ['PV99', 'PV80']:
+        try:
+            run_with_different_seeds(animal_id, 'random_low_horizontal',
+                                     ['x', 'y', 'speed_x', 'speed_y'], n=30, is_shuffled_target=False,
+                                     is_resample=False, lstm_layers=2, dropout_prob=0.4, lstm_hidden_dim=64, num_epochs=200,
+                                     sub_section=(-1, 60), monitored_metric='val_loss', monitored_metric_algo='min')
+        except Exception as exc:
+            print(f'Error in animal_id (-1): {animal_id}; {exc}')
+
+    for animal_id in ['PV42']:
+        try:
+            run_with_different_seeds(animal_id, 'random_low_horizontal',
+                                     ['x', 'y', 'speed_x', 'speed_y'], n=30, is_shuffled_target=False,
+                                     is_resample=False, lstm_layers=2, dropout_prob=0.4, lstm_hidden_dim=64, num_epochs=200,
+                                     sub_section=(-1.5, 60), monitored_metric='val_loss', monitored_metric_algo='min')
+        except Exception as exc:
+            print(f'Error in animal_id (-1.5): {animal_id}; {exc}')
+
+
+    # find_best_hyperparameters(movement_type='random_low_horizontal', lstm_layers=4, dropout_prob=0.3, is_resample=False)
+
     # find_best_features(movement_type='circle', lstm_layers=6, dropout_prob=0.5, is_resample=True)
     # for movement_type in ['random_low_horizontal', 'circle']:
     #     for animal_id in ['PV91', 'PV163', 'PV99', 'PV80', 'PV85', 'all']:  # 'PV42',
