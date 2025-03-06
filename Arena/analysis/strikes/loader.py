@@ -23,7 +23,7 @@ class MissingStrikeData(Exception):
 
 class Loader:
     def __init__(self, db_id, cam_name, raise_no_pose=False, raise_no_traj=True, is_use_db=True, is_debug=True, orm=None,
-                 sec_before=3, sec_after=2, is_dwh=False, is_trial=False):
+                 sec_before=1, sec_after=1, is_dwh=False, is_trial=False):
         self.db_id = db_id
         self.is_trial = is_trial
         self.cam_name = cam_name
@@ -121,14 +121,28 @@ class Loader:
                 continue
             # in strike mode use the strike time, in trial mode use the mid-trial time, and check if this time
             # is included in this video's frame times.
-            center_time = self.traj_df.time.iloc[len(self.traj_df) // 2] if self.is_trial else strk.time
+            if self.is_trial:
+                if self.traj_df.empty:
+                    if trial.start_time is None or trial.end_time is None:
+                        raise MissingStrikeData(f'Cannot get trial times since no trajectory found and trial start_time or end_time are not set')
+                    else:
+                        center_time = trial.start_time
+                else:
+                    center_time = self.traj_df.time.iloc[len(self.traj_df) // 2]
+            else:
+                center_time = strk.time
             if not (frames_times.iloc[0].time <= center_time <= frames_times.iloc[-1].time):
                 errors[Path(vid.path).stem] = 'center frame is not in the video'
                 continue
 
             if self.is_trial:  # in trials, relevant frames are taken from trajectory times
-                times = [self.traj_df['time'].iloc[i] for i in [0, -1]]
+                if self.traj_df.empty:
+                    times = [trial.start_time, trial.end_time]
+                else:
+                    times = [self.traj_df['time'].iloc[i] for i in [0, -1]]
                 self.relevant_video_frames = [(t - frames_times.time).dt.total_seconds().abs().idxmin() for t in times]
+                self.relevant_video_frames = [max(self.relevant_video_frames[0] - self.n_frames_back, frames_times.index[0]),
+                                              min(self.relevant_video_frames[-1] + self.n_frames_forward, frames_times.index[-1])]
             else:  # in strikes, relevant frames are calculated using strike frame with sec_before and sec_after
                 self.strike_frame_id = (strk.time - frames_times.time).dt.total_seconds().abs().idxmin()
                 self.relevant_video_frames = [max(self.strike_frame_id - self.n_frames_back, frames_times.index[0]),
@@ -141,7 +155,7 @@ class Loader:
             except Exception as exc:
                 errors[Path(vid.path).stem] = f'load pose failed; {exc}'
                 if self.raise_no_pose:
-                    raise Exception('loader failed since no pose found and raise_no_pose=True')
+                    raise MissingStrikeData('loader failed since no pose found and raise_no_pose=True')
 
             first_frame, last_frame = self.relevant_video_frames
             self.frames_df = frames_df.loc[first_frame:last_frame].copy()
@@ -170,7 +184,7 @@ class Loader:
             if self.is_debug:
                 print(f'Video path does not exist: {video_path}')
             if not self.is_use_db:  # raise an exception only if not on DB mode
-                raise Exception(f'Video path {video_path} does not exist')
+                raise MissingStrikeData(f'Video path {video_path} does not exist')
         self.video_path = video_path
 
     def update_info_with_block_data(self, blk: Block):
@@ -178,7 +192,10 @@ class Loader:
         self.info.update({k: blk.__dict__.get(k) for k in fields})
 
     def load_frames_times(self, vid):
-        frames_times = self.dlc_pose.load_frames_times(vid.id, vid.path)
+        try:
+            frames_times = self.dlc_pose.load_frames_times(vid.id, vid.path)
+        except Exception as exc:
+            raise MissingStrikeData(f'load frames times failed; {exc}')
         if not frames_times.empty:
             self.frames_delta = np.mean(frames_times.time.diff().dt.total_seconds())
             self.n_frames_back = round(self.sec_before / self.frames_delta)
