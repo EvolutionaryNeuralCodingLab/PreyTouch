@@ -302,7 +302,7 @@ export default {
         let properties = {
           x: x,
           y: y,
-          bugId: `${this.bugsSettings.bugTypes}${i}`
+          bugId: `${this.bugsSettings.bugTypes[i]}_${i}`
         }
         // if (i !== 0) {
         //   for (let j = 0; j < i; j++) {
@@ -324,13 +324,19 @@ export default {
     startLogBugTrajectory() {
       console.log('trajectory log started')
       this.trajectoryLogInterval = setInterval(() => {
-        let bug = this.$refs.bugChild[0]
-        if (bug) {
-          this.bugTrajectoryLog.push({
-            time: Date.now(),
-            x: bug.x,
-            y: bug.y
+        // for each bug, log its position
+        let bugs = this.$refs.bugChild
+        if (bugs.length > 0) {
+          let bugsTrajs = bugs.map(bug => {
+            return {
+              bugId: bug.bugId,
+              currentBugType: bug.currentBugType,
+              position: { time: Date.now(), x: bug.x, y: bug.y }
+            }
           })
+          this.bugTrajectoryLog.push(bugsTrajs)
+        } else {
+          console.log('no bugs to log')
         }
       }, 1000 / 60)
     },
