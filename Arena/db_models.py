@@ -666,7 +666,7 @@ class ORM:
 
 
 class DWH:
-    commit_models = [Animal, Experiment, Block, Trial, Strike, Video, VideoPrediction]
+    commit_models = [Animal, Experiment, Block, Trial, Strike, Video]  # VideoPrediction
 
     def __init__(self):
         self.logger = get_logger('dwh')
@@ -683,37 +683,41 @@ class DWH:
                     j = 0
                     recs = local_s.query(model).filter(model.dwh_key.is_(None)).all()
                     for rec in tqdm(recs, desc=model.__name__):
-                        kwargs = {}
-                        for c in model.__table__.columns:
-                            if c.name in ['id']:
-                                continue
-                            value = getattr(rec, c.name)
-                            if c.foreign_keys:
-                                fk = list(c.foreign_keys)[0]
-                                dwh_fk = self.keys_table.get(fk.column.table.name, {}).get(value)
-                                if value and not dwh_fk:
-                                    # this happened probably due to previously failed runs of DWH commit
-                                    dwh_fk = self.get_prev_committed_dwh_fk(local_s, value, fk.column.table)
-                                kwargs[c.name] = dwh_fk if value else None
+                        try:
+                            kwargs = {}
+                            for c in model.__table__.columns:
+                                if c.name in ['id']:
+                                    continue
+                                value = getattr(rec, c.name)
+                                if c.foreign_keys:
+                                    fk = list(c.foreign_keys)[0]
+                                    dwh_fk = self.keys_table.get(fk.column.table.name, {}).get(value)
+                                    if value and not dwh_fk:
+                                        # this happened probably due to previously failed runs of DWH commit
+                                        dwh_fk = self.get_prev_committed_dwh_fk(local_s, value, fk.column.table)
+                                    kwargs[c.name] = dwh_fk if value else None
+                                else:
+                                    kwargs[c.name] = value
+
+                            r = model(**kwargs)
+                            dwh_s.add(r)
+                            dwh_s.commit()
+                            self.keys_table.setdefault(model.__table__.name, {})[rec.id] = r.id
+
+                            if model == PoseEstimation:
+                                mappings.append({'id': rec.id, 'dwh_key': r.id})
+                                j += 1
+                                if j % 10000 == 0:
+                                    local_s.bulk_update_mappings(model, mappings)
+                                    local_s.flush()
+                                    local_s.commit()
+                                    mappings[:] = []
                             else:
-                                kwargs[c.name] = value
-
-                        r = model(**kwargs)
-                        dwh_s.add(r)
-                        dwh_s.commit()
-                        self.keys_table.setdefault(model.__table__.name, {})[rec.id] = r.id
-
-                        if model == PoseEstimation:
-                            mappings.append({'id': rec.id, 'dwh_key': r.id})
-                            j += 1
-                            if j % 10000 == 0:
-                                local_s.bulk_update_mappings(model, mappings)
-                                local_s.flush()
+                                rec.dwh_key = r.id
                                 local_s.commit()
-                                mappings[:] = []
-                        else:
-                            rec.dwh_key = r.id
-                            local_s.commit()
+                        except Exception as exc:
+                            print(f'Error committing {model.__name__} {rec.id}: {exc}')
+                            dwh_s.rollback()
 
                     if model == PoseEstimation:
                         local_s.bulk_update_mappings(model, mappings)
