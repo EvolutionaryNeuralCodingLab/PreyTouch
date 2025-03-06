@@ -21,7 +21,7 @@ from typing import Type
 
 import config
 from cache import RedisCache, CacheColumns as cc
-from utils import mkdir, datetime_string, run_in_thread
+from utils import mkdir, datetime_string, run_in_thread, run_command
 from loggers import get_process_logger, logger_thread
 from experiment import Experiment, ExperimentCache
 from subscribers import start_management_subscribers, start_experiment_subscribers
@@ -250,7 +250,7 @@ class ImageSink(ArenaProcess):
         else:
             self.video_out = OpenCVWriter(frame, self.writing_fps, self.write_output_dir, self.cam_name, is_color)
         self.video_path = self.video_out.video_path
-        self.logger.info(f'start video writing to {self.video_path} frame size: {frame.shape}')
+        self.logger.info(f'start video writing to {self.video_path} frame size: {frame.shape}, fps: {self.writing_fps}')
         self.db_video_id = self.orm.commit_video(path=self.video_path, fps=self.writing_fps,
                                                  cam_name=self.cam_name, start_time=datetime.datetime.now())
         if self.db_video_id is not None:
@@ -265,6 +265,9 @@ class ImageSink(ArenaProcess):
             self.writing_thread = None
         self.video_out.close()
         calc_fps = 1 / np.diff(self.write_video_timestamps).mean()
+        if not self.writing_fps:
+            # in case there's no writing_fps (e.g. trigger mode) set manually the calc_fps to the video file
+            self.set_writing_fps_on_video_file(calc_fps)
         self.logger.info(f'Video with {len(self.write_video_timestamps)} frames and calc_fps={calc_fps:.1f} '
                          f'saved into {self.video_path}')
         if self.write_video_timestamps:
@@ -274,6 +277,12 @@ class ImageSink(ArenaProcess):
         self.write_output_dir = None
         self.db_video_id = None
         self.mp_metadata['db_video_id'].value = 0
+
+    @run_in_thread
+    def set_writing_fps_on_video_file(self, calc_fps):
+        p = Path(self.video_path)
+        tmp_p = p.with_name(f'{p.stem}.tmp{p.suffix}')
+        next(run_command(f'ffmpeg -i {p.as_posix()} -y -r {calc_fps:.1f} {tmp_p.as_posix()} && mv {tmp_p.as_posix()} {p.as_posix()}'))
 
     def check_writing_fps(self, timestamp):
         if not self.cam_config.get('writing_fps'):
