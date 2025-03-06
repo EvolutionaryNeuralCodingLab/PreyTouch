@@ -532,19 +532,19 @@ class Block:
     def init_random_low_horizontal(self, max_strikes=None):
         speeds = [2, 4, 6, 8]
         max_strikes = max_strikes or config.RANDOM_LOW_HORIZONTAL_MAX_STRIKES
-        speed_strikes_count = {k: 0 for k in speeds}
+        speed_trials_count = {k: 0 for k in speeds}
         with self.orm.session() as s:
             exps = s.query(Experiment_Model).filter_by(animal_id=self.animal_id).all()
             for e in exps:
                 for b in e.blocks:
                     if b.movement_type != 'random_low_horizontal' or b.bug_speed not in speeds:
                         continue
-                    speed_strikes_count[b.bug_speed] = speed_strikes_count.get(b.bug_speed, 0) + len(b.strikes)
-        available_speeds = [s for s in speeds if speed_strikes_count[s] < max_strikes]
+                    speed_trials_count[b.bug_speed] = speed_trials_count.get(b.bug_speed, 0) + len([tr for tr in b.trials if len(tr.strikes) > 0])
+        available_speeds = [s for s in speeds if speed_trials_count[s] < max_strikes]
         self.bug_speed = random.choice(available_speeds)
         self.exit_hole = 'random'
         self.logger.info(f'random_low_horizontal starts with bug_speed={self.bug_speed}; '
-                         f'speeds strikes: {speed_strikes_count}')
+                         f'speeds strikes: {speed_trials_count}')
 
     @staticmethod
     def set_random_low_horizontal_trial(options):

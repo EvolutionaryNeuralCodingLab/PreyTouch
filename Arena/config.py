@@ -186,7 +186,7 @@ REWARD_TIMEOUT = env.int('REWARD_TIMEOUT', 10, group='Experiments', desc='Time i
 MAX_DAILY_REWARD = env.int('MAX_DAILY_REWARD', 40, group='Experiments', desc='Max number of rewards per day')
 MAX_DURATION_CONT_BLANK = env.int('MAX_DURATION_CONT_BLANK', 48*3600, group='Experiments', desc='Max duration in seconds of a blank continuous experiment')
 CHECK_ENGAGEMENT_HOURS = env.int('CHECK_ENGAGEMENT_SPAN', 0, group='Experiments', desc='Hours before to check engagement or whether there were any strikes. If there are no strikes in this time span, give reward. Setting 0 will disable this check.')
-RANDOM_LOW_HORIZONTAL_MAX_STRIKES = env.int('RANDOM_LOW_HORIZONTAL_MAX_STRIKES', 30, group='Experiments', desc='Max number of strikes per bug speed in random_low_horizontal movement')
+RANDOM_LOW_HORIZONTAL_MAX_STRIKES = env.int('RANDOM_LOW_HORIZONTAL_MAX_STRIKES', 50, group='Experiments', desc='Max number of strikes per bug speed in random_low_horizontal movement')
 CACHED_EXPERIMENTS_DIR = env('CACHED_EXPERIMENTS_DIR', 'cached_experiments', group='Experiments', desc='Folder name in the main Arena folder to store saved experiments')
 TRIAL_IMAGE_CAMERA = env('TRIAL_IMAGE_CAMERA', 'back', group='Experiments', desc='Camera used for trial images generation')
 experiment_types = {
