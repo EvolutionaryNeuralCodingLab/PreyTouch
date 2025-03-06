@@ -166,7 +166,7 @@ class Experiment:
 
     @property
     def experiment_duration(self):
-        return sum(b.overall_block_duration for b in self.blocks) + self.time_between_blocks * (len(self.blocks) - 1)
+        return int(sum(b.overall_block_duration for b in self.blocks) + self.time_between_blocks * (len(self.blocks) - 1))
 
     def get_board(self):
         with open('../pogona_hunter/src/config.json', 'r') as f:
@@ -292,12 +292,13 @@ class Block:
         self.wait(self.extra_time_recording, label='Extra Time Rec')
 
         for trial_id in range(1, self.num_trials + 1):
-            if not self.exp_validation.is_reward_left():
-                utils.send_telegram_message('No reward left in feeder; stopping experiment')
-                raise EndExperimentException('No reward left; stopping experiment')
-            elif self.block_type == 'bugs' and self.exp_validation.is_max_reward_reached():
-                utils.send_telegram_message(f'Max daily rewards of {config.MAX_DAILY_REWARD} reached; stopping experiment')
-                raise EndExperimentException(f'Max daily rewards of {config.MAX_DAILY_REWARD} reached; stopping experiment')
+            if self.block_type == 'bugs':
+                if not self.exp_validation.is_reward_left():
+                    utils.send_telegram_message('No reward left in feeder; stopping experiment')
+                    raise EndExperimentException('No reward left; stopping experiment')
+                elif self.exp_validation.is_max_reward_reached():
+                    utils.send_telegram_message(f'Max daily rewards of {config.MAX_DAILY_REWARD} reached; stopping experiment')
+                    raise EndExperimentException(f'Max daily rewards of {config.MAX_DAILY_REWARD} reached; stopping experiment')
             self.start_trial(trial_id)
             self.wait(self.trial_duration, check_visual_app_on=True, label=f'Trial {trial_id}',
                       take_img_after=self.trial_duration/2)
