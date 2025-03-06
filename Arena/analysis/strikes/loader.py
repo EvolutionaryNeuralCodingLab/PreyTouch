@@ -254,6 +254,8 @@ class Loader:
 
     def align_frames_to_other_cam(self, cam_name: str, video_path: str, frame_ids: list):
         vids = list(Path(video_path).parent.glob(f'{cam_name}*.mp4'))
+        if not vids:  # maybe videos were not compressed yet, so look for avi files
+            vids = list(Path(video_path).parent.glob(f'{cam_name}*.avi'))
         if not vids:
             raise Exception(f'No videos found for {cam_name} camera in {Path(video_path).parent}')
         
@@ -262,10 +264,8 @@ class Loader:
         frames_times = pd.read_csv(frames_times_path, index_col=0).reset_index().rename(columns={'index': 'frame_id'})
         frames_times['time'] = pd.to_datetime(frames_times['0'], unit='s', utc=True).dt.tz_convert(
             'Asia/Jerusalem').dt.tz_localize(None)
-        orig_frames = self.frames_df.loc[frame_ids].time
-        orig_frames = self.frames_df.loc[frame_ids][['time']].reset_index().rename(columns={'index': 'orig_frame'})
-        orig_frames.columns = [c[0] for c in orig_frames.columns]
-
+        orig_frames = self.frames_df.loc[frame_ids][['time']].reset_index().rename(columns={'frame_id': 'orig_frame'})
+        # orig_frames.columns = [c[0] for c in orig_frames.columns]
         merged = pd.merge_asof(left=orig_frames, right=frames_times, left_on='time', right_on='time', 
                                  direction='nearest', tolerance=pd.Timedelta('100 ms'))
         new_frames_ids = sorted(merged.frame_id.unique().tolist())
