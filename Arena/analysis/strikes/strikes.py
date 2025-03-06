@@ -170,9 +170,12 @@ class StrikeAnalyzer:
             axes[i].set_title(f'{self.pose_df.loc[frame_id, "rel_time"]:.2f}sec')
             # axes[i].set_title('\n'.join(labels))
 
-    def plot_kinematics(self, grid):
-        inner_grid = grid.subgridspec(1, 3, wspace=0.2, hspace=0.2)
-        axes = inner_grid.subplots()
+    def plot_kinematics(self, grid=None, axes=None, is_legend=True):
+        if grid is not None:
+            inner_grid = grid.subgridspec(1, 3, wspace=0.2, hspace=0.2)
+            axes = inner_grid.subplots()
+        else:
+            assert axes is not None and len(axes) == 3
         rel_df = self.pose_df.loc[self.relevant_frames]
         for ax, (label, seg) in zip(axes, {'position': rel_df.y,
                                            'velocity': rel_df.velocity_y,
@@ -180,12 +183,13 @@ class StrikeAnalyzer:
             t = rel_df.rel_time.values
             ax.plot(t, seg, color='k')
             self._plot_strikes_lines(ax, rel_df.rel_time.diff().mean())
-            ax.set_title(f'{self.bodypart} {label} vs. frame_ids')
+            ax.set_title(f'{self.bodypart} {label}')
             ax.set_xlabel('Time around strike [sec]')
             if label == 'position':
                 leap_duration = self.pose_df['rel_time'].loc[self.strike_frame_id] - self.pose_df['rel_time'].loc[self.leap_frame]
-                ax.set_title(f'{self.bodypart} {label} vs. frame_ids\nLeap duration: {leap_duration*1000:.0f}msec')
-                ax.legend()
+                ax.set_title(f'{self.bodypart} {label}\nLeap duration: {leap_duration*1000:.0f}msec')
+                if is_legend:
+                    ax.legend()
             elif label == 'acceleration':
                 peaks_idx, _ = find_peaks(seg, height=50, distance=10)
                 peaks_idx = [int(pk) for pk in peaks_idx if t[pk] < 0]
@@ -319,10 +323,6 @@ class StrikeAnalyzer:
 
     @cached_property
     def leap_frame(self):
-        # yf = self.pose_df[['time', 'y']]
-        # yf = yf[~yf.y.isnull()]
-        # t = yf.time.values.astype(np.int64) / 10 ** 9
-        # yf.loc[yf.index[2:], 'accl'] = self.calc_derivative(self.calc_derivative(yf.y.values, t), t[1:])
         try:
             # get the first frame in the pose dataset where y-velocity is not null
             stop_frame_id = self.pose_df[~self.pose_df.velocity_y.isnull()].index[0]
@@ -334,27 +334,13 @@ class StrikeAnalyzer:
             if len(cross_idx) > 0:
                 return cross_idx[-1]
             
-            # if no velocity crossings are found, look for acceleration crossings, but this time we look for those which become positive
+            # if no velocity crossings are found, look for acceleration crossings
             a = self.pose_df.loc[stop_frame_id:self.strike_frame_id-10, 'acceleration_y']
-            cross_idx = a[np.sign(a).diff().fillna(0) == 2].index.tolist()
+            cross_idx = a[np.sign(a).diff().fillna(0) == -2].index.tolist()
             if len(cross_idx) > 0:
                 return cross_idx[-1]
         except Exception:
-            pass
-        #
-        # leap_frame_idx = None
-        # grace_count = 0
-        # for r in np.arange(self.strike_frame_id, stop_frame_id, -1):
-        #     if self.pose_df.loc[r, 'acceleration'] > -0.05:
-        #         if grace_count == 0:
-        #             leap_frame_idx = r
-        #         grace_count += 1
-        #         if grace_count < 5:
-        #             continue
-        #         break
-        #     else:
-        #         grace_count = 0
-        # return leap_frame_idx
+            return
 
     @cached_property
     def calc_strike_frame(self):
@@ -692,11 +678,11 @@ def print_strikes_ids(animal_id, movement_type=None, is_hit=None, bug_type=None)
 
 
 if __name__ == '__main__':
-    # ld = Loader(5790, 'front', sec_before=1, sec_after=1)
-    # sa = StrikeAnalyzer(ld, bodypart='nose')
-    # sa.plot_strike_analysis()
+    ld = Loader(6106, 'front', sec_before=1, sec_after=1)
+    sa = StrikeAnalyzer(ld, bodypart='mid_ears')
+    sa.plot_strike_analysis()
     
-    StrikeScanner(is_skip_committed=False).scan()
+    # StrikeScanner(is_skip_committed=False).scan()
     
     # delete_duplicate_strikes('PV80')
 
