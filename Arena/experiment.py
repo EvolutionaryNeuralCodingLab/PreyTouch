@@ -234,7 +234,7 @@ class Block:
         self.logger = get_logger(f'{self.experiment_name}-Block {self.block_id}')
         self.exp_validation = ExperimentValidation(logger=self.logger, cache=self.cache, orm=self.orm)
         if isinstance(self.bug_speed, list):
-            bug_speed_choices = ','.join(self.bug_speed)
+            bug_speed_choices = ','.join([str(s) for s in self.bug_speed])
             self.bug_speed = random.choice(self.bug_speed)
             self.logger.info(f'Start block with bug speed {self.bug_speed}. Given speed options: {bug_speed_choices}')
         if self.periphery is None:
