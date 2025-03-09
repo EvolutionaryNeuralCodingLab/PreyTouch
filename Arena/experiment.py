@@ -234,7 +234,9 @@ class Block:
         self.logger = get_logger(f'{self.experiment_name}-Block {self.block_id}')
         self.exp_validation = ExperimentValidation(logger=self.logger, cache=self.cache, orm=self.orm)
         if isinstance(self.bug_speed, list):
+            bug_speed_choices = ','.join(self.bug_speed)
             self.bug_speed = random.choice(self.bug_speed)
+            self.logger.info(f'Start block with bug speed {self.bug_speed}. Given speed options: {bug_speed_choices}')
         if self.periphery is None:
             self.periphery = PeripheryIntegrator()
         if isinstance(self.bug_types, str):
@@ -244,9 +246,6 @@ class Block:
         elif not self.reward_bugs:
             self.logger.debug(f'No reward bugs were given, using all bug types as reward; {self.reward_bugs}')
             self.reward_bugs = self.bug_types
-
-        if self.is_random_low_horizontal:
-            self.init_random_low_horizontal()
 
         if self.is_continuous_blank:
             self.num_trials, self.iti = 1, 0
@@ -529,23 +528,6 @@ class Block:
             f'''-vf "drawtext=fontfile=/Windows/Fonts/Arial.ttf: 
             text='%{{localtime}}':x=30:y=30:fontcolor=red:fontsize=30" {filename}''', is_debug=False)
         )
-
-    def init_random_low_horizontal(self, max_strikes=None):
-        speeds = [2, 4, 6, 8]
-        max_strikes = max_strikes or config.RANDOM_LOW_HORIZONTAL_MAX_STRIKES
-        speed_trials_count = {k: 0 for k in speeds}
-        with self.orm.session() as s:
-            exps = s.query(Experiment_Model).filter_by(animal_id=self.animal_id).all()
-            for e in exps:
-                for b in e.blocks:
-                    if b.movement_type != 'random_low_horizontal' or b.bug_speed not in speeds:
-                        continue
-                    speed_trials_count[b.bug_speed] = speed_trials_count.get(b.bug_speed, 0) + len([tr for tr in b.trials if len(tr.strikes) > 0])
-        available_speeds = [s for s in speeds if speed_trials_count[s] < max_strikes]
-        self.bug_speed = random.choice(available_speeds)
-        self.exit_hole = 'random'
-        self.logger.info(f'random_low_horizontal starts with bug_speed={self.bug_speed}; '
-                         f'speeds strikes: {speed_trials_count}')
 
     @staticmethod
     def set_random_low_horizontal_trial(options):
