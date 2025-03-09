@@ -13,16 +13,13 @@ class Writer:
         self.full_path = full_path
         self.is_color = bool(is_color)
         self.writer = None
+        self.video_path = full_path or f'{output_dir}/{cam_name}_{datetime_string()}{self.video_suffix}'
 
     def write(self, frame):
         pass
 
     def close(self):
         pass
-
-    @property
-    def video_path(self):
-        return self.full_path or f'{self.output_dir}/{self.cam_name}_{datetime_string()}{self.video_suffix}'
 
 
 class OpenCVWriter(Writer):
