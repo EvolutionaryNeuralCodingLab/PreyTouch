@@ -120,11 +120,11 @@ def fix_wrong_vid_paths_in_db():
         for p in Path(config.EXPERIMENTS_DIR).rglob('*.avi'):
             vid = s.query(Video).filter_by(path=p.as_posix()).first()
             if vid is None:
-                q = p.with_suffix('').as_posix()[:-1] + '%'
+                q = p.with_suffix('').as_posix()[:-2] + '%'
                 vid = s.query(Video).filter(Video.path.ilike(q)).first()
                 if vid is not None:
-                    vid.path = p.as_posix()
                     print(f'Videos name mismatch:\n{p.name} -> {Path(vid.path).name}')
+                    vid.path = p.as_posix()
         s.commit()
 
 
