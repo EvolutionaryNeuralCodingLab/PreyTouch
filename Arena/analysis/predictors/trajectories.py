@@ -36,17 +36,19 @@ TRAJ_DIR = '/media/sil2/Data/regev/datasets/trajs'
 class Attention(nn.Module):
     def __init__(self, hidden_dim):
         super(Attention, self).__init__()
-        self.attention_weights = nn.Parameter(torch.Tensor(hidden_dim, 1))
-        nn.init.xavier_uniform_(self.attention_weights)
+        # A simple linear layer that maps hidden state to a scalar score.
+        self.attn = nn.Linear(hidden_dim, 1)
 
     def forward(self, lstm_output):
         # lstm_output shape: (batch_size, seq_length, hidden_dim)
-        attention_scores = torch.tanh(torch.matmul(lstm_output, self.attention_weights))
-        attention_scores = attention_scores.squeeze(-1)  # shape: (batch_size, seq_length)
-        attention_weights = torch.softmax(attention_scores, dim=1)  # shape: (batch_size, seq_length)
-        weighted_sum = torch.bmm(attention_weights.unsqueeze(1), lstm_output).squeeze(
-            1)  # shape: (batch_size, hidden_dim)
-        return weighted_sum, attention_weights
+        # Compute unnormalized attention scores for each time step.
+        scores = self.attn(lstm_output)  # shape: (batch_size, seq_length, 1)
+        scores = torch.tanh(scores)
+        scores = scores.squeeze(-1)      # shape: (batch_size, seq_length)
+        attn_weights = F.softmax(scores, dim=1)  # shape: (batch_size, seq_length)
+        # Compute the context vector as a weighted sum of the LSTM outputs.
+        context = torch.bmm(attn_weights.unsqueeze(1), lstm_output).squeeze(1)  # shape: (batch_size, hidden_dim)
+        return context, attn_weights
 
 
 class LSTMWithAttention(nn.Module):
@@ -54,29 +56,34 @@ class LSTMWithAttention(nn.Module):
         super(LSTMWithAttention, self).__init__()
         self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True, dropout=dropout_prob)
         self.attention = Attention(hidden_dim)
-        # self.batch_norm = nn.BatchNorm1d(hidden_dim)
-        # self.dropout = nn.Dropout(dropout_prob)
+        self.dropout = nn.Dropout(dropout_prob)
         self.fc = nn.Linear(hidden_dim, output_dim)
 
-    def forward(self, x, is_attn=False, is_weighted=False):
+    def forward(self, x, is_attn=False):
         # x shape: (batch_size, seq_length, input_dim)
         lstm_output, (h_n, c_n) = self.lstm(x)
-        # lstm_output = lstm_output[:, -1, :]
         # lstm_output shape: (batch_size, seq_length, hidden_dim)
-        weighted_sum, attn_weights = self.attention(lstm_output)
-        weighted_sum = h_n[-1]
-
-        # Apply batch normalization and dropout
-        # x = self.batch_norm(weighted_sum)
-        # x = self.dropout(x)
-        # Final classification layer
-        out = self.fc(weighted_sum)
+        context, attn_weights = self.attention(lstm_output)
+        x = self.dropout(context)
+        out = self.fc(x)
         if is_attn:
             return out, attn_weights
-        elif is_weighted:
-            return out, weighted_sum
         else:
             return out
+
+
+class LSTMModel(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim, num_layers, dropout_prob):
+        super(LSTMModel, self).__init__()
+        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True, bidirectional=True, dropout=dropout_prob)
+        self.fc = nn.Linear(hidden_dim*2, output_dim)
+
+    def forward(self, x):
+        # x shape: (batch_size, seq_length, input_dim)
+        lstm_output, (h_n, c_n) = self.lstm(x)
+        x = torch.mean(lstm_output, dim=1)
+        out = self.fc(x)
+        return out
 
 
 class LizardTrajDataSet(Dataset):
@@ -173,11 +180,8 @@ class TrajClassifier(ClassificationTrainer):
     is_shuffled_target: bool = False  # shuffle the target randomly. Used to find baseline for attention.
     targets: List = field(default_factory=lambda: [2, 4, 6, 8])
     feature_names: List = field(default_factory=lambda: ['x', 'y', 'speed'])
+    is_attention: bool = False  # use the LSTMWithAttention model
     strike_index = None
-
-    # def __post_init__(self):
-    #     super().__post_init__()
-        # self.device = torch.device('mps')
 
     def load(self):
         attrs_path = Path(self.model_path) / 'attrs.pkl'
@@ -244,9 +248,14 @@ class TrajClassifier(ClassificationTrainer):
     #     return torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode=self.monitored_metric_algo, patience=10)
 
     def get_model(self):
-        return LSTMWithAttention(input_dim=len(self.feature_names), hidden_dim=self.lstm_hidden_dim,
-                                 output_dim=len(self.targets), num_layers=self.lstm_layers,
-                                 dropout_prob=self.dropout_prob)
+        if not self.is_attention:
+            return LSTMModel(input_dim=len(self.feature_names), hidden_dim=self.lstm_hidden_dim,
+                             output_dim=len(self.targets), num_layers=self.lstm_layers,
+                             dropout_prob=self.dropout_prob)
+        else:
+            return LSTMWithAttention(input_dim=len(self.feature_names), hidden_dim=self.lstm_hidden_dim,
+                                     output_dim=len(self.targets), num_layers=self.lstm_layers,
+                                     dropout_prob=self.dropout_prob)
 
     def evaluate(self, y_true: torch.Tensor, y_pred: torch.Tensor) -> dict:
         y_score = F.softmax(y_pred, dim=1)
@@ -308,16 +317,14 @@ class TrajClassifier(ClassificationTrainer):
         if is_test_set:
             dataset = Subset(dataset, self.test_indices)
         y_true, y_pred, y_score = [], [], []
-        attns = {}
         for x, y in dataset:
-            outputs, attention_weights = self.model(x.to(self.device).unsqueeze(0), is_attn=True)
-            attns.setdefault(self.targets[y.item()], []).append(attention_weights.detach().cpu().numpy())
+            outputs = self.model(x.to(self.device).unsqueeze(0))
             label, prob = self.predict_proba(outputs, is_all_probs=True)
             y_true.append(y.item())
             y_pred.append(label.item())
             y_score.append(prob.detach().cpu().numpy())
         y_true, y_pred, y_score = np.vstack(y_true), np.vstack(y_pred), np.vstack(y_score)
-        return y_true, y_pred, y_score, attns
+        return y_true, y_pred, y_score
 
     def all_data_evaluation(self, axes=None, is_test_set=False, is_plot_auc=True, is_full_ablation=True, **kwargs):
         if axes is None:
@@ -326,7 +333,7 @@ class TrajClassifier(ClassificationTrainer):
             axes_ = axes
         assert len(axes_) == (4 if is_plot_auc else 3)
 
-        y_true, y_pred, y_score, attns = self.get_data_for_evaluation(is_test_set)
+        y_true, y_pred, y_score = self.get_data_for_evaluation(is_test_set)
         att_id = 2 if is_plot_auc else 1
         # self.plot_attention(axes_[att_id], attns)
         self.plot_segment_importance(axes_[att_id])
@@ -364,7 +371,7 @@ class TrajClassifier(ClassificationTrainer):
                             x[mask, i] = 0.0
                         else:
                             x[:, i] = 0.0
-                outputs, _ = self.model(x.to(self.device).unsqueeze(0), is_attn=True)
+                outputs = self.model(x.to(self.device).unsqueeze(0))
                 label, prob = self.predict_proba(outputs, is_all_probs=True)
                 y_true.append(y.item())
                 y_pred.append(label.item())
@@ -384,13 +391,12 @@ class TrajClassifier(ClassificationTrainer):
                 x[:, i] = 0.0
         return x
 
-
     def plot_ablation(self, ax, is_only_one_feature=False):
         af = []
-        for start_t in np.linspace(self.time_vector[0], self.time_vector[-1]-0.2 , 3):
+        for start_t in np.linspace(self.time_vector[0], self.time_vector[-1]-0.2, 3):
             seg = (start_t, start_t + 0.2)
             ablations_dict = self.calc_ablation(segment=seg, is_only_one_feature=is_only_one_feature)
-            ablations_dict['segment'] = np.mean(seg)
+            ablations_dict['segment'] = np.round(np.mean(seg), 1)
             af.append(ablations_dict)
         af = pd.DataFrame(af)
         af = af.set_index('segment').stack().reset_index().rename(columns={'level_1': 'feature', 0: 'ablation'})
@@ -445,22 +451,25 @@ class TrajClassifier(ClassificationTrainer):
         ax.set_ylabel('Y Coordinate')
         ax.set_title('Attention Weights over Trajectory')
 
-    def calc_segment_importance(self):
+    def calc_segment_importance(self, max_allocation=27840):
         torch.backends.cudnn.enabled = False
         self.model.eval()
         ig = IntegratedGradients(self.model)
         dataset = self.get_dataset()
 
+        max_examples = None
         input_tensors = {}
         for x, y in dataset:
+            if not max_examples:
+                max_examples = int(np.floor(max_allocation / torch.mul(*x.size()).item()))
             y = y.item()
             input_tensors.setdefault(y, []).append(x.to(self.device))
         segments = {}
         for i, input_tensor in input_tensors.items():
-            input_tensor = torch.stack(input_tensor)
+            input_tensor = torch.stack(input_tensor)[:max_examples, :, :]
             attributions, delta = ig.attribute(input_tensor, target=i, return_convergence_delta=True)
             seg = attributions.mean(dim=0).sum(dim=-1).detach().cpu().numpy()
-            segments[self.targets[i]] = seg
+            segments[self.targets[i]] = np.abs(seg)
         return segments
 
     def plot_segment_importance(self, ax):
@@ -602,8 +611,13 @@ def hyperparameters_comparison(animal_id='PV91', movement_type='random_low_horiz
     from sklearn.model_selection import ParameterGrid
 
     res_df = []
-    grid = ParameterGrid(dict(dropout_prob=[0.2, 0.4, 0.6], lstm_layers=[2, 3], lstm_hidden_dim=[16, 32, 64]))
+    grid = ParameterGrid(dict(dropout_prob=[0.4, 0.6], lstm_layers=[1, 2, 3], lstm_hidden_dim=[64, 128]))
     for i, params in enumerate(grid):
+        if params['lstm_layers'] == 1:
+            if params['dropout_prob'] != 0.4:
+                continue
+            else:
+                params['dropout_prob'] = 0
         print(f'start loop {i+1}/{len(grid)}')
         tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=sub_section, feature_names=feature_names,
                             is_debug=False, is_resample=is_resample, animal_id=animal_id, movement_type=movement_type, **kwargs, **params)
@@ -614,7 +628,7 @@ def hyperparameters_comparison(animal_id='PV91', movement_type='random_low_horiz
             res_df.append({'metric': metric, 'value': l[best_epoch], 'animal_id': animal_id,
                            'movement_type': movement_type, **params})
 
-        y_true, y_pred, y_score, attns = tj.get_data_for_evaluation()
+        y_true, y_pred, y_score = tj.get_data_for_evaluation()
         acc = accuracy_score(y_true, y_pred)
         res_df.append({'metric': 'overall_accuracy', 'value': acc, 'animal_id': animal_id,
                        'movement_type': movement_type, 'model_path': tj.model_path, **params})
@@ -680,7 +694,7 @@ def run_with_different_seeds(animal_id, movement_type, feature_names, sub_sectio
             res['metrics'].append({'metric': metric, 'value': l[best_epoch], 'animal_id': animal_id,
                                    'movement_type': movement_type, 'model_path': tj.model_path})
 
-        y_true, y_pred, y_score, _ = tj.get_data_for_evaluation()
+        y_true, y_pred, y_score = tj.get_data_for_evaluation()
         ig_segments = tj.calc_segment_importance()
         for bug_speed, seg in ig_segments.items():
             res['ig'].setdefault(bug_speed, []).append(seg)
@@ -772,28 +786,21 @@ if __name__ == '__main__':
     # tj.train(is_plot=True)
     # tj.check_hidden_states()
 
-    # hyperparameters_comparison(animal_id='PV42', movement_type='random_low_horizontal', monitored_metric='val_loss', monitored_metric_algo='min',
+    # hyperparameters_comparison(animal_id='PV41', movement_type='random_low_horizontal', monitored_metric='val_loss', monitored_metric_algo='min',
     #                            feature_names=['x', 'y', 'speed_x', 'speed_y'], sub_section=(-1, 60))
 
     # find_optimal_span(animal_id='PV163', movement_type='random_low_horizontal')
 
-    for animal_id in ['PV99', 'PV80']:
-        try:
-            run_with_different_seeds(animal_id, 'random_low_horizontal',
-                                     ['x', 'y', 'speed_x', 'speed_y'], n=30, is_shuffled_target=False,
-                                     is_resample=False, lstm_layers=2, dropout_prob=0.4, lstm_hidden_dim=64, num_epochs=200,
-                                     sub_section=(-1, 60), monitored_metric='val_loss', monitored_metric_algo='min')
-        except Exception as exc:
-            print(f'Error in animal_id (-1): {animal_id}; {exc}')
-
-    for animal_id in ['PV42']:
-        try:
-            run_with_different_seeds(animal_id, 'random_low_horizontal',
-                                     ['x', 'y', 'speed_x', 'speed_y'], n=30, is_shuffled_target=False,
-                                     is_resample=False, lstm_layers=2, dropout_prob=0.4, lstm_hidden_dim=64, num_epochs=200,
-                                     sub_section=(-1.5, 60), monitored_metric='val_loss', monitored_metric_algo='min')
-        except Exception as exc:
-            print(f'Error in animal_id (-1.5): {animal_id}; {exc}')
+    for animal_id in ['PV41']:  # ['PV42', 'PV91', 'PV95', 'PV99', 'PV80']
+        # for sub_section in [(-2, 60), (-1.5, 60), (-1, 60), (0, 59)]:
+        for sub_section in [(-1, 119), (-1, 60)]:
+            try:
+                run_with_different_seeds(animal_id, 'random_low_horizontal',
+                                         ['x', 'y', 'speed_x', 'speed_y'], n=30, is_shuffled_target=False,
+                                         is_resample=False, lstm_layers=2, dropout_prob=0.5, lstm_hidden_dim=64, num_epochs=150,
+                                         sub_section=sub_section, monitored_metric='val_loss', monitored_metric_algo='min')
+            except Exception as exc:
+                print(f'Error in animal_id: {animal_id}; {exc}')
 
 
     # find_best_hyperparameters(movement_type='random_low_horizontal', lstm_layers=4, dropout_prob=0.3, is_resample=False)
