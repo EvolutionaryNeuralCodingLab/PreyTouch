@@ -361,7 +361,7 @@ class TrajClassifier(ClassificationTrainer):
             assert len(segment) == 2, 'Segment should be a tuple of start and end times'
             mask = (self.time_vector >= segment[0]) & (self.time_vector <= segment[1])
 
-        for i, feature_name in enumerate(self.feature_names + ['control']):
+        for i, feature_name in enumerate(list(self.feature_names) + ['control']):
             y_true, y_pred = [], []
             for x, y in dataset:
                 if feature_name != 'control':
@@ -688,11 +688,12 @@ def find_best_features(movement_type='random_low_horizontal', lstm_layers=4, dro
 
 
 def run_with_different_seeds(animal_id, movement_type, feature_names, sub_section=(-1, 60),
-                             n=10, is_run_feature_importance=True, is_plot=True, is_save=True, **kwargs):
+                             n=10, is_run_feature_importance=True, is_plot=True, is_save=True,
+                             ablate_all_except=True, **kwargs):
     res = {'metrics': [], 'ig': {}, 'ablation': []}
     for s in range(n):
         print(f'\n>>>>> Start iteration {s+1}/{n} for seed {s}...')
-        tj = TrajClassifier(save_model_dir=TRAJ_DIR, feature_names=feature_names, seed=s, sub_section=sub_section,
+        tj = TrajClassifier(save_model_dir=TRAJ_DIR, feature_names=feature_names, seed=s, sub_section=sub_section, is_debug=False,
                             animal_id=animal_id, movement_type=movement_type, **kwargs)
         tj.train(is_plot=False)
         tj.is_debug = False
@@ -712,13 +713,17 @@ def run_with_different_seeds(animal_id, movement_type, feature_names, sub_sectio
             af = []
             for start_t in np.linspace(tj.time_vector[0], tj.time_vector[-1] - 0.2, 3):
                 seg = (start_t, start_t + 0.2)
-                ablations_dict = tj.calc_ablation(segment=seg, ablate_all_except=True)
-                ablations_dict['segment'] = np.mean(seg)
+                ablations_dict = tj.calc_ablation(segment=seg, ablate_all_except=ablate_all_except)
+                ablations_dict['segment'] = f'{np.mean(seg):.1f}'
                 af.append(ablations_dict)
+            # full ablation
+            ablations_dict = tj.calc_ablation(ablate_all_except=ablate_all_except)
+            ablations_dict['segment'] = 'all'
+            af.append(ablations_dict)
+            # create dataframe of ablation and stack to feature column
             af = pd.DataFrame(af)
             af = af.set_index('segment').stack().reset_index().rename(columns={'level_1': 'feature', 0: 'ablation'})
             res['ablation'].append(af)
-
         torch.cuda.empty_cache()
         time.sleep(1)
 
@@ -792,7 +797,7 @@ def find_best_and_run_different_seeds(animal_id, movement_type='random_low_horiz
     best_hyp = hyperparameters_comparison(animal_id=animal_id, movement_type=movement_type, monitored_metric='val_loss',
                                monitored_metric_algo='min', is_resample=is_resample, feature_names=feature_names,
                                sub_section=sub_section)
-    print(f'\n>>> start run_with_different_seeds with: {best_hyp}\n')
+    print(f'\n>>> start run_with_different_seeds with: {best_hyp}')
     run_with_different_seeds(animal_id, movement_type, feature_names, n=30, num_epochs=150,
                              is_resample=is_resample, sub_section=sub_section, monitored_metric='val_loss',
                              monitored_metric_algo='min', **best_hyp)
