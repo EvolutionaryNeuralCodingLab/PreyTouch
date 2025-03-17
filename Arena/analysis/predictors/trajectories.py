@@ -611,7 +611,7 @@ def hyperparameters_comparison(animal_id='PV91', movement_type='random_low_horiz
     from sklearn.model_selection import ParameterGrid
 
     res_df = []
-    grid = ParameterGrid(dict(dropout_prob=[0.4, 0.6], lstm_layers=[1, 2, 3], lstm_hidden_dim=[64, 128]))
+    grid = ParameterGrid(dict(dropout_prob=[0.2, 0.4, 0.6], lstm_layers=[1, 2, 3, 4], lstm_hidden_dim=[64, 128]))
     for i, params in enumerate(grid):
         if params['lstm_layers'] == 1:
             if params['dropout_prob'] != 0.4:
@@ -786,21 +786,21 @@ if __name__ == '__main__':
     # tj.train(is_plot=True)
     # tj.check_hidden_states()
 
-    # hyperparameters_comparison(animal_id='PV41', movement_type='random_low_horizontal', monitored_metric='val_loss', monitored_metric_algo='min',
-    #                            feature_names=['x', 'y', 'speed_x', 'speed_y'], sub_section=(-1, 60))
+    hyperparameters_comparison(animal_id='PV42', movement_type='random_low_horizontal', monitored_metric='val_loss', monitored_metric_algo='min',
+                               feature_names=['x', 'y', 'speed_x', 'speed_y'], sub_section=(-1, 60))
 
     # find_optimal_span(animal_id='PV163', movement_type='random_low_horizontal')
 
-    for animal_id in ['PV41']:  # ['PV42', 'PV91', 'PV95', 'PV99', 'PV80']
-        # for sub_section in [(-2, 60), (-1.5, 60), (-1, 60), (0, 59)]:
-        for sub_section in [(-1, 119), (-1, 60)]:
-            try:
-                run_with_different_seeds(animal_id, 'random_low_horizontal',
-                                         ['x', 'y', 'speed_x', 'speed_y'], n=30, is_shuffled_target=False,
-                                         is_resample=False, lstm_layers=2, dropout_prob=0.5, lstm_hidden_dim=64, num_epochs=150,
-                                         sub_section=sub_section, monitored_metric='val_loss', monitored_metric_algo='min')
-            except Exception as exc:
-                print(f'Error in animal_id: {animal_id}; {exc}')
+    # for animal_id in ['PV95', 'PV99', 'PV80']:  # ['PV42', 'PV91', 'PV95', 'PV99', 'PV80']
+    #     # for sub_section in [(-2, 60), (-1.5, 60), (-1, 60), (0, 59)]:
+    #     for sub_section in [(-1, 60), (-1, 119)]:
+    #         try:
+    #             run_with_different_seeds(animal_id, 'random_low_horizontal',
+    #                                      ['x', 'y', 'speed_x', 'speed_y'], n=30, is_shuffled_target=False,
+    #                                      is_resample=False, lstm_layers=2, dropout_prob=0.4, lstm_hidden_dim=64, num_epochs=150,
+    #                                      sub_section=sub_section, monitored_metric='val_loss', monitored_metric_algo='min')
+    #         except Exception as exc:
+    #             print(f'Error in animal_id: {animal_id}; {exc}')
 
 
     # find_best_hyperparameters(movement_type='random_low_horizontal', lstm_layers=4, dropout_prob=0.3, is_resample=False)
