@@ -326,7 +326,8 @@ class TrajClassifier(ClassificationTrainer):
         y_true, y_pred, y_score = np.vstack(y_true), np.vstack(y_pred), np.vstack(y_score)
         return y_true, y_pred, y_score
 
-    def all_data_evaluation(self, axes=None, is_test_set=False, is_plot_auc=True, is_full_ablation=True, **kwargs):
+    def all_data_evaluation(self, axes=None, is_test_set=False, is_plot_auc=True, ablate_all_except=True,
+                            is_overall_ablation=False, **kwargs):
         if axes is None:
             fig, axes_ = plt.subplots(1, 4, figsize=(18, 4))
         else:
@@ -337,7 +338,7 @@ class TrajClassifier(ClassificationTrainer):
         att_id = 2 if is_plot_auc else 1
         # self.plot_attention(axes_[att_id], attns)
         self.plot_segment_importance(axes_[att_id])
-        self.plot_ablation(axes_[att_id + 1], is_only_one_feature=is_full_ablation)
+        self.plot_ablation(axes_[att_id + 1], ablate_all_except=ablate_all_except, is_overall_ablation=is_overall_ablation)
 
         y_true_binary = label_binarize(y_true, classes=np.arange(len(self.targets)))
         self.plot_confusion_matrix(y_true, y_pred, ax=axes_[0])
@@ -352,7 +353,7 @@ class TrajClassifier(ClassificationTrainer):
         if axes is None:
             plt.show()
 
-    def calc_ablation(self, segment=None, is_only_one_feature=False):
+    def calc_ablation(self, segment=None, ablate_all_except=False):
         self.model.eval()
         dataset = self.get_dataset()
         ablations = {}
@@ -364,8 +365,8 @@ class TrajClassifier(ClassificationTrainer):
             y_true, y_pred = [], []
             for x, y in dataset:
                 if feature_name != 'control':
-                    if is_only_one_feature:
-                        x = self.ablate_all_except(x, segment, i)
+                    if ablate_all_except:
+                        x = self._ablate_all_except(x, segment, i)
                     else:
                         if segment is not None:
                             x[mask, i] = 0.0
@@ -378,10 +379,10 @@ class TrajClassifier(ClassificationTrainer):
             acc = accuracy_score(y_true, y_pred)
             ablations[feature_name] = acc
 
-        ablations = {k: v - ablations['control'] if not is_only_one_feature else v for k, v in ablations.items() if k != 'control'}
+        ablations = {k: v - ablations['control'] if not ablate_all_except else v for k, v in ablations.items() if k != 'control'}
         return ablations
 
-    def ablate_all_except(self, x, segment, feature_id):
+    def _ablate_all_except(self, x, segment, feature_id):
         for i in range(len(self.feature_names)):
             if i == feature_id:
                 if segment is not None:
@@ -391,17 +392,22 @@ class TrajClassifier(ClassificationTrainer):
                 x[:, i] = 0.0
         return x
 
-    def plot_ablation(self, ax, is_only_one_feature=False):
-        af = []
-        for start_t in np.linspace(self.time_vector[0], self.time_vector[-1]-0.2, 3):
-            seg = (start_t, start_t + 0.2)
-            ablations_dict = self.calc_ablation(segment=seg, is_only_one_feature=is_only_one_feature)
-            ablations_dict['segment'] = np.round(np.mean(seg), 1)
-            af.append(ablations_dict)
-        af = pd.DataFrame(af)
-        af = af.set_index('segment').stack().reset_index().rename(columns={'level_1': 'feature', 0: 'ablation'})
-        sns.barplot(data=af, x='segment', y='ablation', hue='feature', ax=ax)
-        ax.set_xlabel('segment mid [sec]')
+    def plot_ablation(self, ax, ablate_all_except=False, is_overall_ablation=False):
+        if is_overall_ablation:
+            ablations_dict = self.calc_ablation(segment=(self.time_vector[0], self.time_vector[-1]),
+                                                ablate_all_except=ablate_all_except)
+            ax.bar(ablations_dict.keys(), ablations_dict.values())
+        else:
+            af = []
+            for start_t in np.linspace(self.time_vector[0], self.time_vector[-1]-0.2, 3):
+                seg = (start_t, start_t + 0.2)
+                ablations_dict = self.calc_ablation(segment=seg, ablate_all_except=ablate_all_except)
+                ablations_dict['segment'] = np.round(np.mean(seg), 1)
+                af.append(ablations_dict)
+            af = pd.DataFrame(af)
+            af = af.set_index('segment').stack().reset_index().rename(columns={'level_1': 'feature', 0: 'ablation'})
+            sns.barplot(data=af, x='segment', y='ablation', hue='feature', ax=ax)
+            ax.set_xlabel('segment mid [sec]')
 
     def calc_auc(self):
         self.model.eval()
@@ -704,7 +710,7 @@ def run_with_different_seeds(animal_id, movement_type, feature_names, sub_sectio
             af = []
             for start_t in np.linspace(tj.time_vector[0], tj.time_vector[-1] - 0.2, 3):
                 seg = (start_t, start_t + 0.2)
-                ablations_dict = tj.calc_ablation(segment=seg, is_only_one_feature=True)
+                ablations_dict = tj.calc_ablation(segment=seg, ablate_all_except=True)
                 ablations_dict['segment'] = np.mean(seg)
                 af.append(ablations_dict)
             af = pd.DataFrame(af)
