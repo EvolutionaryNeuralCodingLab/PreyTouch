@@ -394,8 +394,7 @@ class TrajClassifier(ClassificationTrainer):
 
     def plot_ablation(self, ax, ablate_all_except=False, is_overall_ablation=False):
         if is_overall_ablation:
-            ablations_dict = self.calc_ablation(segment=(self.time_vector[0], self.time_vector[-1]),
-                                                ablate_all_except=ablate_all_except)
+            ablations_dict = self.calc_ablation(segment=None, ablate_all_except=ablate_all_except)
             ax.bar(ablations_dict.keys(), ablations_dict.values())
         else:
             af = []
@@ -659,6 +658,9 @@ def hyperparameters_comparison(animal_id='PV91', movement_type='random_low_horiz
     print(f'\nbest overall model path: {best_model_path}')
     print('\n' + '#' * 50 + '\n')
 
+    return res_df.query(f'metric=="overall_accuracy"').sort_values(by='value', ascending=False).iloc[0][[
+        'dropout_prob', 'lstm_hidden_dim', 'lstm_layers']].to_dict()
+
 
 def find_best_features(movement_type='random_low_horizontal', lstm_layers=4, dropout_prob=0.3, lstm_hidden_dim=50,
                        is_resample=False):
@@ -785,6 +787,17 @@ def find_optimal_span(animal_id='PV42', movement_type='random_low_horizontal', d
     print(f'\nResults saved to: {filename}')
 
 
+def find_best_and_run_different_seeds(animal_id, movement_type='random_low_horizontal', is_resample=False,
+                                      sub_section=(-1, 60), feature_names=('x', 'y', 'speed_x', 'speed_y')):
+    best_hyp = hyperparameters_comparison(animal_id=animal_id, movement_type=movement_type, monitored_metric='val_loss',
+                               monitored_metric_algo='min', is_resample=is_resample, feature_names=feature_names,
+                               sub_section=sub_section)
+    print(f'\n>>> start run_with_different_seeds with: {best_hyp}\n')
+    run_with_different_seeds(animal_id, movement_type, feature_names, n=30, num_epochs=150,
+                             is_resample=is_resample, sub_section=sub_section, monitored_metric='val_loss',
+                             monitored_metric_algo='min', **best_hyp)
+
+
 if __name__ == '__main__':
     # tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=(0, 60), is_resample=False,
     #                     animal_id='PV91', movement_type='random_low_horizontal', is_hit=False, lstm_layers=4,
@@ -792,8 +805,11 @@ if __name__ == '__main__':
     # tj.train(is_plot=True)
     # tj.check_hidden_states()
 
-    hyperparameters_comparison(animal_id='PV42', movement_type='random_low_horizontal', monitored_metric='val_loss', monitored_metric_algo='min',
-                               feature_names=['x', 'y', 'speed_x', 'speed_y'], sub_section=(-1, 60))
+    for animal_id_ in ['PV42', 'PV91', 'PV41']:
+        find_best_and_run_different_seeds(animal_id_, sub_section=(-1, 30))
+
+    # hyperparameters_comparison(animal_id='PV42', movement_type='random_low_horizontal', monitored_metric='val_loss', monitored_metric_algo='min',
+    #                            feature_names=['x', 'y', 'speed_x', 'speed_y'], sub_section=(-1, 60))
 
     # find_optimal_span(animal_id='PV163', movement_type='random_low_horizontal')
 
@@ -807,18 +823,3 @@ if __name__ == '__main__':
     #                                      sub_section=sub_section, monitored_metric='val_loss', monitored_metric_algo='min')
     #         except Exception as exc:
     #             print(f'Error in animal_id: {animal_id}; {exc}')
-
-
-    # find_best_hyperparameters(movement_type='random_low_horizontal', lstm_layers=4, dropout_prob=0.3, is_resample=False)
-
-    # find_best_features(movement_type='circle', lstm_layers=6, dropout_prob=0.5, is_resample=True)
-    # for movement_type in ['random_low_horizontal', 'circle']:
-    #     for animal_id in ['PV91', 'PV163', 'PV99', 'PV80', 'PV85', 'all']:  # 'PV42',
-    #         hyperparameters_comparison(animal_id=animal_id, movement_type=movement_type,
-    #                                    feature_names=['x', 'y', 'speed'], sub_section=(-1, 60))
-    # animals_comparison()
-    # plot_comparison('/Users/regev/PhD/msi/Pogona_Pursuit/output/datasets/trajectories/results_2024-06-24T16:43:58.880310.csv')
-
-    # tj = TrajClassifier(
-    #     model_path='/media/sil2/Data/regev/datasets/trajs/traj_classifier_all_random_low_horizontal/20240722_105828')
-    # tj.check_hidden_states()
