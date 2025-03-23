@@ -456,7 +456,7 @@ class TrajClassifier(ClassificationTrainer):
         ax.set_ylabel('Y Coordinate')
         ax.set_title('Attention Weights over Trajectory')
 
-    def calc_segment_importance(self, max_allocation=27840):
+    def calc_segment_importance(self, max_segments=116):
         torch.backends.cudnn.enabled = False
         self.model.eval()
         ig = IntegratedGradients(self.model)
@@ -466,6 +466,7 @@ class TrajClassifier(ClassificationTrainer):
         input_tensors = {}
         for x, y in dataset:
             if not max_examples:
+                max_allocation = max_segments * 120 * len(self.feature_names) / self.lstm_layers
                 max_examples = int(np.floor(max_allocation / torch.mul(*x.size()).item()))
             y = y.item()
             input_tensors.setdefault(y, []).append(x.to(self.device))
@@ -689,8 +690,9 @@ def find_best_features(movement_type='random_low_horizontal', lstm_layers=4, dro
 
 def run_with_different_seeds(animal_id, movement_type, feature_names, sub_section=(-1, 60),
                              n=10, is_run_feature_importance=True, is_plot=True, is_save=True,
-                             ablate_all_except=True, **kwargs):
-    res = {'metrics': [], 'ig': {}, 'ablation': []}
+                             ablate_all_except=False, **kwargs):
+    abl_col = 'ablation_single' if not ablate_all_except else 'ablate_all'
+    res = {'metrics': [], 'ig': {}, abl_col: []}
     for s in range(n):
         print(f'\n>>>>> Start iteration {s+1}/{n} for seed {s}...')
         tj = TrajClassifier(save_model_dir=TRAJ_DIR, feature_names=feature_names, seed=s, sub_section=sub_section, is_debug=False,
@@ -723,7 +725,7 @@ def run_with_different_seeds(animal_id, movement_type, feature_names, sub_sectio
             # create dataframe of ablation and stack to feature column
             af = pd.DataFrame(af)
             af = af.set_index('segment').stack().reset_index().rename(columns={'level_1': 'feature', 0: 'ablation'})
-            res['ablation'].append(af)
+            res[abl_col].append(af)
         torch.cuda.empty_cache()
         time.sleep(1)
 
@@ -732,7 +734,7 @@ def run_with_different_seeds(animal_id, movement_type, feature_names, sub_sectio
     for bug_speed in res['ig'].keys():
         res['ig'][bug_speed] = np.vstack(res['ig'][bug_speed])
     # convert the ablations dicts into a DataFrame with columns for feature-name and ablation
-    res['ablation'] = pd.concat(res['ablation'])
+    res[abl_col] = pd.concat(res[abl_col])
 
     if is_plot:
         fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(10, 4))
@@ -740,7 +742,7 @@ def run_with_different_seeds(animal_id, movement_type, feature_names, sub_sectio
         sns.barplot(data=res['metrics'], x='metric', y='value', ax=axes[0])
         axes[0].set_xticks(axes[0].get_xticks(), axes[0].get_xticklabels(), rotation=45, ha='right')
         # plot ablation results as bars with errors
-        sns.barplot(data=res['ablation'], x='segment', y='ablation', hue='feature', ax=axes[1])
+        sns.barplot(data=res[abl_col], x='segment', y='ablation', hue='feature', ax=axes[1])
         axes[1].set_xlabel('segment mid [sec]')
         # print ig curves for each bug speed and average ig curve
         mean_ig = []
@@ -810,21 +812,18 @@ if __name__ == '__main__':
     # tj.train(is_plot=True)
     # tj.check_hidden_states()
 
-    for animal_id_ in ['PV42', 'PV91', 'PV41']:
-        find_best_and_run_different_seeds(animal_id_, sub_section=(-1, 30))
+    # for animal_id_ in ['PV99', 'PV41']:
+    #     find_best_and_run_different_seeds(animal_id_, sub_section=(-1, 60))
+    for animal_id_ in ['PV42', 'PV91', 'PV95', 'PV41']:
+        find_best_and_run_different_seeds(animal_id_, sub_section=(-1, 30), feature_names=['y', 'speed_y'])
+        find_best_and_run_different_seeds(animal_id_, sub_section=(-1, 30), feature_names=['x', 'speed_x'])
 
     # hyperparameters_comparison(animal_id='PV42', movement_type='random_low_horizontal', monitored_metric='val_loss', monitored_metric_algo='min',
     #                            feature_names=['x', 'y', 'speed_x', 'speed_y'], sub_section=(-1, 60))
 
     # find_optimal_span(animal_id='PV163', movement_type='random_low_horizontal')
 
-    # for animal_id in ['PV95', 'PV99', 'PV80']:  # ['PV42', 'PV91', 'PV95', 'PV99', 'PV80']
-    #     # for sub_section in [(-2, 60), (-1.5, 60), (-1, 60), (0, 59)]:
-    #     for sub_section in [(-1, 60), (-1, 119)]:
-    #         try:
-    #             run_with_different_seeds(animal_id, 'random_low_horizontal',
-    #                                      ['x', 'y', 'speed_x', 'speed_y'], n=30, is_shuffled_target=False,
-    #                                      is_resample=False, lstm_layers=2, dropout_prob=0.4, lstm_hidden_dim=64, num_epochs=150,
-    #                                      sub_section=sub_section, monitored_metric='val_loss', monitored_metric_algo='min')
-    #         except Exception as exc:
-    #             print(f'Error in animal_id: {animal_id}; {exc}')
+    # run_with_different_seeds('PV41', 'random_low_horizontal',
+    #                          ['x', 'y', 'speed_x', 'speed_y'], n=30, is_shuffled_target=False,
+    #                          is_resample=False, lstm_layers=4, dropout_prob=0.4, lstm_hidden_dim=128, num_epochs=150,
+    #                          sub_section=(-1, 119), monitored_metric='val_loss', monitored_metric_algo='min')
