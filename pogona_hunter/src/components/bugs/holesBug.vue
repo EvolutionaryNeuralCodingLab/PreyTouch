@@ -83,6 +83,42 @@ export default {
     },
     isCounterClockWise: function () {
       return this.isLeftExit
+    },
+    // bugEntranceHoleCenter() {
+    //   if (!this.entranceHolePos || this.entranceHolePos.length < 2) {
+    //     console.error('entranceHolePos invalid:', this.entranceHolePos)
+    //     return [0, 0] // safe fallback explicitly
+    //   }
+    //   return [
+    //     this.entranceHolePos[0] + this.holeSize[0] / 2,
+    //     this.entranceHolePos[1] + this.holeSize[1] / 2
+    //   ]
+    // },
+    // bugExitHoleCenter() {
+    //   if (!this.exitHolePos || this.exitHolePos.length < 2) {
+    //     console.error('exitHolePos invalid:', this.exitHolePos)
+    //     return [0, 0] // safe fallback explicitly
+    //   }
+    //   return [
+    //     this.exitHolePos[0] + this.holeSize[0] / 2,
+    //     this.exitHolePos[1] + this.holeSize[1] / 2
+    //   ]
+    // }
+    bugEntranceHoleCenter() {
+      let [x, y] = this.entranceHolePos
+      if (this.bugsSettings.isSplitMirror && this.bugId % 2 !== 0) {
+        // explicitly mirror position for second bug
+        x = this.canvas.width - x
+      }
+      return [x + this.holeSize[0] / 4, y + this.holeSize[1] / 2] // holeSize[0]/4 due to half-sized hole
+    },
+    bugExitHoleCenter() {
+      let [x, y] = this.exitHolePos
+      if (this.bugsSettings.isSplitMirror && this.bugId % 2 !== 0) {
+        // explicitly mirror position for second bug
+        x = this.canvas.width - x
+      }
+      return [x + this.holeSize[0] / 4, y + this.holeSize[1] / 2]
     }
   },
   methods: {
@@ -92,7 +128,11 @@ export default {
         return
       }
       this.frameCounter++
-      this.edgeDetection()
+      if (this.bugsSettings.isSplitBugsView) {
+          this.splitViewEdgeDetection()
+      } else {
+          this.edgeDetection()
+      }
       this.checkHoleRetreat()
       // circle
       if (this.isHalfCircleMovement || (this.isMoveInCircles && !this.isHoleRetreatStarted)) {
@@ -160,10 +200,19 @@ export default {
       this.vy = this.currentSpeed * Math.sin(nextAngle)
     },
     initiateStartPosition() {
-      this.x = this.entranceHolePos[0] + (this.bugsSettings.holeSize[0] / 2)
-      this.y = this.entranceHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
-      this.xTarget = this.exitHolePos[0] + (this.bugsSettings.holeSize[0] / 2)
-      this.yTarget = this.exitHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
+     console.log('Bug', this.bugId, 'entranceHolePos:', this.entranceHolePos)
+      console.log('Bug', this.bugId, 'exitHolePos:', this.exitHolePos)
+
+      const [startX, startY] = this.bugEntranceHoleCenter
+      this.x = startX
+      this.y = startY
+
+      const [targetX, targetY] = this.bugExitHoleCenter
+      this.xTarget = targetX
+      this.yTarget = targetY
+
+      console.log('Bug', this.bugId, 'x/y:', this.x, this.y, 'targetX/targetY:', this.xTarget, this.yTarget)
+
       this.isRetreated = false
       this.isHoleRetreatStarted = false
       this.isCircleTrackReached = true

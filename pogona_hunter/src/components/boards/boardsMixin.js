@@ -8,6 +8,8 @@ export default {
       bugsProps: [],
       bugsSettings: {
         numOfBugs: process.env.NUM_BUGS,
+        isSplitBugsView: process.env.IS_SPLIT_BUGS_VIEW,
+        isSplitMirror: process.env.IS_SPLIT_MIRROR,
         trialID: null,
         trialDBId: null,
         numTrials: null, // deprecated. Trials are governed by the experiment
@@ -214,6 +216,7 @@ export default {
         let isRewardBug = strikeDistances[i][2]
         if ((isHit || isRewardAnyTouch) && !this.isClimbing && !this.isBloodOnScreen) {
             this.destruct(i, x, y, isRewardBug)
+            this.$emit('bugHit', {bugId: bug.bugId, isRewardBug: isRewardBug})
         }
         this.logTouch(x, y, bug, isHit, isRewardBug, isRewardAnyTouch)
       }

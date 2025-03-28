@@ -4,19 +4,23 @@
       <audio ref="audio1">
         <source src="../../assets/sounds/2.mp3" type="audio/mpeg">
       </audio>
-      <canvas id="backgroundCanvas" v-bind:style="{background: bugsSettings.backgroundColor}"
+      <canvas id="backgroundCanvas" ref="backgroundCanvas" v-bind:style="{background: bugsSettings.backgroundColor}"
               v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"></canvas>
-      <canvas id="bugCanvas" v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"
+      <canvas id="bugCanvas" ref="bugCanvas" v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"
               v-on:mousedown="setCanvasClick($event)">
-                <holes-bug v-for="(value, index) in bugsProps"
-                   :key="index"
-                   :bug-id="index"
-                   :bugsSettings="bugsSettings"
-                   :exit-hole-pos="exitHolePos"
-                   :entrance-hole-pos="entranceHolePos"
-                   ref="bugChild"
-                   v-on:bugRetreated="endTrial">
-                </holes-bug>
+              <component
+                :is="bugComponent"
+                v-for="(value, index) in bugsProps"
+                :key="index"
+                :bug-id="index"
+                :bugsSettings="bugsSettings"
+                :exit-hole-pos="exitHolePos"
+                :entrance-hole-pos="entranceHolePos"
+                v-bind="value"
+                ref="bugChild"
+                v-on:bugRetreated="endTrial"
+                v-on:bugHit="$emit('bugHit', $event)"
+              />
       </canvas>
     </div>
   </div>
@@ -28,8 +32,22 @@ import boardsMixin from './boardsMixin'
 
 export default {
   name: 'holesBoard',
-  components: {holesBug},
   mixins: [boardsMixin],
+  components: {holesBug},
+  props: {
+    bugComponent: {
+      type: [Object, String],
+      default: 'holesBug'
+    },
+    bugDetails: {
+      type: Array,
+      default: null
+    },
+    entranceHole: {
+      type: Array,
+      default: null
+    }
+  },
   data() {
     return {
       bugsSettings: { // extends the mixin's bugSettings
@@ -54,9 +72,17 @@ export default {
       }
     },
     exitHolePos: function () {
-      return this.holesPositions[this.bugsSettings.exitHole]
+      // if (this.entranceHole) {
+      //   console.log(this.holesPositions)
+      //   return this.holesPositions
+      // }
+      const exitHole = this.bugsSettings.exitHole
+      return this.holesPositions[exitHole]
     },
     entranceHolePos: function () {
+      // if (this.entranceHole) {
+      //   return this.exitHolePos
+      // }
       let entranceHole = this.bugsSettings.exitHole === 'left' ? 'right' : 'left'
       return this.holesPositions[entranceHole]
     }
@@ -68,11 +94,12 @@ export default {
       let ctx = canvas.getContext('2d')
       let [holeW, holeH] = this.bugsSettings.holeSize
       let that = this
+      image.src = require('@/assets/hole2.png')
+
       image.onload = function () {
         ctx.drawImage(image, that.exitHolePos[0], that.exitHolePos[1], holeW, holeH)
         ctx.drawImage(image, that.entranceHolePos[0], that.entranceHolePos[1], holeW, holeH)
       }
-      image.src = require('@/assets/hole2.png')
     },
     extraTrialData: function () {
       let d = {
