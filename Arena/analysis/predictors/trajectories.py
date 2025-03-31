@@ -326,7 +326,7 @@ class TrajClassifier(ClassificationTrainer):
         y_true, y_pred, y_score = np.vstack(y_true), np.vstack(y_pred), np.vstack(y_score)
         return y_true, y_pred, y_score
 
-    def all_data_evaluation(self, axes=None, is_test_set=False, is_plot_auc=True, ablate_all_except=True,
+    def all_data_evaluation(self, axes=None, is_test_set=False, is_plot_auc=True, ablate_all_except=False,
                             is_overall_ablation=False, **kwargs):
         if axes is None:
             fig, axes_ = plt.subplots(1, 4, figsize=(18, 4))
