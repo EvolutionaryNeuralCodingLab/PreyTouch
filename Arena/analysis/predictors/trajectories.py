@@ -805,6 +805,50 @@ def find_best_and_run_different_seeds(animal_id, movement_type='random_low_horiz
                              monitored_metric_algo='min', **best_hyp)
 
 
+animals_hyperparameters = {
+    (-1, 30): {
+        'PV42': {'dropout_prob': 0.6, 'lstm_hidden_dim': 64, 'lstm_layers': 3},
+        'PV91': {'dropout_prob': 0.0, 'lstm_hidden_dim': 128, 'lstm_layers': 1},
+        'PV41': {'dropout_prob': 0.4, 'lstm_hidden_dim': 128, 'lstm_layers': 3},
+        'PV80': {'dropout_prob': 0.4, 'lstm_hidden_dim': 128, 'lstm_layers': 4},
+        'PV95': {'dropout_prob': 0.4, 'lstm_hidden_dim': 128, 'lstm_layers': 4},
+        'PV99': {'dropout_prob': 0.2, 'lstm_hidden_dim': 128, 'lstm_layers': 3},
+    },
+    (-1, 60): {
+        'PV42': {'dropout_prob': 0.2, 'lstm_hidden_dim': 128, 'lstm_layers': 3},
+        'PV91': {'dropout_prob': 0.4, 'lstm_hidden_dim': 128, 'lstm_layers': 3},
+        'PV95': {'dropout_prob': 0.2, 'lstm_hidden_dim': 128, 'lstm_layers': 3},
+        'PV99': {'dropout_prob': 0.4, 'lstm_hidden_dim': 64, 'lstm_layers': 3},
+        'PV80': {'dropout_prob': 0.2, 'lstm_hidden_dim': 128, 'lstm_layers': 4},
+        'PV41': {'dropout_prob': 0.2, 'lstm_hidden_dim': 64, 'lstm_layers': 4},
+    },
+    (-1, 119): {
+        'PV42': {'dropout_prob': 0.6, 'lstm_hidden_dim': 64, 'lstm_layers': 4},
+        'PV91': {'dropout_prob': 0.2, 'lstm_hidden_dim': 128, 'lstm_layers': 3},
+        'PV95': {'dropout_prob': 0.2, 'lstm_hidden_dim': 128, 'lstm_layers': 3},
+        'PV99': {'dropout_prob': 0.4, 'lstm_hidden_dim': 64, 'lstm_layers': 2},
+        'PV80': {'dropout_prob': 0.4, 'lstm_hidden_dim': 128, 'lstm_layers': 4},
+        'PV41': {'dropout_prob': 0.4, 'lstm_hidden_dim': 128, 'lstm_layers': 4},
+    },
+    (-1.5, 120): {
+        'PV42': {'dropout_prob': 0.4, 'lstm_hidden_dim': 128, 'lstm_layers': 4},
+        'PV91': {'dropout_prob': 0.4, 'lstm_hidden_dim': 128, 'lstm_layers': 3},
+        'PV95': {'dropout_prob': 0.2, 'lstm_hidden_dim': 128, 'lstm_layers': 4},
+        'PV99': {'dropout_prob': 0.2, 'lstm_hidden_dim': 128, 'lstm_layers': 3},
+        'PV80': {'dropout_prob': 0.4, 'lstm_hidden_dim': 64, 'lstm_layers': 3},
+        'PV41': {'dropout_prob': 0.6, 'lstm_hidden_dim': 128, 'lstm_layers': 4},
+    },
+    (-1.5, 60): {
+        'PV42': {'dropout_prob': 0.2, 'lstm_hidden_dim': 128, 'lstm_layers': 3},
+        'PV91': {'dropout_prob': 0.2, 'lstm_hidden_dim': 64, 'lstm_layers': 3},
+        'PV95': {'dropout_prob': 0.2, 'lstm_hidden_dim': 128, 'lstm_layers': 4},
+        'PV99': {'dropout_prob': 0.6, 'lstm_hidden_dim': 128, 'lstm_layers': 3},
+        'PV80': {'dropout_prob': 0.4, 'lstm_hidden_dim': 128, 'lstm_layers': 3},
+        'PV41': {'dropout_prob': 0.4, 'lstm_hidden_dim': 64, 'lstm_layers': 2},
+    }
+}
+
+
 if __name__ == '__main__':
     # tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=(0, 60), is_resample=False,
     #                     animal_id='PV91', movement_type='random_low_horizontal', is_hit=False, lstm_layers=4,
@@ -812,18 +856,15 @@ if __name__ == '__main__':
     # tj.train(is_plot=True)
     # tj.check_hidden_states()
 
-    # for animal_id_ in ['PV99', 'PV41']:
-    #     find_best_and_run_different_seeds(animal_id_, sub_section=(-1, 60))
-    for animal_id_ in ['PV42', 'PV91', 'PV95', 'PV41']:
-        find_best_and_run_different_seeds(animal_id_, sub_section=(-1, 30), feature_names=['y', 'speed_y'])
-        find_best_and_run_different_seeds(animal_id_, sub_section=(-1, 30), feature_names=['x', 'speed_x'])
+    for animal_id_ in ['PV99', 'PV80', 'PV41']:
+        # find_best_and_run_different_seeds(animal_id_, sub_section=(-1.5, 60),
+        #                                   feature_names=['x', 'y', 'speed_x', 'speed_y'])
+        run_with_different_seeds(animal_id_, 'random_low_horizontal', ['x', 'y', 'speed_x', 'speed_y'], n=10, num_epochs=150,
+                                 is_resample=False, sub_section=(-1.5, 60), monitored_metric='val_loss', is_shuffled_target=True,
+                                 monitored_metric_algo='min', **animals_hyperparameters[(-1.5, 60)][animal_id_])
 
     # hyperparameters_comparison(animal_id='PV42', movement_type='random_low_horizontal', monitored_metric='val_loss', monitored_metric_algo='min',
     #                            feature_names=['x', 'y', 'speed_x', 'speed_y'], sub_section=(-1, 60))
 
     # find_optimal_span(animal_id='PV163', movement_type='random_low_horizontal')
 
-    # run_with_different_seeds('PV41', 'random_low_horizontal',
-    #                          ['x', 'y', 'speed_x', 'speed_y'], n=30, is_shuffled_target=False,
-    #                          is_resample=False, lstm_layers=4, dropout_prob=0.4, lstm_hidden_dim=128, num_epochs=150,
-    #                          sub_section=(-1, 119), monitored_metric='val_loss', monitored_metric_algo='min')
