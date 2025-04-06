@@ -92,11 +92,7 @@ export default {
                 this.draw()
                 return
             }
-            if (this.bugsSettings.isSplitBugsView || this.bugsSettings.isSplitMirror) {
-                this.splitViewEdgeDetection()
-            } else {
-                this.edgeDetection()
-            }
+            this.edgeDetection()
             this.straightMove()
             this.draw()
         },
@@ -112,24 +108,6 @@ export default {
             if (this.x < radius || this.x > this.canvas.width - radius ||
                 this.y < radius || this.y > this.canvas.height - radius) {
                 this.setAfterEdgeAngle()
-            }
-        },
-        splitViewEdgeDetection() {
-          console.log('detecting')
-            if (this.bugsSettings.movementType === 'low_horizontal') {
-              // For low_horizontal bugs, always retreat toward exit with a fixed direction of -π
-              this.directionAngle = -Math.PI
-              return
-            }
-            if (this.isChangingDirection) return
-
-            const radius = this.isInsidePolicy ? this.currentBugSize / 2 : -this.currentBugSize
-            const exceedsLeft = this.x < this.leftBoundary + radius
-            const exceedsRight = this.x > this.rightBoundary - radius
-            const exceedsY = this.y < radius || this.y > this.canvas.height - radius
-
-            if (exceedsLeft || exceedsRight || exceedsY) {
-                this.setAfterEdgeAngleSplitView(this.leftBoundary, this.rightBoundary, radius)
             }
         },
         setAfterEdgeAngle() {
@@ -259,27 +237,6 @@ export default {
             }
             return angles
         },
-        getNotBlockedAnglesSplitView() {
-          const angles = []
-          const borderDistances = {
-              top: this.y,
-              bottom: this.canvas.height - this.y,
-              left: this.x - this.leftBoundary,
-              right: this.rightBoundary - this.x
-          }
-          const bordersAngles = {
-              top: 3 * Math.PI / 2,
-              bottom: Math.PI / 2,
-              left: Math.PI,
-              right: 0
-          }
-          for (const [key, angle] of Object.entries(bordersAngles)) {
-              if (borderDistances[key] > this.minDistFromObstacle) {
-                  angles.push(angle)
-              }
-          }
-          return angles
-      },
         changeDirectionTimeout() {
             this.isChangingDirection = true
             let t = setTimeout(() => {

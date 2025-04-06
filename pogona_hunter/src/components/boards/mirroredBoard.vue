@@ -2,6 +2,7 @@
 <template>
   <holes-board :bugsProps="mirrorBugsProps"
                :bugsSettings="mirrorBugsSettings"
+               :bug-details="mirrorBugsProps"
                :bug-component="bugComponent"
                :entrance-hole="mirrorBugsSettings.entranceHole"
                ref="board"/>
@@ -17,7 +18,6 @@ export default {
   data() {
     return {
       bugComponent: mirroredBug
-      // entranceHole: ['left', 'right']
     }
   },
   props: ['bugsSettings'],
@@ -26,29 +26,32 @@ export default {
       return ['left', 'right']
     },
     mirrorBugsProps() {
-      const total = this.bugsSettings.numOfBugs
-      const half = Math.ceil(total / 2)
-      const width = window.innerWidth
-      const height = window.innerHeight
+      const total = this.bugsSettings.bugTypes.length
+      const half = Math.floor(total / 2)
 
-      const sideProps = (count, startX, endX, offset = 0) => {
-        const spacing = (endX - startX) / count
-        return Array.from({length: count}, (_, i) => ({
-          x: startX + spacing * (i + 0.5),
-          y: height / 2,
-          bugId: `${this.bugsSettings.bugTypes[offset + i] || 'bug'}_${offset + i}`
-        }))
-      }
+      const leftSide = this.bugsSettings.bugTypes.slice(0, half).map((type, i) => ({
+        entranceHole: 'left',
+        exitHole: 'left',
+        bugId: `${type}_${i}`
+      }))
 
-      const left = sideProps(half, 0, width / 2, 0)
-      const right = sideProps(total - half, width / 2, width, half)
+      const rightSide = this.bugsSettings.bugTypes.slice(half).map((type, i) => {
+        const index = i + half
+        return {
+          entranceHole: 'right',
+          exitHole: 'right',
+          bugId: `${type}_${index}`
+        }
+      })
 
-      return [...left, ...right]
+      const props = [...leftSide, ...rightSide]
+      return props
     },
     mirrorBugsSettings() {
       return {
         ...this.bugsSettings,
-        entranceHole: ['left', 'right']
+        entranceHole: ['left', 'right'],
+        circleRadiusScale: 0.3
       }
     }
   }

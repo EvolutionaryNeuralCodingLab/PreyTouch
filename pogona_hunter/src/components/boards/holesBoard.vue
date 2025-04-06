@@ -14,8 +14,8 @@
                 :key="index"
                 :bug-id="index"
                 :bugsSettings="bugsSettings"
-                :exit-hole-pos="exitHolePos"
-                :entrance-hole-pos="entranceHolePos"
+                :exit-hole-pos="exitHolePos(index)"
+                :entrance-hole-pos="entranceHolePos(index)"
                 v-bind="value"
                 ref="bugChild"
                 v-on:bugRetreated="endTrial"
@@ -70,21 +70,6 @@ export default {
         left: [this.xpad, canvasH - holeH - configuredHolesHeight],
         right: [canvasW - holeW - this.xpad, canvasH - holeH - configuredHolesHeight]
       }
-    },
-    exitHolePos: function () {
-      // if (this.entranceHole) {
-      //   console.log(this.holesPositions)
-      //   return this.holesPositions
-      // }
-      const exitHole = this.bugsSettings.exitHole
-      return this.holesPositions[exitHole]
-    },
-    entranceHolePos: function () {
-      // if (this.entranceHole) {
-      //   return this.exitHolePos
-      // }
-      let entranceHole = this.bugsSettings.exitHole === 'left' ? 'right' : 'left'
-      return this.holesPositions[entranceHole]
     }
   },
   methods: {
@@ -93,13 +78,31 @@ export default {
       let canvas = document.getElementById('backgroundCanvas')
       let ctx = canvas.getContext('2d')
       let [holeW, holeH] = this.bugsSettings.holeSize
-      let that = this
+      // let that = this
       image.src = require('@/assets/hole2.png')
 
-      image.onload = function () {
-        ctx.drawImage(image, that.exitHolePos[0], that.exitHolePos[1], holeW, holeH)
-        ctx.drawImage(image, that.entranceHolePos[0], that.entranceHolePos[1], holeW, holeH)
+      image.onload = () => {
+         Object.values(this.holesPositions).forEach(pos => {
+          ctx.drawImage(image, pos[0], pos[1], holeW, holeH)
+          console.log('Drawing holes', pos[0], pos[1], holeW, holeH)
+        })
+     }
+    },
+    exitHolePos: function (bugId) {
+      if (this.entranceHole) {
+        const exit = this.bugDetails[bugId].exitHole
+        return this.holesPositions[exit]
       }
+      const exitHole = this.bugsSettings.exitHole
+      return this.holesPositions[exitHole]
+    },
+    entranceHolePos: function (bugId) {
+      if (this.entranceHole) {
+        const entrance = this.bugDetails[bugId].entranceHole
+        return this.holesPositions[entrance]
+      }
+      let entranceHole = this.bugsSettings.exitHole === 'left' ? 'right' : 'left'
+      return this.holesPositions[entranceHole]
     },
     extraTrialData: function () {
       let d = {

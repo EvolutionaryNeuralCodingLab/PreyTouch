@@ -24,9 +24,8 @@ export default {
   computed: {
     defaultSettings() {
       return {
-       numOfBugs: process.env.NUM_BUGS,
+        numOfBugs: process.env.NUM_BUGS,
         isSplitBugsView: process.env.IS_SPLIT_BUGS_VIEW,
-        isSplitMirror: process.env.IS_SPLIT_MIRROR,
         trialID: null,
         trialDBId: null,
         numTrials: null, // deprecated. Trials are governed by the experiment
@@ -41,7 +40,8 @@ export default {
         backgroundColor: '#e8eaf6',
         rewardAnyTouchProb: 0,
         accelerateMultiplier: 3, // times to increase bug speed in tongue detection
-        isKillingAllByOneHit: process.env.IS_KILLING_ALL_BY_ONE_HIT // if true, all bugs will disapear when one is hit successfully
+        isKillingAllByOneHit: process.env.IS_KILLING_ALL_BY_ONE_HIT, // if true, all bugs will disapear when one is hit successfully
+        randomizeTiming: process.env.RANDOMIZE_TIMING || 1// 0 - no randomization, 1 - randomize between 0 and 1
       }
     },
 
@@ -62,7 +62,7 @@ export default {
     },
 
     boardComponent() {
-      const component = this.mergedSettings.isSplitMirror ? mirroredBoard : holesBoard
+      const component = this.mergedSettings.isSplitBugsView ? mirroredBoard : holesBoard
       console.log(`Loading ${component.name}`)
       return component
     }

@@ -106,18 +106,10 @@ export default {
     // }
     bugEntranceHoleCenter() {
       let [x, y] = this.entranceHolePos
-      if (this.bugsSettings.isSplitMirror && this.bugId % 2 !== 0) {
-        // explicitly mirror position for second bug
-        x = this.canvas.width - x
-      }
-      return [x + this.holeSize[0] / 4, y + this.holeSize[1] / 2] // holeSize[0]/4 due to half-sized hole
+      return [x + this.holeSize[0] / 4, y + this.holeSize[1] / 2]
     },
     bugExitHoleCenter() {
       let [x, y] = this.exitHolePos
-      if (this.bugsSettings.isSplitMirror && this.bugId % 2 !== 0) {
-        // explicitly mirror position for second bug
-        x = this.canvas.width - x
-      }
       return [x + this.holeSize[0] / 4, y + this.holeSize[1] / 2]
     }
   },
@@ -128,11 +120,7 @@ export default {
         return
       }
       this.frameCounter++
-      if (this.bugsSettings.isSplitBugsView) {
-          this.splitViewEdgeDetection()
-      } else {
-          this.edgeDetection()
-      }
+      this.edgeDetection()
       this.checkHoleRetreat()
       // circle
       if (this.isHalfCircleMovement || (this.isMoveInCircles && !this.isHoleRetreatStarted)) {
