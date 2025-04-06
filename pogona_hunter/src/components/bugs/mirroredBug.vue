@@ -15,12 +15,16 @@ export default {
     bugId: Number,
     bugsSettings: Object,
     entranceHolePos: Array,
-    exitHolePos: Array
+    exitHolePos: Array,
+    bugDetails: Object
   },
   data() {
     return {
-      isRetreating: false,
-      isChangingDirection: false
+      isChangingDirection: false,
+      angle: 0,
+      entryAngle: null,
+      retreatTurningFrames: 10,
+      retreatTurningProgress: 0
     }
   },
   computed: {
@@ -30,11 +34,23 @@ export default {
     isRightExit() {
       return this.bugId % 2 === 1
     },
-    iLeftExit() {
+    isLeftExit() {
       return this.bugId % 2 === 0
     },
     screenMidX() {
       return (this.canvas && this.canvas.width / 2) || 0
+    },
+    entranceHole() {
+      return this.entranceHolePos
+    },
+    exitHole() {
+      return this.exitHolePos
+    },
+    entranceDelay() {
+      return this.bugId * 10 * this.bugsSettings.randomizeTiming
+    },
+    entranceApproachDuration() {
+      return this.bugId * (Math.random() * 2000) * this.bugsSettings.randomizeTiming
     }
   },
   methods: {
@@ -47,6 +63,9 @@ export default {
       this.isJumped = false
       this.frameCounter = 0
     },
+    loadNextBugType() {
+      this.currentBugType = this.bugsSettings.bugTypes[this.bugId]
+    },
     move() {
       if (this.isDead || this.isRetreated || (this.isJumped && this.isJumpUpMovement)) {
         this.draw()
@@ -54,33 +73,69 @@ export default {
       }
       this.frameCounter++
 
-      // Check if the bug is inside any hole boundaries. If yes, end the trial.
-      if (this.frameCounter > (this.numFramesToRetreat / 2) && this.isInsideHoleBoundaries()) {
-        this.$emit('bugRetreated', this.bugId)
+      if (this.frameCounter < this.entranceDelay && this.bugId) {
         return
       }
 
-      this.edgeDetection()
       this.checkHoleRetreat()
-      if (this.isHalfCircleMovement || (this.isMoveInCircles && !this.isHoleRetreatStarted)) {
-        this.circularMove()
-      } else if (this.isNoisyLowHorizontalMovement) {
-        this.checkNoisyTrack()
-        if (this.isNoisyPartReached) {
-          this.noisyMove()
+
+      if (this.isHoleRetreatStarted) {
+        this.linearRetreatMove()
+        this.draw()
+        return
+      }
+
+      if (this.bugsSettings.movementType.includes('circle') && !this.isHoleRetreatStarted) {
+        if (this.frameCounter < ((this.entranceDelay + this.entranceApproachDuration) / (1000 / 60))) {
+          const totalSteps = this.entranceApproachDuration / (1000 / 60)
+          const step = (this.frameCounter - (this.entranceDelay / (1000 / 60))) / totalSteps
+          const outsideX = this.x - (this.isLeftExit ? this.holeSize / 2 : -this.holeSize / 2)
+          const outsideY = this.y
+          this.x = outsideX + (this.x - outsideX) * step
+          this.y = outsideY + (this.y - outsideY) * step
         } else {
-          this.straightMove(0)
+          this.circularMove()
+          this.draw()
         }
-      } else if (this.isLowHorizontalMovement) {
-        this.straightMove(0)
-      } else if (this.isJumpUpMovement || this.isAccelerateMovement) {
-        this.straightMove(0)
       } else {
         this.straightMove()
+        this.draw()
       }
-      this.draw()
     },
+    linearRetreatMove() {
+      // dx, dy => vector from current position to exit hole
+      const dx = this.xTarget - this.x
+      const dy = this.yTarget - this.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      const speed = 20
 
+      if (this.retreatTurningProgress < this.retreatTurningFrames) {
+        // angle from bug to hole
+        const desiredAngle = Math.atan2(dy, dx)
+
+        // normalized difference between desiredAngle and current this.angle
+        const deltaAngle = (desiredAngle - this.angle + Math.PI * 3) % (Math.PI * 2) - Math.PI
+
+        this.angle += deltaAngle / (this.retreatTurningFrames - this.retreatTurningProgress)
+        this.retreatTurningProgress++
+        return
+      }
+
+      // If done turning, move forward at 'speed' in that angle
+      this.vx = Math.cos(this.angle) * speed
+      this.vy = Math.sin(this.angle) * speed
+
+      // if inside the hole boundary => finalize
+      if (dist < speed || this.isInsideExitHoleBoundaries()) {
+        this.x = this.xTarget
+        this.y = this.yTarget
+        this.hideBug()
+        return
+      }
+      // Otherwise keep going
+      this.x += this.vx
+      this.y += this.vy
+    },
     isInsideHoleBoundaries() {
       return this.isInsideEntranceHoleBoundaries() || this.isInsideExitHoleBoundaries()
     },
@@ -95,7 +150,6 @@ export default {
         yEdge <= this.y && this.y <= (yEdge + this.holeSize[1])
     },
     edgeDetection() {
-      console.log('detecting')
       if (this.isChangingDirection) return
 
       const radius = this.isInsidePolicy ? this.currentBugSize / 2 : -this.currentBugSize
@@ -114,18 +168,11 @@ export default {
         this.hideBug()
         return
       }
-      // if (this.bugsSettings.movementType === 'low_horizontal') {
-      //   // For low_horizontal bugs, always retreat toward exit with a fixed direction of -π
-      //   this.directionAngle = -(2 * Math.PI)
-      //   return
-      // }
       let openAngles = this.getNotBlockedAnglesSplitView()
       if (openAngles.length === 0) {
-        // If no open angles, default to reverse direction
         nextAngle = (this.directionAngle + Math.PI) % (2 * Math.PI)
       } else {
         openAngles.sort()
-        // Maintain continuity for large gaps
         for (let i = 0; i < openAngles.length - 1; i++) {
           if ((openAngles[i + 1] - openAngles[i]) > Math.PI / 2) {
             openAngles[i] += 2 * Math.PI
@@ -137,7 +184,7 @@ export default {
       this.setNextAngle(nextAngle)
       this.changeDirectionTimeout()
     },
-    getNotBlockedAnglesSplitView() {
+    getNotBlockedAnglesSplit() {
       const angles = []
       const borderDistances = {
         top: this.y,
@@ -167,8 +214,6 @@ export default {
         let openAngles = this.getNotBlockedAngles()
         openAngles = openAngles.sort()
         for (let i = 0; i < openAngles.length - 1; i++) {
-          // in order to maintain the continuity in angles range, in cases of missing angles add 2π to the angles
-          // right before the missing ones.
           if ((openAngles[i + 1] - openAngles[i]) > (Math.PI / 2)) {
             openAngles[i] += 2 * Math.PI
           }
@@ -176,51 +221,45 @@ export default {
         openAngles = openAngles.sort()
         nextAngle = Math.random() * (openAngles[openAngles.length - 1] - openAngles[0]) + openAngles[0]
       }
-      this.vx = this.currentSpeed * Math.cos(nextAngle)
-      this.vy = this.currentSpeed * Math.sin(nextAngle)
+      this.vx = (this.currentSpeed) * Math.cos(nextAngle)
+      this.vy = (this.currentSpeed) * Math.sin(nextAngle)
     },
     initiateStartPosition() {
-      // For even bug IDs use the entranceHolePos; for odd IDs use the exitHolePos as entrance.
-      const startHole = (this.bugId % 2 === 0) ? this.entranceHolePos : this.exitHolePos
-
-      // Retrieve hole width/height from settings.
+      const startHole = this.entranceHole
       const [holeW, holeH] = this.holeSize
-
-      // Use array indexing to pick the x and y coordinates.
       const x0 = Array.isArray(startHole) ? startHole[0] : startHole.x
       const y0 = Array.isArray(startHole) ? startHole[1] : startHole.y
 
-      // The exit target is always given by exitHolePos.
-      const xt = Array.isArray(this.exitHolePos) ? this.exitHolePos[0] : this.exitHolePos.x
-      const yt = Array.isArray(this.exitHolePos) ? this.exitHolePos[1] : this.exitHolePos.y
-
-      // Center the bug in the hole.
       this.x = x0 + holeW / 2
       this.y = y0 + holeH / 2
-      this.xTarget = xt + holeW / 2
-      this.yTarget = yt + holeH / 2
+      const exitHole = this.exitHolePos
+      this.xTarget = Array.isArray(exitHole) ? exitHole[0] + holeW / 2 : exitHole.x + holeW / 2
+      this.yTarget = Array.isArray(exitHole) ? exitHole[1] + holeH / 2 : exitHole.y + holeH / 2
 
-      console.log(`Bug`, this.bugId, `x/y:`, this.x, this.y, `targetX/targetY:`, this.xTarget, this.yTarget)
-      // Reset movement-related state.
       this.resetState()
+
       // Set movement parameters based on the movement type.
       switch (this.bugsSettings.movementType) {
         case `circle`:
         case `circle_accelerate`:
-          this.theta = Math.PI + (this.isRightSide ? Math.PI / 5 : (2 * Math.PI) / 3)
-          this.theta += this.bugId * (Math.PI / 5)
-          this.r = Math.abs(this.xTarget - this.x) * this.bugsSettings.circleRadiusScale
-          const canvasHeight = (this.canvas && this.canvas.height) || 600
+          // this.theta = Math.PI + (this.isRightExit ? Math.PI / 5 : (2 * Math.PI) / 3)
+          // this.theta += this.bugId * (Math.PI / 5)
+          const radius = this.screenMidX
+          this.r = Math.abs(radius) * (this.bugsSettings.circleRadiusScale + 0.1)
+          const midPointCircle = this.isLeftExit ? this.x + this.screenMidX / 4 : this.x - this.screenMidX / 4
+
           this.r0 = [
-            (this.x + this.xTarget) / 2,
-            canvasHeight * this.bugsSettings.circleHeightScale
+            midPointCircle,
+            this.canvas.height / 2
           ]
+          this.entryAngle = (this.isRightExit ? Math.PI / 5 : (2 * Math.PI) / 3) + (this.bugId * 0.6)
+          this.angle = this.entryAngle
           break
         case `half_circle`:
           this.theta = Math.PI + Math.PI / 4
           this.r = Math.abs(this.xTarget - this.x) / 2
           this.r0 = [
-            (this.x + this.xTarget) / 2,
+            midPointCircle,
             this.y + this.r / 2.3
           ]
           break
@@ -233,21 +272,16 @@ export default {
           this.startRetreat()
           break
         default:
-          this.directionAngle = randomRange(3 * Math.PI / 4, 2 * Math.PI)
+          this.directionAngle = randomRange(Math.PI / 4, 2 * Math.PI)
           this.setNextAngle && this.setNextAngle()
       }
     },
     circularMove() {
-      this.theta += Math.abs(this.vTheta) * Math.sqrt(2) / this.r
-      this.x = this.r0[0] + (this.r * Math.cos(this.theta)) * (this.isCounterClockWise ? -1 : 1)
-      this.y = this.r0[1] + this.r * Math.sin(this.theta)
-    },
-    noisyMove() {
-      let randNoise = this.getRandomNoise()
-      this.dx = this.vx + 0.5 * randNoise
-      this.dy = 0.00008 * (this.yTarget - this.y) + 0.9 * randNoise + 0.65 * this.dy
-      this.x += this.dx
-      this.y += this.dy
+      const direction = this.isCounterClockWise ? -1 : 1
+      this.angle += direction * Math.abs(this.vTheta) * Math.sqrt(2) / this.r
+
+      this.x = this.r0[0] + this.r * Math.cos(this.angle)
+      this.y = this.r0[1] + this.r * Math.sin(this.angle)
     },
     isHit(x, y) {
       if (this.isMoveInCircles && this.isHoleRetreatStarted) {
@@ -256,27 +290,12 @@ export default {
       }
       return distance(x, y, this.x, this.y) <= this.currentBugSize / 1.5
     },
-    jump() {
-      if (!(this.isJumpUpMovement || this.isAccelerateMovement || this.isCircleAccelerateMovement) ||
-        this.isDead ||
-        this.isJumped ||
-        (this.isCircleAccelerateMovement && this.isHoleRetreatStarted)) {
-        return
-      }
-      this.isJumped = true
-      if (this.isJumpUpMovement) {
-        let newY = this.y - this.jump_distance
-        if (newY < this.upper_edge) {
-          newY = this.upper_edge + 1
-        }
-        this.y = newY
-      } else if (this.isAccelerateMovement) {
-        this.vx = this.vx * this.bugsSettings.accelerateMultiplier
-      } else if (this.isCircleAccelerateMovement) {
-        this.vTheta = this.vTheta * this.bugsSettings.accelerateMultiplier
-      }
-      console.log('jump')
-      this.jumpTimeout()
+    noisyMove() {
+      let randNoise = this.getRandomNoise()
+      this.dx = this.vx + 0.5 * randNoise
+      this.dy = 0.00008 * (this.yTarget - this.y) + 0.9 * randNoise + 0.65 * this.dy
+      this.x += this.dx
+      this.y += this.dy
     },
     checkHoleRetreat() {
       // check if the trial duration is over and start the retreat
@@ -292,48 +311,20 @@ export default {
         console.log('retreat started')
       }
     },
-    setRetreatSpeeds() {
-      let xd = this.xTarget - this.x
-      let yd = this.yTarget - this.y
-      let T = yd / xd
-      // in circle movements the retreat must happen quick, otherwise use the configured bug speed
-      let speed = this.isMoveInCircles ? 10 : this.currentSpeed
-      this.vx = Math.sign(xd) * (speed / Math.sqrt(1 + T ** 2))
-      this.vy = Math.sign(yd) * Math.sqrt((speed ** 2) - (this.vx ** 2))
-    },
-    checkNoisyTrack() {
-      if (this.isHoleRetreatStarted) {
+    // draw the circle path for debugging
+    drawCirclePath() {
+      if ((!this.isHalfCircleMovement && !this.isMoveInCircles) || !this.ctx || !this.r0 || !this.r) {
         return
       }
-      if (!this.isNoisyPartReached) {
-        if (((this.exitHolePos[0] > this.lowHorizontalNoiseStart) && (this.x > this.lowHorizontalNoiseStart)) ||
-          ((this.exitHolePos[0] < this.lowHorizontalNoiseStart) && (this.x < this.lowHorizontalNoiseStart))) {
-          this.isNoisyPartReached = true
-        }
-      }
-      if (((this.exitHolePos[0] > this.lowHorizontalNoiseStart) && (this.x > this.exitHolePos[0] - 10)) ||
-        ((this.exitHolePos[0] < this.lowHorizontalNoiseStart) && (this.x < this.exitHolePos[0] + 10))) {
-        this.isNoisyPartReached = false
-        this.startRetreat()
-      }
-    },
-    jumpTimeout() {
-      this.isJumped = true
-      let t = setTimeout(() => {
-        this.isJumped = false
-        if (this.isJumpUpMovement) {
-          this.y = this.exitHolePos[1] + (this.currentBugSize / 2)
-        } else if (this.isAccelerateMovement) {
-          this.vx = this.vx / this.bugsSettings.accelerateMultiplier
-        } else if (this.isCircleAccelerateMovement) {
-          this.vTheta = this.vTheta / this.bugsSettings.accelerateMultiplier
-        }
-        this.setNextAngle(this.directionAngle)
-        console.log(this.vx, this.dx, this.currentSpeed)
-        clearTimeout(t)
-      }, 300)
+      if (!this.r0.length || !this.r) return
+      this.ctx.save()
+      this.ctx.beginPath()
+      this.ctx.strokeStyle = 'red'
+      this.ctx.lineWidth = 2
+      this.ctx.arc(this.r0[0], this.r0[1], this.r, 0, 2 * Math.PI)
+      this.ctx.stroke()
+      this.ctx.restore()
     }
-
   }
 }
 </script>
