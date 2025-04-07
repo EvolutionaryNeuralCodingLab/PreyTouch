@@ -16,10 +16,8 @@
           :bugsSettings="bugsSettings"
           :exit-hole-pos="exitHolePos(index)"
           :entrance-hole-pos="entranceHolePos(index)"
-          v-bind="value"
           ref="bugChild"
           v-on:bugRetreated="endTrial"
-          v-on:bugHit="$emit('bugHit', $event)"
         />
       </canvas>
     </div>
