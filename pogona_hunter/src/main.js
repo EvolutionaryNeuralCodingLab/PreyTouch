@@ -10,13 +10,14 @@ import store from './store'
 import {webSocket} from './js/websocket'
 import mediaBoard from "./components/boards/mediaBoard.vue"
 // import VueMqtt from 'vue-mqtt'
+
 Vue.use(VueRouter)
-const PageNotFound = {template: '<h1>Page not found</h1>'}
+const PageNotFound = { template: '<h1>Page not found</h1>' }
 const routes = [
-  {path: '/', component: PageNotFound},
-  {path: '/tunnel', component: tunnelBoard},
-  {path: '/holes', component: holesBoard},
-  {path: '/media', component: mediaBoard}
+    { path: '/', component: PageNotFound },
+    { path: '/tunnel', component: tunnelBoard},
+    { path: '/holes', component: holesBoard},
+    { path: '/media', component: mediaBoard}
 ]
 const router = new VueRouter({
   mode: process.env.ROUTER_MODE,
@@ -35,7 +36,7 @@ Vue.use(webSocket, 'ws://127.0.0.1:6380', {
 new Vue({
   router,
   store,
-  render: function (createElement) {
-    return createElement(App)
-  }
+  render: function(createElement){
+        return createElement(App)
+    }
 }).$mount('#app')
