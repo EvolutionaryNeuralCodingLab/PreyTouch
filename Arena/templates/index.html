@@ -506,18 +506,18 @@
             let $numOfBugs = $(`#numOfBugs${i}`);
             $numOfBugs.change(function () {
               let numOfBugs = Number($numOfBugs.val());
-              if (numOfBugs == 1) {
+              if (numOfBugs === 1) {
                   $(`#multipleBugsConf${i}`).hide();
               } else {
                   $(`#multipleBugsConf${i}`).show();
               }
 
               if (numOfBugs > 1) {
-                  $(`#isSplitBugsView${i}`).prop('checked', true).parent().show();
-                  $(`#randomizeTiming${i}`).prop('checked', true).parent().show();
+                  $(`#isSplitBugsView${i}`).prop('checked', true);
+                  $(`#splitRandomizeTiming${i}`).prop('checked', true);
               } else {
-                  $(`#isSplitBugsView${i}`).prop('checked', false).parent().hide();
-                  $(`#randomizeTiming${i}`).prop('checked', false).parent().hide();
+                  $(`#isSplitBugsView${i}`).prop('checked', false);
+                  $(`#splitRandomizeTiming${i}`).prop('checked', false);
               }
             }).trigger('change')
 

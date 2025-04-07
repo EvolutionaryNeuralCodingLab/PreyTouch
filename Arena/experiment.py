@@ -208,8 +208,8 @@ class Block:
 
     num_of_bugs: int = 1
     is_split_bugs_view: bool = True
-    repeated_split_pos_ratio: float = 1
-    bugs_order: list = None
+    split_repeated_pos_ratio: float = 1
+    split_bugs_order: list = None
     randomize_timing: bool = True
     movement_type: str = None
     bug_speed: [int, list] = None
@@ -384,12 +384,12 @@ class Block:
         and -1 indicates the opposite bugs order.
         :return: list of 1 and -1 of length equal to trial_length.
         """
-        num_current_order = int(round(self.repeated_split_pos_ratio * self.num_trials))
+        num_current_order = int(round(self.split_repeated_pos_ratio * self.num_trials))
         num_opposite_order = self.num_trials - num_current_order
 
         bugs_order = [1] * num_current_order + [-1] * num_opposite_order
         random.shuffle(bugs_order)
-        self.bugs_order = bugs_order
+        self.split_bugs_order = bugs_order
 
         return bugs_order
 
@@ -456,8 +456,8 @@ class Block:
                 command, options = 'init_bugs', self.bug_options
                 if self.is_random_low_horizontal:
                     options = self.set_random_low_horizontal_trial(options)
-                if self.is_split_bugs_view and self.repeated_split_pos_ratio < 1:
-                    ordered_bugs = self.bug_types[::self.bugs_order[trial_id - 1]]
+                if self.is_split_bugs_view and self.split_repeated_pos_ratio < 1:
+                    ordered_bugs = self.bug_types[::self.split_bugs_order[trial_id - 1]]
                     options = self.set_bugs_order_trial(options, ordered_bugs)
             options['trialID'] = trial_id
             options['trialDBId'] = trial_db_id

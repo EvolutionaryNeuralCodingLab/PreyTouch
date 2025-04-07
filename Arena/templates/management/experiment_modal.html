@@ -82,11 +82,17 @@
                     <div class="container" id="multipleBugsConf{{i}}">
                     <div class="row ml-4 mt-3 form-group row pr-3 bugs-options{{i}}" id="splitBugsViewDiv{{i}}">
                         <input class="form-check-input" type="checkbox" id="isSplitBugsView{{i}}">
-                        <label class="form-check-label" for="isSplitBugsView{{i}}">Split The Bugs To Enter Each From Different Side Of The Screen</label>
+                        <label class="form-check-label" for="isSplitBugsView{{i}}">Split The Bugs Screen</label>
+                        <div style="font-size: small">
+                             Each bug will enter from different side of the screen
+                        </div>
                     </div>
                     <div class="row ml-4 mt-3 form-group row pr-3 bugs-options{{i}}">
-                        <input class="form-check-input" type="checkbox" id="randomizeTiming{{i}}">
-                        <label class="form-check-label" for="randomizeTiming{{i}}">Use Random Entrance Time Gap For The Second Bug</label>
+                        <input class="form-check-input" type="checkbox" id="splitRandomizeTiming{{i}}">
+                        <label class="form-check-label" for="splitRandomizeTiming{{i}}">Use Entrance Time Gap</label>
+                        <div style="font-size: small">
+                             The other bug will enter with a random delay from the first bug
+                        </div>
                     </div>
                     <div class="form-group row pr-3 bugs-options{{i}}" id="holesHeightDiv{{i}}" style="display: none;">
                         <div class="col col-form-label">

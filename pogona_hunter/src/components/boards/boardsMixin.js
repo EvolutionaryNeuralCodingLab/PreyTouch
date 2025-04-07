@@ -24,7 +24,7 @@ export default {
         rewardAnyTouchProb: 0,
         accelerateMultiplier: 3, // times to increase bug speed in tongue detection
         isKillingAllByOneHit: process.env.IS_KILLING_ALL_BY_ONE_HIT, // if true, all bugs will disapear when one is hit successfully
-        randomizeTiming: process.env.RANDOMIZE_TIMING// if 1, randomize timing of bugs appearance
+        splitRandomizeTiming: process.env.SPLIT_RANDOMIZE_TIMING// if 1, randomize timing of bugs appearance
       },
       mediaUrl: '',
       isHandlingTouch: false,

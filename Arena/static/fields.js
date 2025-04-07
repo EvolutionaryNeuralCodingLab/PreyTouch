@@ -232,8 +232,8 @@ const blockFields = {
   bugs: {
     num_of_bugs: new FieldObject('numOfBugs', NumericalField),
     is_split_bugs_view: new FieldObject('isSplitBugsView', CheckField),
-    repeated_split_pos_ratio: new FieldObject('repeatedSplitPosRatio', NumericalField),
-    randomize_timing: new FieldObject('randomizeTiming', CheckField),
+    split_repeated_pos_ratio: new FieldObject('splitRepeatedPosRatio', NumericalField),
+    split_randomize_timing: new FieldObject('randomizeTiming', CheckField),
     bug_speed: new FieldObject('bugSpeed', NumericalField),
     movement_type: new FieldObject('movementTypeSelect', Field),
     is_default_bug_size: new FieldObject('isDefaultBugSize', CheckField),
