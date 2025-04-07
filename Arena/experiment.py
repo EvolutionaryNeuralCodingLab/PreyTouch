@@ -207,6 +207,10 @@ class Block:
     block_type: str = 'bugs'  # options: 'bugs', 'blank', 'media', 'psycho'
 
     num_of_bugs: int = 1
+    is_split_bugs_view: bool = True
+    repeated_split_pos_ratio: float = 1
+    bugs_order: list = None
+    randomize_timing: bool = True
     movement_type: str = None
     bug_speed: [int, list] = None
     bug_size: int = None
@@ -289,6 +293,9 @@ class Block:
         """Run block flow"""
         self.init_block()
         self.wait(self.extra_time_recording, label='Extra Time Rec')
+        # if self.is_split_bugs_view, take self.ratio and change the order of self.bug_types in each trial by creating an array the size of the trial that combinatorically put 1 and -1, where 1 indicates the current bugs order and -1 indicates the opposite order
+        if self.is_split_bugs_view:
+            self.create_bugs_order()
 
         for trial_id in range(1, self.num_trials + 1):
             if self.block_type == 'bugs':
@@ -371,6 +378,21 @@ class Block:
             self.periphery.cam_trigger(1)
             self.logger.info(f'Trigger was off for {time.time() - t0:.2f} sec')
 
+    def create_bugs_order(self) -> list:
+        """
+        Create an order array for a trial in which 1 indicates the current bugs order
+        and -1 indicates the opposite bugs order.
+        :return: list of 1 and -1 of length equal to trial_length.
+        """
+        num_current_order = int(round(self.repeated_split_pos_ratio * self.num_trials))
+        num_opposite_order = self.num_trials - num_current_order
+
+        bugs_order = [1] * num_current_order + [-1] * num_opposite_order
+        random.shuffle(bugs_order)
+        self.bugs_order = bugs_order
+
+        return bugs_order
+
     def turn_cameras(self, required_state):
         """Turn on cameras if needed, and load the experiment predictors"""
         assert required_state in ['on', 'off']
@@ -434,6 +456,9 @@ class Block:
                 command, options = 'init_bugs', self.bug_options
                 if self.is_random_low_horizontal:
                     options = self.set_random_low_horizontal_trial(options)
+                if self.is_split_bugs_view and self.repeated_split_pos_ratio < 1:
+                    ordered_bugs = self.bug_types[::self.bugs_order[trial_id - 1]]
+                    options = self.set_bugs_order_trial(options, ordered_bugs)
             options['trialID'] = trial_id
             options['trialDBId'] = trial_db_id
             self.cache.publish_command(command, json.dumps(options))
@@ -534,6 +559,11 @@ class Block:
         options['movementType'] = 'low_horizontal'
         return options
 
+    @staticmethod
+    def set_bugs_order_trial(options, ordered_bugs):
+        options['bug_types'] = ordered_bugs
+        return options
+
     @property
     def media_options(self) -> dict:
         return {
@@ -545,6 +575,7 @@ class Block:
     def bug_options(self) -> dict:
         return {
             'numOfBugs': self.num_of_bugs,
+            'isSplitBugsView': self.is_split_bugs_view,
             'trialID': 1,  # default value, changed in init_bugs
             'trialDBId': 1, # default value, changed in init_bugs
             'numTrials': self.num_trials,
@@ -803,6 +834,7 @@ def start_trial():
     cache_ = RedisCache()
     options = {
         'numOfBugs': 1,
+        'isSplitBugsView': True,
         'trialID': 1,  # default value, changed in init_bugs
         'trialDBId': 1, # default value, changed in init_bugs
         'numTrials': 1,

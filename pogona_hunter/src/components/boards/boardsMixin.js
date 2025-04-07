@@ -8,6 +8,7 @@ export default {
       bugsProps: [],
       bugsSettings: {
         numOfBugs: process.env.NUM_BUGS,
+        isSplitBugsView: process.env.IS_SPLIT_BUGS_VIEW,
         trialID: null,
         trialDBId: null,
         numTrials: null, // deprecated. Trials are governed by the experiment
@@ -22,7 +23,8 @@ export default {
         backgroundColor: '#e8eaf6',
         rewardAnyTouchProb: 0,
         accelerateMultiplier: 3, // times to increase bug speed in tongue detection
-        isKillingAllByOneHit: process.env.IS_KILLING_ALL_BY_ONE_HIT // if true, all bugs will disapear when one is hit successfully
+        isKillingAllByOneHit: process.env.IS_KILLING_ALL_BY_ONE_HIT, // if true, all bugs will disapear when one is hit successfully
+        randomizeTiming: process.env.RANDOMIZE_TIMING// if 1, randomize timing of bugs appearance
       },
       mediaUrl: '',
       isHandlingTouch: false,

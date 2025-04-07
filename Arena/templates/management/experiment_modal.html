@@ -79,6 +79,25 @@
                             <input type="number" class="form-control" id="numOfBugs{{i}}" value="1" required>
                         </div>
                     </div>
+                    <div class="container" id="multipleBugsConf{{i}}">
+                    <div class="row ml-4 mt-3 form-group row pr-3 bugs-options{{i}}" id="splitBugsViewDiv{{i}}">
+                        <input class="form-check-input" type="checkbox" id="isSplitBugsView{{i}}">
+                        <label class="form-check-label" for="isSplitBugsView{{i}}">Split The Bugs To Enter Each From Different Side Of The Screen</label>
+                    </div>
+                    <div class="row ml-4 mt-3 form-group row pr-3 bugs-options{{i}}">
+                        <input class="form-check-input" type="checkbox" id="randomizeTiming{{i}}">
+                        <label class="form-check-label" for="randomizeTiming{{i}}">Use Random Entrance Time Gap For The Second Bug</label>
+                    </div>
+                    <div class="form-group row pr-3 bugs-options{{i}}" id="holesHeightDiv{{i}}" style="display: none;">
+                        <div class="col col-form-label">
+                            <label for="holesHeight{{i}}" style="margin-bottom: 0">Repeated Bug Position Ratio:</label>
+                            <div style="font-size: small">0-all trails' position are randomized, <br/> 1-all trials have same position</div>
+                        </div>
+                        <div class="col-sm-5">
+                            <input type="number" class="form-control" id="holesHeight{{i}}" step=0.25 min="0" max="1" value="1">
+                        </div>
+                    </div>
+                    </div>
 
                     <div class="form-group row pr-3 blank-options{{i}}">
                         <label for="blankRecSelect{{i}}" class="col col-form-label">Recording Type</label>
