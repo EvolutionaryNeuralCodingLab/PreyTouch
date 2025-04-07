@@ -4,23 +4,23 @@
       <audio ref="audio1">
         <source src="../../assets/sounds/2.mp3" type="audio/mpeg">
       </audio>
-      <canvas id="backgroundCanvas" ref="backgroundCanvas" v-bind:style="{background: bugsSettings.backgroundColor}"
+      <canvas id="backgroundCanvas" v-bind:style="{background: bugsSettings.backgroundColor}"
               v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"></canvas>
-      <canvas id="bugCanvas" ref="bugCanvas" v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"
+      <canvas id="bugCanvas" v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"
               v-on:mousedown="setCanvasClick($event)">
-              <component
-                :is="bugComponent"
-                v-for="(value, index) in bugsProps"
-                :key="index"
-                :bug-id="index"
-                :bugsSettings="bugsSettings"
-                :exit-hole-pos="exitHolePos(index)"
-                :entrance-hole-pos="entranceHolePos(index)"
-                v-bind="value"
-                ref="bugChild"
-                v-on:bugRetreated="endTrial"
-                v-on:bugHit="$emit('bugHit', $event)"
-              />
+        <component
+          :is="bugComponent"
+          v-for="(value, index) in bugsProps"
+          :key="index"
+          :bug-id="index"
+          :bugsSettings="bugsSettings"
+          :exit-hole-pos="exitHolePos(index)"
+          :entrance-hole-pos="entranceHolePos(index)"
+          v-bind="value"
+          ref="bugChild"
+          v-on:bugRetreated="endTrial"
+          v-on:bugHit="$emit('bugHit', $event)"
+        />
       </canvas>
     </div>
   </div>
@@ -28,26 +28,13 @@
 
 <script>
 import holesBug from '../bugs/holesBug.vue'
+import mirroredBug from '../bugs/mirroredBug.vue'
 import boardsMixin from './boardsMixin'
 
 export default {
   name: 'holesBoard',
   mixins: [boardsMixin],
-  components: {holesBug},
-  props: {
-    bugComponent: {
-      type: [Object, String],
-      default: 'holesBug'
-    },
-    bugDetails: {
-      type: Array,
-      default: null
-    },
-    entranceHole: {
-      type: Array,
-      default: null
-    }
-  },
+  components: {holesBug, mirroredBug},
   data() {
     return {
       bugsSettings: { // extends the mixin's bugSettings
@@ -62,6 +49,15 @@ export default {
     }
   },
   computed: {
+    isSplitBugsView: function () {
+      return this.bugsSettings.isSplitBugsView
+    },
+    bugComponent: function () {
+      if (this.isSplitBugsView) {
+        return 'mirroredBug'
+      }
+      return 'holesBug'
+    },
     holesPositions: function () {
       let [canvasW, canvasH] = [this.canvas.width, this.canvas.height]
       let [holeW, holeH] = this.bugsSettings.holeSize
@@ -70,6 +66,28 @@ export default {
         left: [this.xpad, canvasH - holeH - configuredHolesHeight],
         right: [canvasW - holeW - this.xpad, canvasH - holeH - configuredHolesHeight]
       }
+    },
+    mirrorBugsProps() {
+      // iterate over the bugs and assign entrance and exit holes left for the even index and right for the odd index
+      const sides = this.bugsSettings.bugTypes.map((bug, i) => {
+        if (i % 2 === 0) {
+          return {
+            entranceHole: 'left',
+            exitHole: 'left',
+            bugId: `${bug}_${i}`
+          }
+        } else {
+          return {
+            entranceHole: 'right',
+            exitHole: 'right',
+            bugId: `${bug}_${i}`
+          }
+        }
+      })
+      console.log(
+        'mirrorBugsProps',
+        sides)
+      return sides
     }
   },
   methods: {
@@ -82,23 +100,23 @@ export default {
       image.src = require('@/assets/hole2.png')
 
       image.onload = () => {
-         Object.values(this.holesPositions).forEach(pos => {
+        Object.values(this.holesPositions).forEach(pos => {
           ctx.drawImage(image, pos[0], pos[1], holeW, holeH)
           console.log('Drawing holes', pos[0], pos[1], holeW, holeH)
         })
-     }
+      }
     },
     exitHolePos: function (bugId) {
-      if (this.entranceHole) {
-        const exit = this.bugDetails[bugId].exitHole
+      if (this.isSplitBugsView) {
+        const exit = this.mirrorBugsProps[bugId].exitHole
         return this.holesPositions[exit]
       }
       const exitHole = this.bugsSettings.exitHole
       return this.holesPositions[exitHole]
     },
     entranceHolePos: function (bugId) {
-      if (this.entranceHole) {
-        const entrance = this.bugDetails[bugId].entranceHole
+      if (this.isSplitBugsView) {
+        const entrance = this.mirrorBugsProps[bugId].entranceHole
         return this.holesPositions[entrance]
       }
       let entranceHole = this.bugsSettings.exitHole === 'left' ? 'right' : 'left'

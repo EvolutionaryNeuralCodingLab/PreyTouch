@@ -51,6 +51,12 @@ export default {
     },
     entranceApproachDuration() {
       return this.bugId * (Math.random() * 2000) * this.bugsSettings.randomizeTiming
+    },
+    leftBoundary() {
+      return this.viewWidth * this.bugId
+    },
+    rightBoundary() {
+      return this.leftBoundary + this.viewWidth
     }
   },
   methods: {
@@ -84,8 +90,9 @@ export default {
         this.draw()
         return
       }
-
-      if (this.bugsSettings.movementType.includes('circle') && !this.isHoleRetreatStarted) {
+      this.edgeDetection()
+      // circle
+      if (this.isHalfCircleMovement || (this.isMoveInCircles && !this.isHoleRetreatStarted)) {
         if (this.frameCounter < ((this.entranceDelay + this.entranceApproachDuration) / (1000 / 60))) {
           const totalSteps = this.entranceApproachDuration / (1000 / 60)
           const step = (this.frameCounter - (this.entranceDelay / (1000 / 60))) / totalSteps
@@ -151,7 +158,7 @@ export default {
     },
     edgeDetection() {
       if (this.isChangingDirection) return
-
+      // borders
       const radius = this.isInsidePolicy ? this.currentBugSize / 2 : -this.currentBugSize
       const exceedsLeft = this.x < this.leftBoundary + radius
       const exceedsRight = this.x > this.rightBoundary - radius
@@ -159,7 +166,16 @@ export default {
 
       if (exceedsLeft || exceedsRight || exceedsY) {
         this.setAfterEdgeAngleSplitView(this.leftBoundary, this.rightBoundary, radius)
+      } else if (this.frameCounter > this.numFramesToRetreat && this.isInsideHoleBoundaries()) {
+        if ((this.isHoleRetreatStarted && this.isInsideExitHoleBoundaries()) || !(this.isRandomMovement || this.isRandomSpeeds)) {
+          this.hideBug()
+        } else {
+          this.setAfterEdgeAngleSplitView(this.leftBoundary, this.rightBoundary, radius)
+        }
+      } else {
+        return
       }
+      this.changeDirectionTimeout()
     },
     setAfterEdgeAngleSplitView() {
       console.log('setAfterEdgeAngleSplitView in mirroredBug')
@@ -184,7 +200,7 @@ export default {
       this.setNextAngle(nextAngle)
       this.changeDirectionTimeout()
     },
-    getNotBlockedAnglesSplit() {
+    getNotBlockedAnglesSplitView() {
       const angles = []
       const borderDistances = {
         top: this.y,
@@ -282,13 +298,6 @@ export default {
 
       this.x = this.r0[0] + this.r * Math.cos(this.angle)
       this.y = this.r0[1] + this.r * Math.sin(this.angle)
-    },
-    isHit(x, y) {
-      if (this.isMoveInCircles && this.isHoleRetreatStarted) {
-        // in case of circles don't consider hits while the bug is retreating from the circle
-        return false
-      }
-      return distance(x, y, this.x, this.y) <= this.currentBugSize / 1.5
     },
     noisyMove() {
       let randNoise = this.getRandomNoise()
