@@ -6,7 +6,7 @@
 
 <script>
 import holesBug from '../bugs/holesBug.vue'
-import {distance, randomRange} from '../../js/helpers'
+import {randomRange} from '../../js/helpers'
 
 export default {
   name: `mirroredBug`,
@@ -82,66 +82,27 @@ export default {
       if (this.frameCounter < this.entranceDelay && this.bugId) {
         return
       }
-
-      this.checkHoleRetreat()
-
-      if (this.isHoleRetreatStarted) {
-        this.linearRetreatMove()
-        this.draw()
-        return
-      }
       this.edgeDetection()
-      // circle
-      if (this.isHalfCircleMovement || (this.isMoveInCircles && !this.isHoleRetreatStarted)) {
+      this.checkHoleRetreat()
+      if (this.isMoveInCircles && !this.isHoleRetreatStarted) {
         if (this.frameCounter < ((this.entranceDelay + this.entranceApproachDuration) / (1000 / 60))) {
-          const totalSteps = this.entranceApproachDuration / (1000 / 60)
-          const step = (this.frameCounter - (this.entranceDelay / (1000 / 60))) / totalSteps
-          const outsideX = this.x - (this.isLeftExit ? this.holeSize / 2 : -this.holeSize / 2)
-          const outsideY = this.y
-          this.x = outsideX + (this.x - outsideX) * step
-          this.y = outsideY + (this.y - outsideY) * step
+          this.initSplitBugPosition()
+          return
         } else {
           this.circularMove()
-          this.draw()
         }
       } else {
         this.straightMove()
-        this.draw()
       }
+      this.draw()
     },
-    linearRetreatMove() {
-      // dx, dy => vector from current position to exit hole
-      const dx = this.xTarget - this.x
-      const dy = this.yTarget - this.y
-      const dist = Math.sqrt(dx * dx + dy * dy)
-      const speed = 20
-
-      if (this.retreatTurningProgress < this.retreatTurningFrames) {
-        // angle from bug to hole
-        const desiredAngle = Math.atan2(dy, dx)
-
-        // normalized difference between desiredAngle and current this.angle
-        const deltaAngle = (desiredAngle - this.angle + Math.PI * 3) % (Math.PI * 2) - Math.PI
-
-        this.angle += deltaAngle / (this.retreatTurningFrames - this.retreatTurningProgress)
-        this.retreatTurningProgress++
-        return
-      }
-
-      // If done turning, move forward at 'speed' in that angle
-      this.vx = Math.cos(this.angle) * speed
-      this.vy = Math.sin(this.angle) * speed
-
-      // if inside the hole boundary => finalize
-      if (dist < speed || this.isInsideExitHoleBoundaries()) {
-        this.x = this.xTarget
-        this.y = this.yTarget
-        this.hideBug()
-        return
-      }
-      // Otherwise keep going
-      this.x += this.vx
-      this.y += this.vy
+    initSplitBugPosition() {
+      const totalSteps = this.entranceApproachDuration / (1000 / 60)
+      const step = (this.frameCounter - (this.entranceDelay / (1000 / 60))) / totalSteps
+      const outsideX = this.x - (this.isLeftExit ? this.holeSize / 2 : -this.holeSize / 2)
+      const outsideY = this.y
+      this.x = outsideX + (this.x - outsideX) * step
+      this.y = outsideY + (this.y - outsideY) * step
     },
     isInsideHoleBoundaries() {
       return this.isInsideEntranceHoleBoundaries() || this.isInsideExitHoleBoundaries()
@@ -221,25 +182,7 @@ export default {
       }
       return angles
     },
-    setNextAngle(angle = null) {
-      if (this.isNoisyLowHorizontalMovement && this.isNoisyPartReached) {
-        return
-      }
-      let nextAngle = angle
-      if (!angle) {
-        let openAngles = this.getNotBlockedAngles()
-        openAngles = openAngles.sort()
-        for (let i = 0; i < openAngles.length - 1; i++) {
-          if ((openAngles[i + 1] - openAngles[i]) > (Math.PI / 2)) {
-            openAngles[i] += 2 * Math.PI
-          }
-        }
-        openAngles = openAngles.sort()
-        nextAngle = Math.random() * (openAngles[openAngles.length - 1] - openAngles[0]) + openAngles[0]
-      }
-      this.vx = (this.currentSpeed) * Math.cos(nextAngle)
-      this.vy = (this.currentSpeed) * Math.sin(nextAngle)
-    },
+    // #TODO: remove this function and only override r0 and r
     initiateStartPosition() {
       const startHole = this.entranceHole
       const [holeW, holeH] = this.holeSize
@@ -293,46 +236,12 @@ export default {
       }
     },
     circularMove() {
+      // must stay here because of the new calculation of r0
       const direction = this.isCounterClockWise ? -1 : 1
       this.angle += direction * Math.abs(this.vTheta) * Math.sqrt(2) / this.r
 
       this.x = this.r0[0] + this.r * Math.cos(this.angle)
       this.y = this.r0[1] + this.r * Math.sin(this.angle)
-    },
-    noisyMove() {
-      let randNoise = this.getRandomNoise()
-      this.dx = this.vx + 0.5 * randNoise
-      this.dy = 0.00008 * (this.yTarget - this.y) + 0.9 * randNoise + 0.65 * this.dy
-      this.x += this.dx
-      this.y += this.dy
-    },
-    checkHoleRetreat() {
-      // check if the trial duration is over and start the retreat
-      if (!this.isHoleRetreatStarted && this.frameCounter > this.numFramesToRetreat) {
-        this.startRetreat()
-      }
-    },
-    startRetreat() {
-      console.log('startRetreat', this.isHoleRetreatStarted)
-      if (!this.isHoleRetreatStarted) {
-        this.setRetreatSpeeds()
-        this.isHoleRetreatStarted = true
-        console.log('retreat started')
-      }
-    },
-    // draw the circle path for debugging
-    drawCirclePath() {
-      if ((!this.isHalfCircleMovement && !this.isMoveInCircles) || !this.ctx || !this.r0 || !this.r) {
-        return
-      }
-      if (!this.r0.length || !this.r) return
-      this.ctx.save()
-      this.ctx.beginPath()
-      this.ctx.strokeStyle = 'red'
-      this.ctx.lineWidth = 2
-      this.ctx.arc(this.r0[0], this.r0[1], this.r, 0, 2 * Math.PI)
-      this.ctx.stroke()
-      this.ctx.restore()
     }
   }
 }
