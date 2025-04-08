@@ -294,7 +294,7 @@ class Block:
         self.init_block()
         self.wait(self.extra_time_recording, label='Extra Time Rec')
         # if self.is_split_bugs_view, take self.ratio and change the order of self.bug_types in each trial by creating
-        # an array the size of the trial that combinatorically put 1 and -1, where 1 indicates the current bugs order and -1 indicates the opposite order
+        # an array the size of the trial that combinatorially put 1 and -1, where 1 indicates the current bugs order and -1 indicates the opposite order
         if self.is_split_bugs_view:
             self.create_bugs_order()
 
@@ -460,6 +460,7 @@ class Block:
                 if self.is_split_bugs_view and self.split_repeated_pos_ratio < 1:
                     ordered_bugs = self.bug_types[::self.split_bugs_order[trial_id - 1]]
                     options = self.set_bugs_order_trial(options, ordered_bugs)
+                    print(f"{ordered_bugs}, {self.split_bugs_order[trial_id - 1]}")
             options['trialID'] = trial_id
             options['trialDBId'] = trial_db_id
             self.cache.publish_command(command, json.dumps(options))
@@ -562,7 +563,7 @@ class Block:
 
     @staticmethod
     def set_bugs_order_trial(options, ordered_bugs):
-        options['bug_types'] = ordered_bugs
+        options['bugTypes'] = ordered_bugs
         return options
 
     @property
