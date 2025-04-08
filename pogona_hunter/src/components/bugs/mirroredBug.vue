@@ -48,10 +48,10 @@ export default {
       return this.exitHolePos
     },
     entranceDelay() {
-      return this.bugId * 10 * this.bugsSettings.randomizeTiming
+      return this.bugId * 10 * this.bugsSettings.splitRandomizeTiming
     },
     entranceApproachDuration() {
-      return this.bugId * (Math.random() * 2000) * this.bugsSettings.randomizeTiming
+      return this.bugId * (Math.random() * 2000) * this.bugsSettings.splitRandomizeTiming
     },
     leftBoundary() {
       return this.screenMidX * this.bugId

@@ -210,7 +210,7 @@ class Block:
     is_split_bugs_view: bool = True
     split_repeated_pos_ratio: float = 1
     split_bugs_order: list = None
-    randomize_timing: bool = True
+    split_randomize_timing: bool = True
     movement_type: str = None
     bug_speed: [int, list] = None
     bug_size: int = None
@@ -293,7 +293,8 @@ class Block:
         """Run block flow"""
         self.init_block()
         self.wait(self.extra_time_recording, label='Extra Time Rec')
-        # if self.is_split_bugs_view, take self.ratio and change the order of self.bug_types in each trial by creating an array the size of the trial that combinatorically put 1 and -1, where 1 indicates the current bugs order and -1 indicates the opposite order
+        # if self.is_split_bugs_view, take self.ratio and change the order of self.bug_types in each trial by creating
+        # an array the size of the trial that combinatorically put 1 and -1, where 1 indicates the current bugs order and -1 indicates the opposite order
         if self.is_split_bugs_view:
             self.create_bugs_order()
 
@@ -576,6 +577,7 @@ class Block:
         return {
             'numOfBugs': self.num_of_bugs,
             'isSplitBugsView': self.is_split_bugs_view,
+            'splitRandomizeTiming': self.split_randomize_timing,
             'trialID': 1,  # default value, changed in init_bugs
             'trialDBId': 1, # default value, changed in init_bugs
             'numTrials': self.num_trials,
