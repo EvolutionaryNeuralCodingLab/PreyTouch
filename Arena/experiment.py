@@ -460,7 +460,6 @@ class Block:
                 if self.is_split_bugs_view and self.split_repeated_pos_ratio < 1:
                     ordered_bugs = self.bug_types[::self.split_bugs_order[trial_id - 1]]
                     options = self.set_bugs_order_trial(options, ordered_bugs)
-                    print(f"{ordered_bugs}, {self.split_bugs_order[trial_id - 1]}")
             options['trialID'] = trial_id
             options['trialDBId'] = trial_db_id
             self.cache.publish_command(command, json.dumps(options))
