@@ -245,10 +245,14 @@ class ImageSink(ArenaProcess):
     def init_video_out(self, frame):
         self.write_output_dir = self.cam_config[config.output_dir_key]
         is_color = self.cam_config.get('is_color', False)
+
+        writer_fps = self.cam_config.get('writing_fps')
+        if writer_fps is None and self.is_trigger_mode():
+            writer_fps = self.extract_writer_fps_in_trigger_mode()
         if cache.get(cc.IS_BLANK_CONTINUOUS_RECORDING) or self.cam_config.get('mode') == 'tracking':
-            self.video_out = ImageIOWriter(frame, self.writing_fps, self.write_output_dir, self.cam_name, is_color)
+            self.video_out = ImageIOWriter(frame, writer_fps, self.write_output_dir, self.cam_name, is_color)
         else:
-            self.video_out = OpenCVWriter(frame, self.writing_fps, self.write_output_dir, self.cam_name, is_color)
+            self.video_out = OpenCVWriter(frame, writer_fps, self.write_output_dir, self.cam_name, is_color)
         self.video_path = self.video_out.video_path
         self.logger.info(f'start video writing to {self.video_path} frame size: {frame.shape}, fps: {self.writing_fps}')
         self.db_video_id = self.orm.commit_video(path=self.video_path, fps=self.writing_fps,
@@ -265,9 +269,6 @@ class ImageSink(ArenaProcess):
             self.writing_thread = None
         self.video_out.close()
         calc_fps = 1 / np.diff(self.write_video_timestamps).mean()
-        if not self.writing_fps:
-            # in case there's no writing_fps (e.g. trigger mode) set manually the calc_fps to the video file
-            self.set_writing_fps_on_video_file(calc_fps)
         self.logger.info(f'Video with {len(self.write_video_timestamps)} frames and calc_fps={calc_fps:.1f} '
                          f'saved into {self.video_path}')
         if self.write_video_timestamps:
@@ -277,12 +278,6 @@ class ImageSink(ArenaProcess):
         self.write_output_dir = None
         self.db_video_id = None
         self.mp_metadata['db_video_id'].value = 0
-
-    @run_in_thread
-    def set_writing_fps_on_video_file(self, calc_fps):
-        p = Path(self.video_path)
-        tmp_p = p.with_name(f'{p.stem}.tmp{p.suffix}')
-        next(run_command(f'ffmpeg -i {p.as_posix()} -y -r {calc_fps:.1f} {tmp_p.as_posix()} && mv {tmp_p.as_posix()} {p.as_posix()}'))
 
     def check_writing_fps(self, timestamp):
         if not self.cam_config.get('writing_fps'):
@@ -300,6 +295,18 @@ class ImageSink(ArenaProcess):
         csv_path = frames_output_dir / Path(video_path).with_suffix('.csv').name
         pd.DataFrame(self.write_video_timestamps).to_csv(csv_path)
         self.logger.debug(f'Saved frames timestamps to: {csv_path}')
+
+    def extract_writer_fps_in_trigger_mode(self):
+        try:
+            periphery_conf = config.load_configuration('periphery')
+            pulse_len = periphery_conf[config.CAM_TRIGGER_ARDUINO_NAME]['interfaces'][0].get('pulse_len')
+            return 1000 / pulse_len
+        except Exception as exc:
+            self.logger.error(f'Error extracting writer_fps in trigger mode; {exc}')
+            return None
+
+    def is_trigger_mode(self):
+        return self.cam_config.get('trigger_source') is not None
 
     @property
     def writing_fps(self):
