@@ -254,8 +254,8 @@ class ImageSink(ArenaProcess):
         else:
             self.video_out = OpenCVWriter(frame, writer_fps, self.write_output_dir, self.cam_name, is_color)
         self.video_path = self.video_out.video_path
-        self.logger.info(f'start video writing to {self.video_path} frame size: {frame.shape}, fps: {self.writing_fps}')
-        self.db_video_id = self.orm.commit_video(path=self.video_path, fps=self.writing_fps,
+        self.logger.info(f'start video writing to {self.video_path} frame size: {frame.shape}, fps: {writer_fps}')
+        self.db_video_id = self.orm.commit_video(path=self.video_path, fps=writer_fps,
                                                  cam_name=self.cam_name, start_time=datetime.datetime.now())
         if self.db_video_id is not None:
             self.mp_metadata['db_video_id'].value = self.db_video_id
