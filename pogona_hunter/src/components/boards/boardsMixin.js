@@ -114,6 +114,18 @@ export default {
         this.startLogBugTrajectory()
       }
       this.initDrawing()
+      if (this.isSplitBugsView) {
+        // inflate the number of bugs to be equal to the number of bug types
+       const baseType = this.bugsSettings.bugTypes[0]
+       let types = (this.bugsSettings.bugTypes.length > 1)
+         ? [...this.bugsSettings.bugTypes]
+         : Array(this.bugsSettings.numOfBugs).fill(baseType)
+       if (this.bugsSettings.exitHole === 'right') {
+         types.reverse()
+       }
+       
+       this.bugsSettings.bugTypes = types
+      }
       this.spawnBugs(this.bugsSettings.numOfBugs)
       this.$nextTick(function () {
         if (this.$refs.bugChild) {
@@ -325,21 +337,25 @@ export default {
     },
     startLogBugTrajectory() {
       console.log('trajectory log started')
-      this.trajectoryLogInterval = setInterval(() => {
-        // for each bug, log its position
-        let bugs = this.$refs.bugChild
-        if (bugs.length > 0) {
-          let bugsTrajs = bugs.map(bug => {
-            return {
-              bugId: bug.bugId,
-              currentBugType: bug.currentBugType,
-              position: { time: Date.now(), x: bug.x, y: bug.y }
-            }
-          })
-          this.bugTrajectoryLog.push(bugsTrajs)
-        } else {
+      this.trajectoryLogInterval = setInterval(() => {  
+        const bugs = this.$refs.bugChild || []
+        if (bugs.length === 0) {
           console.log('no bugs to log')
+          return
         }
+        const entry = { time: Date.now() } // timestamp
+        if (bugs.length === 1) {
+          // single-bug shorthand
+          entry.x = bugs[0].x
+          entry.y = bugs[0].y
+        } else {
+          // multi-bug: x0/y0, x1/y1, …
+          bugs.forEach((bug, idx) => {
+            entry[`x${idx}`] = bug.x
+            entry[`y${idx}`] = bug.y
+          })
+        }
+        this.bugTrajectoryLog.push(entry)
       }, 1000 / 60)
     },
     endLogBugTrajectory() {

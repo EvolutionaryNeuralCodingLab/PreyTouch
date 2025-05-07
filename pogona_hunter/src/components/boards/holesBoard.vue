@@ -48,7 +48,7 @@ export default {
   },
   computed: {
     isSplitBugsView: function () {
-      return this.bugsSettings.isSplitBugsView
+      return this.bugsSettings.isSplitBugsView && this.bugsSettings.numOfBugs > 1
     },
     bugComponent: function () {
       if (this.isSplitBugsView) {
@@ -67,21 +67,19 @@ export default {
     },
     mirrorBugsProps() {
       // iterate over the bugs and assign entrance and exit holes left for the even index and right for the odd index
-      const sides = this.bugsSettings.bugTypes.map((bug, i) => {
-        if (i % 2 === 0) {
-          return {
-            entranceHole: 'left',
-            exitHole: 'left',
-            bugId: `${bug}_${i}`
-          }
-        } else {
-          return {
-            entranceHole: 'right',
-            exitHole: 'right',
-            bugId: `${bug}_${i}`
-          }
-        }
-      })
+      let bugTypes = this.bugsSettings.bugTypes.length > 1
+        ? this.bugsSettings.bugTypes // array of size this.bugsSettings.numOfBugs with the same bug type duplicated
+        : Array(this.bugsSettings.numOfBugs).fill(this.bugsSettings.bugTypes[0])
+      if (this.bugsSettings.exitHole === 'right') {
+        bugTypes = [...bugTypes].reverse()
+      }
+      console.log('Mirror bug types', bugTypes, this.bugsSettings.numOfBugs > 1)
+      // iterate over the bugs and assign entrance and exit holes left for the even index and right for the odd index
+      const sides = bugTypes.map((bug, i) => ({
+       entranceHole: i % 2 === 0 ? 'left' : 'right',
+       exitHole: i % 2 === 0 ? 'left' : 'right',
+       bugId: `${bug}_${i}`
+     }))
       console.log(
         'mirrorBugsProps',
         sides)
@@ -106,7 +104,7 @@ export default {
     },
     exitHolePos: function (bugId) {
       if (this.isSplitBugsView) {
-        const exit = this.mirrorBugsProps[bugId].exitHole
+        const exit = this.mirrorBugsProps[bugId]['exitHole']
         return this.holesPositions[exit]
       }
       const exitHole = this.bugsSettings.exitHole
@@ -114,7 +112,7 @@ export default {
     },
     entranceHolePos: function (bugId) {
       if (this.isSplitBugsView) {
-        const entrance = this.mirrorBugsProps[bugId].entranceHole
+        const entrance = this.mirrorBugsProps[bugId]['entranceHole']
         return this.holesPositions[entrance]
       }
       let entranceHole = this.bugsSettings.exitHole === 'left' ? 'right' : 'left'
@@ -148,5 +146,18 @@ export default {
   position: absolute;
   bottom: 0;
   top: auto;
+}
+#bugs-board {
+  position: fixed;           /* fill the whole display                   */
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+}
+#backgroundCanvas {
+  position: absolute;        /* match bugCanvas so they overlap perfectly*/
+  top: 0;
+  left: 0;
+  display: block;            /* remove inline‑block whitespace           */
 }
 </style>

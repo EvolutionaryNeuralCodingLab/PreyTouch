@@ -66,7 +66,7 @@ export default {
     circleR0() {
         const xValue = this.xToTarget.enter[0]
         const midPointCircle = this.isLeftExit ? xValue + this.screenMidX / 4 : xValue - this.screenMidX / 4
-        return [midPointCircle, this.canvas.height / 2]
+        return [midPointCircle, this.canvas.height / 2 - 55]
     },
     xToTarget() {
       const x = this.entranceHolePos[0] + (this.bugsSettings.holeSize[0] / 2)
