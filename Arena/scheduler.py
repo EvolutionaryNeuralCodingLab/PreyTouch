@@ -137,6 +137,8 @@ class Scheduler(threading.Thread):
                     elif exp_name.startswith('AGENT:'):
                         agent_state = exp_name.replace('AGENT:', '')
                         cache.set(cc.HOLD_AGENT, agent_state == 'off')
+                    elif exp_name.startswith('FEEDER:'):
+                        self.periphery.feed()
                     else:  # otherwise, start the cached experiment
                         self.arena_mgr.start_cached_experiment(m.group('name'))
 
