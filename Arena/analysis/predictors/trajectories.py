@@ -1,3 +1,4 @@
+import random
 import re
 import pickle
 import time
@@ -26,11 +27,13 @@ from sklearn.metrics import (explained_variance_score, roc_auc_score, balanced_a
                              recall_score, confusion_matrix, PrecisionRecallDisplay, RocCurveDisplay, precision_recall_curve,
                              average_precision_score, roc_curve, precision_recall_fscore_support, accuracy_score)
 from sklearn.decomposition import PCA
-from captum.attr import IntegratedGradients, LayerConductance, NeuronConductance
+from captum.attr import IntegratedGradients, LayerConductance, NeuronConductance, DeepLift, DeepLiftShap, GradientShap, InputXGradient, FeatureAblation
+
 from pathlib import Path
 from analysis.trainer import ClassificationTrainer
 
 TRAJ_DIR = '/media/sil2/Data/regev/datasets/trajs'
+TRAJ_DATASET = f'{TRAJ_DIR}/trajs_before_120_after_60s_strike.pkl'
 
 
 class Attention(nn.Module):
@@ -156,6 +159,18 @@ class LizardTrajDataSet(Dataset):
             self.X[col] = (self.X[col] - X_[col].mean()) / X_[col].std()
 
 
+def load_traj_data(dataset_path=TRAJ_DATASET):
+    with open(dataset_path, 'rb') as f:
+        d = pickle.load(f)
+    strk_df, trajs = d['strk_df'], d['trajs']
+    for sid, xf in trajs.items():
+        xf['speed_x'] = xf.x.diff()
+        xf['speed_y'] = xf.y.diff()
+        xf['speed'] = np.sqrt(xf.x.diff() ** 2 + xf.y.diff() ** 2)
+        trajs[sid] = xf.iloc[1:] # remove first row because it had NaN after speed calculation
+    return strk_df, trajs
+
+
 @dataclass
 class TrajClassifier(ClassificationTrainer):
     batch_size: int = 15
@@ -171,7 +186,7 @@ class TrajClassifier(ClassificationTrainer):
     threshold: float = 0
     is_iti: bool = False  # ITI dataset instead of strikes
     is_resample: bool = True  # resample trajectories to have equal number of samples from each class
-    dataset_path: str = TRAJ_DIR
+    dataset_path: str = TRAJ_DATASET  # change the default TRAJ_DATASET
     movement_type: str = 'random_low_horizontal'
     is_hit: bool = False  # keep only hits
     animal_id: str = 'all'
@@ -207,7 +222,7 @@ class TrajClassifier(ClassificationTrainer):
             pickle.dump(vars(self), f)
 
     def get_dataset(self, is_print_size=False):
-        strk_df, trajs = self.load_data()
+        strk_df, trajs = load_traj_data(self.dataset_path)
         sdf = strk_df.copy()
         sdf = sdf.query(f'{self.target_name} in {list(self.targets)}')
         if self.movement_type:
@@ -243,7 +258,6 @@ class TrajClassifier(ClassificationTrainer):
 
     def get_optimizer(self):
         return optim.AdamW(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
-
     # def get_scheduler(self, optimizer):
     #     return torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode=self.monitored_metric_algo, patience=10)
 
@@ -274,22 +288,6 @@ class TrajClassifier(ClassificationTrainer):
             'recall': recall_score(y_true, y_pred, average='weighted', zero_division=0),
             'precision': precision_score(y_true, y_pred, average='weighted', zero_division=0)
         }
-
-    def load_data(self):
-        if not self.is_iti:
-            # filename = 'trajs_before_after_10s_strike'
-            filename = 'trajs_before_120_after_60s_strike'
-        else:
-            filename = 'trajs_10s_iti'
-        with open(f'{self.dataset_path}/{filename}.pkl', 'rb') as f:
-            d = pickle.load(f)
-        strk_df, trajs = d['strk_df' if not self.is_iti else 'trial_df'], d['trajs']
-        for sid, xf in trajs.items():
-            xf['speed_x'] = xf.x.diff()
-            xf['speed_y'] = xf.y.diff()
-            xf['speed'] = np.sqrt(xf.x.diff() ** 2 + xf.y.diff() ** 2)
-            trajs[sid] = xf.iloc[1:] # remove first row because it had NaN after speed calculation
-        return strk_df, trajs
 
     def get_model_name(self):
         model_name = f'traj_classifier_{self.animal_id}_{self.movement_type}'
@@ -353,7 +351,8 @@ class TrajClassifier(ClassificationTrainer):
         if axes is None:
             plt.show()
 
-    def calc_ablation(self, segment=None, ablate_all_except=False):
+    def calc_ablation(self, segment=None, ablate_all_except=False, ablation_type='zero'):
+        assert ablation_type in ['zero', 'add_random', 'shuffle']
         self.model.eval()
         dataset = self.get_dataset()
         ablations = {}
@@ -364,14 +363,26 @@ class TrajClassifier(ClassificationTrainer):
         for i, feature_name in enumerate(list(self.feature_names) + ['control']):
             y_true, y_pred = [], []
             for x, y in dataset:
+                x = x.clone()
                 if feature_name != 'control':
                     if ablate_all_except:
+                        assert ablation_type == 'zero', 'can only work with zero ablation in ablate_all_except'
                         x = self._ablate_all_except(x, segment, i)
                     else:
                         if segment is not None:
-                            x[mask, i] = 0.0
+                            if ablation_type == 'zero':
+                                x[mask, i] = 0.0
+                            elif ablation_type == 'add_random':
+                                x[mask, i] = x[mask, i] + torch.normal(torch.zeros(x[mask, i].shape), x[:, i].std())
+                            elif ablation_type == 'shuffle':
+                                x[mask, i] = x[mask, i][torch.randperm(x[mask, i].size(0))]
                         else:
-                            x[:, i] = 0.0
+                            if ablation_type == 'zero':
+                                x[:, i] = 0.0
+                            elif ablation_type == 'add_random':
+                                x[:, i] = x[:, i] + torch.normal(torch.zeros(x[:, i].shape), x[:, i].std())
+                            elif ablation_type == 'shuffle':
+                                x[:, i] = x[:, i][torch.randperm(x[:, i].size(0))]
                 outputs = self.model(x.to(self.device).unsqueeze(0))
                 label, prob = self.predict_proba(outputs, is_all_probs=True)
                 y_true.append(y.item())
@@ -392,15 +403,32 @@ class TrajClassifier(ClassificationTrainer):
                 x[:, i] = 0.0
         return x
 
-    def plot_ablation(self, ax, ablate_all_except=False, is_overall_ablation=False):
+    @staticmethod
+    def _calc_delta_matrix_for_ablation(dataset):
+        mat = []
+        for x, y in dataset:
+            mat.append(x.diff(dim=0, prepend=x[:1, :]))
+        mat = torch.stack(mat)
+        for i in range(mat.shape[2]):
+            m = mat[:, :, i]
+            flattened = m.flatten()
+            shuffled = flattened[torch.randperm(flattened.size(0))]
+            shuffled = shuffled.view_as(m)
+            shuffled = torch.cumsum(shuffled, dim=1)
+            mat[:, :, i] = shuffled
+        return mat
+
+    def plot_ablation(self, ax, ablate_all_except=False, is_overall_ablation=False, segments_starts=None, seg_len=0.2,
+                      ablation_type='zero'):
         if is_overall_ablation:
-            ablations_dict = self.calc_ablation(segment=None, ablate_all_except=ablate_all_except)
+            ablations_dict = self.calc_ablation(segment=None, ablate_all_except=ablate_all_except, ablation_type=ablation_type)
             ax.bar(ablations_dict.keys(), ablations_dict.values())
         else:
             af = []
-            for start_t in np.linspace(self.time_vector[0], self.time_vector[-1]-0.2, 3):
-                seg = (start_t, start_t + 0.2)
-                ablations_dict = self.calc_ablation(segment=seg, ablate_all_except=ablate_all_except)
+            segments_starts = segments_starts or np.linspace(self.time_vector[0], self.time_vector[-1]-seg_len, 3)
+            for start_t in segments_starts:
+                seg = (start_t, start_t + seg_len)
+                ablations_dict = self.calc_ablation(segment=seg, ablate_all_except=ablate_all_except, ablation_type=ablation_type)
                 ablations_dict['segment'] = np.round(np.mean(seg), 1)
                 af.append(ablations_dict)
             af = pd.DataFrame(af)
@@ -435,14 +463,23 @@ class TrajClassifier(ClassificationTrainer):
             ax.set_title("Micro-averaged over all classes")
 
     def plot_roc_curve(self, y_true_binary, y_score, ax):
-        for i, target in enumerate(self.targets):
-            fpr, tpr, _ = roc_curve(y_true_binary[:, i], y_score[:, i])
-            auc = roc_auc_score(y_true_binary[:, i], y_score[:, i])
-            display = RocCurveDisplay(fpr=fpr, tpr=tpr, roc_auc=auc)
-            display.plot(ax=ax, name=str(target))  # plot_chance_level=True
+        # if len(y_true_binary.shape) < 2:
+        #     y_true_binary = np.expand_dims(y_true_binary, axis=0)
+        #     y_score = np.expand_dims(y_score, axis=0)
 
-        micro_auc = roc_auc_score(y_true_binary, y_score, average="micro")
-        ax.set_title(f"Micro-averaged over all classes: {micro_auc:.2f}", fontsize=12)
+        if len(self.targets) > 2:
+            for i, target in enumerate(self.targets):
+                fpr, tpr, _ = roc_curve(y_true_binary[:, i], y_score[:, i])
+                auc = roc_auc_score(y_true_binary[:, i], y_score[:, i])
+                display = RocCurveDisplay(fpr=fpr, tpr=tpr, roc_auc=auc)
+                display.plot(ax=ax, name=str(target))  # plot_chance_level=True
+            micro_auc = roc_auc_score(y_true_binary, y_score, average="micro")
+            ax.set_title(f"Micro-averaged over all classes: {micro_auc:.2f}", fontsize=12)
+        else:
+            fpr, tpr, _ = roc_curve(y_true_binary[:, 0], y_score[:, 0])
+            auc = roc_auc_score(y_true_binary[:, 0], y_score[:, 0])
+            display = RocCurveDisplay(fpr=fpr, tpr=tpr, roc_auc=auc)
+            display.plot(ax=ax)
 
     def plot_attention_weights(self, attention_weights, trajectory, ax):
         # attention_weights: Tensor of shape (seq_length,)
@@ -456,33 +493,84 @@ class TrajClassifier(ClassificationTrainer):
         ax.set_ylabel('Y Coordinate')
         ax.set_title('Attention Weights over Trajectory')
 
-    def calc_segment_importance(self, max_segments=116):
+    def calc_segment_importance_old(self, method=None, max_segments=116, rand_iterations=1, baseline='zero'):
         torch.backends.cudnn.enabled = False
         self.model.eval()
-        ig = IntegratedGradients(self.model)
+        method = method if method is not None else IntegratedGradients
+        ig = method(self.model)
         dataset = self.get_dataset()
 
         max_examples = None
         input_tensors = {}
         for x, y in dataset:
             if not max_examples:
-                max_allocation = max_segments * 120 * len(self.feature_names) / self.lstm_layers
+                max_allocation = max_segments * self.sub_section[1] * len(self.feature_names) * (120/self.sub_section[1]) / self.lstm_layers
                 max_examples = int(np.floor(max_allocation / torch.mul(*x.size()).item()))
             y = y.item()
             input_tensors.setdefault(y, []).append(x.to(self.device))
         segments = {}
+
         for i, input_tensor in input_tensors.items():
             input_tensor = torch.stack(input_tensor)[:max_examples, :, :]
-            attributions, delta = ig.attribute(input_tensor, target=i, return_convergence_delta=True)
-            seg = attributions.mean(dim=0).sum(dim=-1).detach().cpu().numpy()
-            segments[self.targets[i]] = np.abs(seg)
+            segs_ = []
+            for _ in range(rand_iterations):
+                if baseline == 'zero':
+                    baselines = torch.zeros_like(input_tensor)
+                elif baseline == 'random':
+                    baselines = torch.rand_like(input_tensor)
+                elif baseline == 'mean':
+                    baselines = input_tensor.mean(dim=0).repeat(input_tensor.shape[0], 1, 1)
+                else:
+                    raise Exception(f'baseline {baseline} not supported')
+                # attributions, delta = ig.attribute(input_tensor, baselines=baselines, target=i, return_convergence_delta=True)
+                if method.__name__ == 'InputXGradient':
+                    attributions = ig.attribute(input_tensor, target=i)
+                else:
+                    attributions = ig.attribute(input_tensor, baselines=baselines, target=i)
+                seg = attributions.mean(dim=0).sum(dim=-1).detach().cpu().numpy()
+                segs_.append(seg)
+            segments[self.targets[i]] = np.abs(np.vstack(segs_).mean(axis=0))
         return segments
 
+    @staticmethod
+    def get_mean_input(dataset):
+        res = []
+        for x, y in dataset:
+            res.append(x)
+        return torch.stack(res).mean(dim=0)
+
+    def calc_segment_importance(self, method=None, delta_threshold=0.1, n_steps=100, is_plot=True, is_abs=True):
+        torch.backends.cudnn.enabled = False
+        self.model.eval()
+        method = method if method is not None else IntegratedGradients
+        ig = method(self.model)
+        dataset = self.get_dataset()
+        attrs, deltas = [], []
+        mean_input = self.get_mean_input(dataset).to(self.device)
+        for x, y in dataset:
+            y = y.item()
+            input_tensor = x.to(self.device).unsqueeze(0)
+            # baselines = torch.zeros_like(input_tensor)
+            baselines = mean_input.mean(dim=0).repeat(input_tensor.shape[0], 1, 1)
+            attributions, delta = ig.attribute(input_tensor, baselines=baselines, target=y,
+                                               return_convergence_delta=True, n_steps=n_steps)
+            if delta.item() < delta_threshold:
+                if is_abs:
+                    attributions = attributions.abs()
+                attrs.append(attributions)
+            deltas.append(delta.item())
+
+        attrs = torch.cat(attrs, dim=0).mean(dim=0).detach().cpu().numpy()
+        deltas = np.array(deltas)
+        # print(f'deltas: {len(deltas[deltas<delta_threshold])}/{len(deltas)} below {delta_threshold}')
+        return attrs
+
     def plot_segment_importance(self, ax):
-        segments = self.calc_segment_importance()
-        for bug_speed, seg in segments.items():
-            ax.plot(self.time_vector, seg, label=str(bug_speed), alpha=0.5)
-        ax.plot(self.time_vector, np.mean(list(segments.values()), axis=0), label='Average', color='k', linewidth=3)
+        attrs = self.calc_segment_importance()
+        for i, feature in enumerate(self.feature_names):
+            ax.plot(self.time_vector[1:-1], attrs[1:-1, i], label=feature, alpha=0.5)
+        ax.plot(self.time_vector[1:-1], attrs.mean(axis=-1)[1:-1], label='avg', color='k', linewidth=3)
+        ax.legend()
 
     def plot_attention(self, ax, attns):
         mean_att = []
@@ -618,13 +706,12 @@ def hyperparameters_comparison(animal_id='PV91', movement_type='random_low_horiz
 
     res_df = []
     grid = ParameterGrid(dict(dropout_prob=[0.2, 0.4, 0.6], lstm_layers=[1, 2, 3, 4], lstm_hidden_dim=[64, 128]))
-    for i, params in enumerate(grid):
+    for i, params in tqdm(enumerate(grid), desc='hyperparameter tuning', total=len(grid)):
         if params['lstm_layers'] == 1:
             if params['dropout_prob'] != 0.4:
                 continue
             else:
                 params['dropout_prob'] = 0
-        print(f'start loop {i+1}/{len(grid)}')
         tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=sub_section, feature_names=feature_names,
                             is_debug=False, is_resample=is_resample, animal_id=animal_id, movement_type=movement_type, **kwargs, **params)
         tj.train(is_plot=False)
@@ -639,7 +726,7 @@ def hyperparameters_comparison(animal_id='PV91', movement_type='random_low_horiz
         res_df.append({'metric': 'overall_accuracy', 'value': acc, 'animal_id': animal_id,
                        'movement_type': movement_type, 'model_path': tj.model_path, **params})
 
-        print(f'{",".join([f"{k}:{v}" for k, v in params.items()])} - Overall Accuracy: {acc:.2f}')
+        # print(f'{",".join([f"{k}:{v}" for k, v in params.items()])} - Overall Accuracy: {acc:.2f}')
         torch.cuda.empty_cache()
         time.sleep(1)
 
@@ -693,8 +780,8 @@ def run_with_different_seeds(animal_id, movement_type, feature_names, sub_sectio
                              ablate_all_except=False, **kwargs):
     abl_col = 'ablation_single' if not ablate_all_except else 'ablate_all'
     res = {'metrics': [], 'ig': {}, abl_col: []}
-    for s in range(n):
-        print(f'\n>>>>> Start iteration {s+1}/{n} for seed {s}...')
+    for s in tqdm(range(n), desc='different seeds'):
+        # print(f'\n>>>>> Start iteration {s+1}/{n} for seed {s}...')
         tj = TrajClassifier(save_model_dir=TRAJ_DIR, feature_names=feature_names, seed=s, sub_section=sub_section, is_debug=False,
                             animal_id=animal_id, movement_type=movement_type, **kwargs)
         tj.train(is_plot=False)
@@ -707,8 +794,8 @@ def run_with_different_seeds(animal_id, movement_type, feature_names, sub_sectio
 
         y_true, y_pred, y_score = tj.get_data_for_evaluation()
         ig_segments = tj.calc_segment_importance()
-        for bug_speed, seg in ig_segments.items():
-            res['ig'].setdefault(bug_speed, []).append(seg)
+        for i, feature in enumerate(tj.feature_names):
+            res['ig'].setdefault(feature, []).append(ig_segments[:, i])
         res['metrics'].append({'metric': 'overall_accuracy', 'value': accuracy_score(y_true, y_pred),
                                'animal_id': animal_id, 'movement_type': movement_type, 'model_path': tj.model_path})
         if is_run_feature_importance:
@@ -796,6 +883,8 @@ def find_optimal_span(animal_id='PV42', movement_type='random_low_horizontal', d
 
 def find_best_and_run_different_seeds(animal_id, movement_type='random_low_horizontal', is_resample=False,
                                       sub_section=(-1, 60), feature_names=('x', 'y', 'speed_x', 'speed_y')):
+    print(f'Animal: {animal_id}, movement_type: {movement_type}, sub_section: {sub_section}, feature_names: {feature_names}')
+    time.sleep(1)
     best_hyp = hyperparameters_comparison(animal_id=animal_id, movement_type=movement_type, monitored_metric='val_loss',
                                monitored_metric_algo='min', is_resample=is_resample, feature_names=feature_names,
                                sub_section=sub_section)
@@ -845,6 +934,9 @@ animals_hyperparameters = {
         'PV99': {'dropout_prob': 0.6, 'lstm_hidden_dim': 128, 'lstm_layers': 3},
         'PV80': {'dropout_prob': 0.4, 'lstm_hidden_dim': 128, 'lstm_layers': 3},
         'PV41': {'dropout_prob': 0.4, 'lstm_hidden_dim': 64, 'lstm_layers': 2},
+    },
+    (-2.5, 180): {
+        'PV42': {'dropout_prob': 0.2, 'lstm_hidden_dim': 128, 'lstm_layers': 4},
     }
 }
 
@@ -856,12 +948,19 @@ if __name__ == '__main__':
     # tj.train(is_plot=True)
     # tj.check_hidden_states()
 
-    for animal_id_ in ['PV99', 'PV80', 'PV41']:
-        # find_best_and_run_different_seeds(animal_id_, sub_section=(-1.5, 60),
-        #                                   feature_names=['x', 'y', 'speed_x', 'speed_y'])
-        run_with_different_seeds(animal_id_, 'random_low_horizontal', ['x', 'y', 'speed_x', 'speed_y'], n=10, num_epochs=150,
-                                 is_resample=False, sub_section=(-1.5, 60), monitored_metric='val_loss', is_shuffled_target=True,
-                                 monitored_metric_algo='min', **animals_hyperparameters[(-1.5, 60)][animal_id_])
+    # tj = TrajClassifier(
+    #     model_path='/media/sil2/Data/regev/datasets/trajs/traj_classifier_PV42_random_low_horizontal/20250506_120527')
+    # tj.plot_ablation(plt.subplot(), segments_starts=(-1.5, -0.9, -0.3, 0.3), ablation_type='shuffle')
+    # plt.show()
+
+    for sub_sec in [(-0.2, 12)]:
+        for animal_id_ in ['PV91', 'PV80', 'PV163', 'PV99', 'PV95']:
+            find_best_and_run_different_seeds(animal_id_, sub_section=sub_sec,
+                                              feature_names=['speed_x', 'speed_y'])
+
+    # run_with_different_seeds('PV42', 'random_low_horizontal', sub_section=(-0.2, 12), feature_names=['speed_x', 'speed_y'], n=30,
+    #                          num_epochs=150, is_resample=False, monitored_metric='val_loss',
+    #                          monitored_metric_algo='min', dropout_prob=0.2, lstm_hidden_dim=128, lstm_layers=3)
 
     # hyperparameters_comparison(animal_id='PV42', movement_type='random_low_horizontal', monitored_metric='val_loss', monitored_metric_algo='min',
     #                            feature_names=['x', 'y', 'speed_x', 'speed_y'], sub_section=(-1, 60))
