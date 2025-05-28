@@ -97,29 +97,35 @@ class Trainer:
             optimizer = self.get_optimizer()
             scheduler = self.get_scheduler(optimizer)
             train_loader, val_loader = self.get_training_loaders(indices[train_idx], indices[val_idx])
-            with tqdm(range(self.num_epochs)) as pbar:
-                for epoch_id in pbar:
-                    epoch_metrics = dict()
-                    epoch_metrics['train_loss'] = self.train_epoch(train_loader, optimizer, loss_fn)
-                    epoch_metrics.update(self.val_epoch(val_loader, loss_fn))
-                    score = epoch_metrics[self.monitored_metric]
-                    if scheduler is not None:
-                        scheduler.step(score)
+            pbar = range(self.num_epochs)
+            if self.is_debug:
+                pbar = tqdm(pbar)
+            for epoch_id in pbar:
+                epoch_metrics = dict()
+                epoch_metrics['train_loss'] = self.train_epoch(train_loader, optimizer, loss_fn)
+                epoch_metrics.update(self.val_epoch(val_loader, loss_fn))
+                score = epoch_metrics[self.monitored_metric]
+                if scheduler is not None:
+                    scheduler.step(score)
+                if self.is_debug:
                     pbar.desc = f'FOLD-#{fold+1} ({len(train_idx)},{len(val_idx)})  {self.monitored_metric}={score:.2f} (best={f_best_score_ or 0:.2f})'
-                    for k, v in epoch_metrics.items():
-                        f_metrics.setdefault(k, []).append(v)
-                    if not f_best_score_ or self.is_better_score_(score, f_best_score_):
-                        f_best_score_ = score
-                        f_best_model_ = self.model.state_dict()
-                        f_chosen_epoch = epoch_id + 1
 
-                self.model.load_state_dict(f_best_model_)
-                fold_res = {'model_state': f_best_model_, 'score': f_best_score_, 'metrics': f_metrics, 'chosen_epoch': f_chosen_epoch}
-                if test_loader is not None:
-                    test_score = self.val_epoch(test_loader, loss_fn)[self.monitored_metric]
-                    fold_res['test_score'] = test_score
-                    print(f' Test Score={test_score:.2f}')
-                self.history.append(fold_res)
+                for k, v in epoch_metrics.items():
+                    f_metrics.setdefault(k, []).append(v)
+                if not f_best_score_ or self.is_better_score_(score, f_best_score_):
+                    f_best_score_ = score
+                    f_best_model_ = self.model.state_dict()
+                    f_chosen_epoch = epoch_id + 1
+
+            self.model.load_state_dict(f_best_model_)
+            fold_res = {'model_state': f_best_model_, 'score': f_best_score_, 'metrics': f_metrics, 'chosen_epoch': f_chosen_epoch}
+            if test_loader is not None:
+                test_score = self.val_epoch(test_loader, loss_fn)[self.monitored_metric]
+                fold_res['test_score'] = test_score
+                print(f' Test Score={test_score:.2f}')
+            self.history.append(fold_res)
+            if self.is_debug:
+                pbar.close()
 
         chosen_fold_id = self.get_best_model()
         self.print(f'Chosen model is of Fold#{chosen_fold_id+1}')
