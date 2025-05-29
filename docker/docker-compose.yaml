@@ -102,11 +102,11 @@ services:
       - POSTGRES_PASSWORD=password
       - POSTGRES_DB=arena
 
-  grafana:
-    image: grafana/grafana
-    restart: "unless-stopped"
-    ports:
-      - 3000:3000
+  # grafana:
+  #   image: grafana/grafana
+  #   restart: "unless-stopped"
+  #   ports:
+  #     - 3000:3000
 
 volumes:
   db_data:
