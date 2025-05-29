@@ -27,10 +27,10 @@ class BugTrialsAnalyzer:
         self.tongue_model = self.init_tongue_model()
         self.orm = ORM()
 
-    def run(self, block_id=None, block_path=None, is_cache=True):
+    def run(self, block_id=None, block_path=None, **scan_kwargs):
         if block_path and not block_id:
             block_id = self.get_block_id_from_block_path(block_path)
-        block_ids = self.scan(block_id=block_id, is_cache=is_cache)
+        block_ids = self.scan(block_id=block_id, **scan_kwargs)
         if not block_ids:
             print('No blocks found in DB scan; aborting.')
             return
@@ -56,7 +56,7 @@ class BugTrialsAnalyzer:
             res.to_parquet(cache_path)
             self.plot_cached_block_results(block_id, is_overwrite=True)
 
-    def scan(self, is_cache=True, block_id=None, drop_with_tags=True):
+    def scan(self, is_cache=True, block_id=None, drop_with_tags=True, skip_no_strikes_blocks=True, movement_type=None):
         block_ids = {}
         with self.orm.session() as s:
             filters = [not_(Experiment.animal_id.ilike('%test%')), Block.block_type == 'bugs']
@@ -64,6 +64,8 @@ class BugTrialsAnalyzer:
                 filters.append(Block.id == block_id)
             if self.animal_ids:
                 filters.append(Experiment.animal_id.in_(self.animal_ids))
+            if movement_type:
+                filters.append(Block.movement_type == movement_type)
             if drop_with_tags:
                 filters.append(func.coalesce(Block.tags, '') == '')
             orm_res = s.query(Block, Experiment).join(
@@ -71,7 +73,8 @@ class BugTrialsAnalyzer:
             for blk, exp in orm_res:
                 parent_path = Path(f'{exp.experiment_path}/block{blk.block_id}')
                 cache_path = self.get_trials_analysis_filename(parent_path)
-                if (cache_path.exists() and is_cache) or len(blk.trials) == 0:
+                if (cache_path.exists() and is_cache) or len(blk.trials) == 0 or \
+                    (skip_no_strikes_blocks and len(blk.strikes) == 0):
                     continue
                 block_ids[int(blk.id)] = (cache_path, {int(tr.id): [strk.time for strk in tr.strikes] for tr in blk.trials})
         return block_ids
@@ -283,7 +286,7 @@ class TrialImagesCreator:
     def __init__(self):
         self.orm = ORM()
     
-    def scan(self, animal_ids):
+    def scan(self, animal_ids, movement_type=None, skip_no_strikes_blocks=False):
         blocks = []
         with self.orm.session() as s:
             exps = s.query(Experiment)
@@ -291,7 +294,8 @@ class TrialImagesCreator:
                 exps = exps.filter(Experiment.animal_id.in_(animal_ids))
             for exp in exps.all():
                 for blk in exp.blocks:
-                    if blk.block_type != 'bugs':
+                    if blk.block_type != 'bugs' or (movement_type and blk.movement_type != movement_type) or \
+                            (skip_no_strikes_blocks and len(blk.strikes) == 0):
                         continue
                     images_dir = self.get_images_dir(s, blk, exp=exp)
                     if images_dir.exists() and [x for x in images_dir.glob('*.png')]:
@@ -334,8 +338,8 @@ class TrialImagesCreator:
 
 
 if __name__ == "__main__":
-    TrialImagesCreator().save_images(1758)
-    # ts = BugTrialsAnalyzer(is_debug=True, animal_ids=['PV51'])
+    # TrialImagesCreator().scan(animal_ids=['PV91', 'PV99', 'PV41'], movement_type='circle', skip_no_strikes_blocks=True)
+    ts = BugTrialsAnalyzer(is_debug=True, animal_ids=['PV213']).run(movement_type='circle_accelerate')
     # blk_path = '/data/PreyTouch/output/experiments/PV162/20240414/block1'
     # ts.run(is_cache=True)
     # ts.run(892, is_cache=False)
