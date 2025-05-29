@@ -591,12 +591,13 @@ class ArenaManager(SyncManager):
         self._streaming_camera = None
 
         self.orm = ORM()
-        self.update_upcoming_schedules()
-        self.start_management_listeners()
-        self.camera_init()
-        self.logger.info('Arena manager created.')
-        atexit.register(self.arena_shutdown)
-        self.arena_start()
+        if not config.IS_ANALYSIS_ONLY:
+            self.update_upcoming_schedules()
+            self.start_management_listeners()
+            self.camera_init()
+            self.logger.info('Arena manager created.')
+            atexit.register(self.arena_shutdown)
+            self.arena_start()
 
     def __del__(self):
         sys.exit(0)
