@@ -236,7 +236,7 @@ def get_current_animal():
 
 @app.route('/animal_day_summary', methods=['POST'])
 def animal_day_summary():
-    if config.DISABLE_DB or config.IS_ANALYSIS_ONLY:
+    if config.DISABLE_DB:
         return Response('Unable to load animal summary since DB is disabled')
 
     data = request.form
@@ -851,8 +851,8 @@ def start_app(queue):
     app.logger.setLevel(logging.INFO)
 
     cache = RedisCache()
+    arena_mgr = ArenaManager(main_app_queue=queue_app)
     if not config.IS_ANALYSIS_ONLY:
-        arena_mgr = ArenaManager(main_app_queue=queue_app)
         periphery_mgr = PeripheryIntegrator()
         utils.turn_display_off(logger=arena_mgr.logger)
         if arena_mgr.is_cam_trigger_setup() and not config.DISABLE_PERIPHERY:

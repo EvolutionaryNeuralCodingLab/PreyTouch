@@ -327,7 +327,7 @@ class StrikeAnalyzer:
             # get the first frame in the pose dataset where y-velocity is not null
             stop_frame_id = self.pose_df[~self.pose_df.velocity_y.isnull()].index[0]
             # extract the y-velocity from this frame up to 10 frames before the strike frame
-            v = self.pose_df.loc[stop_frame_id:self.strike_frame_id-10, 'velocity_y']
+            v = self.pose_df.loc[stop_frame_id:self.calc_strike_frame-10, 'velocity_y']
             # find the index in which the velocity crosses 0 and becomes negative
             cross_idx = v[np.sign(v).diff().fillna(0) == -2].index.tolist()
             # if such crossings are found, return the last of them (namely closer to the strike)
@@ -335,7 +335,7 @@ class StrikeAnalyzer:
                 return cross_idx[-1]
             
             # if no velocity crossings are found, look for acceleration crossings
-            a = self.pose_df.loc[stop_frame_id:self.strike_frame_id-10, 'acceleration_y']
+            a = self.pose_df.loc[stop_frame_id:self.calc_strike_frame-10, 'acceleration_y']
             cross_idx = a[np.sign(a).diff().fillna(0) == -2].index.tolist()
             if len(cross_idx) > 0:
                 return cross_idx[-1]
@@ -345,21 +345,21 @@ class StrikeAnalyzer:
     @cached_property
     def calc_strike_frame(self):
         strike_frame_idx = self.strike_frame_id
-        max_diff_strike_frame = 10
+        max_diff_strike_frame = 30
         try:
-            y = self.pose_df.cam_y
-            peaks_idx, _ = find_peaks(y.values, height=910, distance=10)
+            y = self.pose_df.y
+            peaks_idx, _ = find_peaks(-y.values, height=1.5, distance=10)
             peaks_idx = self.pose_df.index[peaks_idx]
-            peaks_idx = peaks_idx[(np.abs(peaks_idx - self.strike_frame_id) < max_diff_strike_frame) &
-                                (peaks_idx < self.bug_traj_last_frame)]
+            # print(peaks_idx, np.abs(peaks_idx - self.strike_frame_id), self.bug_traj_last_frame)
+            peaks_idx = peaks_idx[(np.abs(peaks_idx - self.strike_frame_id) < max_diff_strike_frame)]  # (peaks_idx < self.bug_traj_last_frame)
             if len(peaks_idx) > 0:
-                strike_frame_idx = peaks_idx[np.argmax(y[peaks_idx])]
+                strike_frame_idx = peaks_idx[np.argmin(y[peaks_idx])]
             else:
                 strike_ids = np.arange(self.strike_frame_id - max_diff_strike_frame // 2,
                                        self.strike_frame_id + max_diff_strike_frame // 2)
                 around_strike_y_values = np.array([y[idx] for idx in strike_ids if idx in np.arange(len(y)).astype(int)])
                 if len(around_strike_y_values) > 0:
-                    strike_frame_idx = strike_ids[np.argmax(y[strike_ids])]
+                    strike_frame_idx = strike_ids[np.argmin(y[strike_ids])]
         except Exception as exc:
             print(f'Error in calc_strike_frame: {exc}')
         return strike_frame_idx

@@ -44,6 +44,7 @@
                     <option value="experiment">Experiment</option>
                     <option value="switch">Switch</option>
                     <option value="agent">Agent</option>
+                    <option value="feeder">Feeder</option>
                 </select>
             </div>
         </div>
@@ -115,6 +116,10 @@
             $("#cachedExperimentsSelectScheduleSection").hide()
             $("#switchSelectScheduleSection").hide()
             $("#agentSelectScheduleSection").show()
+        } else if (scheduleType === "feeder") {
+            $("#cachedExperimentsSelectScheduleSection").hide()
+            $("#switchSelectScheduleSection").hide()
+            $("#agentSelectScheduleSection").hide()
         }
     }).trigger('change')
 
@@ -125,6 +130,8 @@
             experimentName = `SWITCH:${$("#switchNameSelectSchedule").val()},${$("#switchStateSelectSchedule").val()}`
         } else if (scheduleType === 'agent') {
             experimentName = `AGENT:${$("#agentStateSelectSchedule").val()}`
+        } else if (scheduleType === 'feeder') {
+            experimentName = 'FEEDER:'
         }
         $.post('/commit_schedule', {
                 start_date: $("#datetimepicker1").data().date,
