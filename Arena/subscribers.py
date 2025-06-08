@@ -396,7 +396,7 @@ class WebSocketServer(mp.Process):
 
     async def main_loop(self):
         host, port = config.WEBSOCKET_URL.replace('ws://', '').split(':')
-        async with websockets.serve(self.echo, host, int(port), ping_interval=None):
+        async with websockets.serve(self.echo, host, int(port), ping_interval=None, max_size=2**24):
             while not self.stop_event.is_set():
                 await asyncio.sleep(0.1)
 
