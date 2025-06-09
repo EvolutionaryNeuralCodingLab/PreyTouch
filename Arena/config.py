@@ -148,6 +148,13 @@ IR_LIGHT_NAME = env('IR_LIGHT_NAME', '', group='Periphery', desc='Name of infrar
 DAY_LIGHT_NAME = env('DAY_LIGHT_NAME', '', group='Periphery', desc='Name of LED lights in periphery config')
 CAM_TRIGGER_ARDUINO_NAME = env('CAM_TRIGGER_ARDUINO_NAME', 'camera trigger', group='Periphery', desc='name of the camera trigger arduino in the periphery config')
 ARENA_ARDUINO_NAME = env('ARENA_ARDUINO_NAME', 'arena', group='Periphery', desc='name of the arena arduino in the periphery config')
+PERIPHERY_HEALTHCHECK = {
+    'CHECK_INTERVAL':    env.float('PERIPHERY_HEALTHCHECK_INTERVAL',    5.0,   group='Periphery', desc='Seconds between healthcheck polls'),
+    'MAX_CHECK_DELAY':   env.int(  'PERIPHERY_HEALTHCHECK_MAX_DELAY',    300,    group='Periphery', desc='Seconds without a heartbeat before logging an error'),
+    'MAX_PUBLISH_DELAY': env.int(  'PERIPHERY_HEALTHCHECK_PUBLISH_DELAY',600,    group='Periphery', desc='Minimum seconds between repeated error logs'),
+    'MAX_ACTION_DELAY':  env.int(  'PERIPHERY_HEALTHCHECK_ACTION_DELAY',3600,   group='Periphery', desc='Minimum seconds between supervisor-restarts'),
+}
+
 
 # Calibration
 MIN_CALIBRATION_IMAGES = env.int('MIN_CALIBRATION_IMAGES', 7, group='Calibration', desc='Nuber of minimum calibration images per camera')

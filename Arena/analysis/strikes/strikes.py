@@ -186,8 +186,11 @@ class StrikeAnalyzer:
             ax.set_title(f'{self.bodypart} {label}')
             ax.set_xlabel('Time around strike [sec]')
             if label == 'position':
-                leap_duration = self.pose_df['rel_time'].loc[self.strike_frame_id] - self.pose_df['rel_time'].loc[self.leap_frame]
-                ax.set_title(f'{self.bodypart} {label}\nLeap duration: {leap_duration*1000:.0f}msec')
+                title = f'{self.bodypart} {label}'
+                if self.leap_frame is not None:
+                    leap_duration = self.pose_df['rel_time'].loc[self.strike_frame_id] - self.pose_df['rel_time'].loc[self.leap_frame]
+                    title += f'\nLeap duration: {leap_duration*1000:.0f}msec'
+                ax.set_title(title)
                 if is_legend:
                     ax.legend()
             elif label == 'acceleration':
@@ -327,12 +330,12 @@ class StrikeAnalyzer:
             # get the first frame in the pose dataset where y-velocity is not null
             stop_frame_id = self.pose_df[~self.pose_df.velocity_y.isnull()].index[0]
             # extract the y-velocity from this frame up to 10 frames before the strike frame
-            v = self.pose_df.loc[stop_frame_id:self.calc_strike_frame-10, 'velocity_y']
-            # find the index in which the velocity crosses 0 and becomes negative
-            cross_idx = v[np.sign(v).diff().fillna(0) == -2].index.tolist()
-            # if such crossings are found, return the last of them (namely closer to the strike)
-            if len(cross_idx) > 0:
-                return cross_idx[-1]
+            # v = self.pose_df.loc[stop_frame_id:self.calc_strike_frame-10, 'velocity_y']
+            # # find the index in which the velocity crosses 0 and becomes negative
+            # cross_idx = v[np.sign(v).diff().fillna(0) == -2].index.tolist()
+            # # if such crossings are found, return the last of them (namely closer to the strike)
+            # if len(cross_idx) > 0:
+            #     return cross_idx[-1]
             
             # if no velocity crossings are found, look for acceleration crossings
             a = self.pose_df.loc[stop_frame_id:self.calc_strike_frame-10, 'acceleration_y']

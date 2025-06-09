@@ -97,10 +97,10 @@ def colorline(ax, x, y, z=None, cmap=plt.get_cmap('jet'), norm=plt.Normalize(0.0
     z = np.asarray(z)
     segments = make_segments(x, y)
 
-    if not isinstance(cmap, LinearSegmentedColormap):
-        rgb = to_rgb(cmap)
-        h, s, v = colorsys.rgb_to_hsv(*rgb)
-        cmap = ListedColormap([colorsys.hsv_to_rgb(h, s=s, v=v * scale) for scale in np.linspace(1, 0, min(100, len(x)))])
+    # if not isinstance(cmap, LinearSegmentedColormap):
+    #     rgb = to_rgb(cmap)
+    #     h, s, v = colorsys.rgb_to_hsv(*rgb)
+    #     cmap = ListedColormap([colorsys.hsv_to_rgb(h, s=s, v=v * scale) for scale in np.linspace(1, 0, min(100, len(x)))])
 
     lc = mcoll.LineCollection(segments, array=z, cmap=cmap, norm=norm, linewidth=linewidth, alpha=alpha)
     ax.add_collection(lc)
