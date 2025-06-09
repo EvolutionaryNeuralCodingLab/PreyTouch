@@ -823,6 +823,9 @@ class SpatialAnalyzer:
 
         axes_ = self.get_axes(cols, len(pose_dict), axes=axes)
         for i, (group_name, pose_df) in enumerate(pose_dict.items()):
+            print(f'group_name: {group_name}')
+            if not group_name:
+                continue
             cbar_ax = None
             if i == len(pose_dict) - 1 and len(pose_dict) > 1:
                 # cbar_ax = axes_[i].inset_axes([1.05, 0.1, 0.03, 0.8])
@@ -892,9 +895,10 @@ class SpatialAnalyzer:
             rect = patches.Rectangle(c[0, :], *(c[1, :] - c[0, :]).tolist(), linewidth=1, edgecolor='k',
                                      facecolor='k' if name == 'screen' else 'none')
             ax.add_patch(rect)
-        ax.invert_xaxis()
+        # ax.invert_xaxis()
         ax.set_xlim(self.coords['arena' if not is_close_to_screen_only else 'arena_close'][:, 0])
         ax.set_ylim(self.coords['arena' if not is_close_to_screen_only else 'arena_close'][:, 1])
+        ax.invert_yaxis()
 
     def plot_trajectories(self, single_animal, cols=2, axes=None, only_to_screen=False, is_title=True,
                           cbar_indices=None, animal_colors=None):
