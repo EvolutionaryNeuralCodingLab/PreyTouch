@@ -349,7 +349,6 @@ class PeripheryHealthCheck(Subscriber):
     def run(self):
         try:
             def hc_callback(payload):
-                print(f'healthcheck payload: {payload}')
                 self.last_health_check_time = time.time()
 
             listener = MQTTListener(topics=['arena/listening', 'arena/value'], is_debug=False, callback=hc_callback)
