@@ -332,12 +332,13 @@ class AppHealthCheck(Subscriber):
 
 class PeripheryHealthCheck(Subscriber):
     sub_name = 'periphery_healthcheck'
-
     def __init__(self, stop_event: threading.Event, log_queue=None, channel=None, callback=None):
         super().__init__(stop_event, log_queue, channel, callback)
         self.last_health_check_time = time.time()
         self.last_publish_error_time = 0
         self.last_action_time = 0
+        self.periphery = PeripheryIntegrator()
+
 
         cfg = config.PERIPHERY_HEALTHCHECK
         self.check_interval    = cfg['CHECK_INTERVAL']
@@ -348,20 +349,34 @@ class PeripheryHealthCheck(Subscriber):
     def run(self):
         try:
             def hc_callback(payload):
-                print(f'healthcheck payload: {payload}')
-                self.last_health_check_time = time.time()
+                now = time.time()
+                toggles_state = self.periphery.check_toggles_states()
+                if any("light" in key for key in toggles_state):
+                    self.last_health_check_time = now
 
-            listener = MQTTListener(topics=['healthcheck'], is_debug=False, callback=hc_callback)
+            listener = MQTTListener(topics=['arena/listening', 'arena/value'], is_debug=False, callback=hc_callback)
             self.logger.debug('periphery_healthcheck started')
             while not self.stop_event.is_set():
                 listener.loop()
                 time.sleep(self.check_interval)
                 if time.time() - self.last_health_check_time > self.max_check_delay:
                     if self.last_publish_error_time and time.time() - self.last_publish_error_time < self.max_publish_delay:
+                        # self.logger.debug(f"No healthcheck received for {time.time() - self.last_health_check_time:.1f} seconds, last action was {time.time() - self.last_action_time:.1f} seconds ago")
                         continue
+                    hc = self.periphery.check_periphery_healthcheck()
+                    tc = self.periphery.check_toggles_states()
                     self.logger.error('Arena periphery MQTT bridge is down')
+                    tel_message = f'Arena periphery MQTT bridge is down; ' \
+                                  f'last healthcheck received {time.time() - self.last_health_check_time:.1f} seconds ago; ' \
+                                  f'last action was {time.time() - self.last_action_time:.1f} seconds ago'
+                    if hc:
+                        tel_message += f'; periphery_healthcheck={hc}'
+                    if tc:
+                        tel_message += f'; toggles_healthcheck={tc}'
+                    send_telegram_message(tel_message)
                     if not self.last_action_time or time.time() - self.last_action_time > self.max_action_delay:
                         self.logger.warning('Running restart for arena periphery process')
+                        send_telegram_message('Restarting arena periphery process')
                         next(run_command('supervisorctl restart reptilearn_arena'))
                         self.last_action_time = time.time()
                         time.sleep(4)
@@ -370,57 +385,6 @@ class PeripheryHealthCheck(Subscriber):
 
         except:
             self.logger.exception(f'Error in subscriber {self.name}')
-
-
-class PeripheryHealthCheckPassive(threading.Thread):
-    def __init__(self, stop_event, log_queue=None):
-        super().__init__(daemon=True)
-        self.logger     = get_logger('periphery_healthcheck_passive')
-        self.stop_event = stop_event
-        self.log_queue  = log_queue
-
-        cfg = config.PERIPHERY_HEALTHCHECK
-        self.max_check_delay   = cfg['MAX_CHECK_DELAY']
-        self.max_publish_delay = cfg['MAX_PUBLISH_DELAY']
-        self.max_action_delay  = cfg['MAX_ACTION_DELAY']
-
-        self.last_heartbeat = time.time()       # last time got ttl from periphery
-        self._last_error    = 0
-        self._last_action   = 0
-
-    def _heartbeat_cb(self, payload):
-        print("heartbeat:", payload)
-        self.last_heartbeat = time.time()
-
-    def _handle_miss(self):
-        now = time.time()
-        if now - self._last_error >= self.max_publish_delay:
-            self.logger.error(
-                f"No periphery heartbeat in {self.max_check_delay}s"
-            )
-            self._last_error = now
-
-        if now - self._last_action >= self.max_action_delay:
-            self.logger.warning("Restarting arena periphery process")
-            run_command('supervisorctl restart reptilearn_arena')
-            self._last_action = now
-
-    def run(self):
-        # fire up the MQTT listener in its own thread
-        listener = MQTTListener(
-            topics=['healthcheck'],
-            is_debug=False,
-            callback=self._heartbeat_cb
-        )
-        t = threading.Thread(target=listener.loop, daemon=True)
-        t.start()
-
-        self.logger.debug('PeripheryHealthCheckPassive started')
-        while not self.stop_event.is_set():
-            time.sleep(self.max_check_delay)
-            if time.time() - self.last_heartbeat > self.max_check_delay:
-                self._handle_miss()
-
 
 class WebSocketServer(mp.Process):
     def __init__(self, stop_event: threading.Event):
@@ -497,8 +461,9 @@ def start_management_subscribers(arena_shutdown_event, log_queue, subs_dict):
     if not config.DISABLE_PERIPHERY:
         threads['temperature'] = TemperatureLogger(arena_shutdown_event, log_queue)
         threads['temperature'].start()
-        threads['periphery_healthcheck'] = PeripheryHealthCheck(arena_shutdown_event, log_queue, channel='mqtt')
-        threads['periphery_healthcheck'].start()
+        if config.SUBSCRIBE_TO_MQTT:
+            threads['periphery_healthcheck'] = PeripheryHealthCheck(arena_shutdown_event, log_queue, channel='mqtt')
+            threads['periphery_healthcheck'].start()
         # threads['periphery_healthcheck'] = PeripheryHealthCheckPassive(
         #     arena_shutdown_event,
         #     log_queue
