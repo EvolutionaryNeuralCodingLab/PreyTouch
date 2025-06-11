@@ -138,6 +138,7 @@ shm_buffer_dtype = 'uint8'
 
 # Periphery
 DISABLE_PERIPHERY = env.bool('DISABLE_PERIPHERY', False, group='Periphery', desc='Disable all periphery integration')
+SUBSCRIBE_TO_MQTT = env.bool('SUBSCRIBE_TO_MQTT', False, group='Periphery', desc='Whether to subscribe to the MQTT to detect failures in the periphery')
 mqtt = {
     'host': env('MQTT_HOST', 'localhost', group='Periphery', desc='Host of the MQTT server'),
     'port': env.int('MQTT_PORT', 1883, group='Periphery', desc='Port of the MQTT server'),
@@ -149,9 +150,9 @@ DAY_LIGHT_NAME = env('DAY_LIGHT_NAME', '', group='Periphery', desc='Name of LED 
 CAM_TRIGGER_ARDUINO_NAME = env('CAM_TRIGGER_ARDUINO_NAME', 'camera trigger', group='Periphery', desc='name of the camera trigger arduino in the periphery config')
 ARENA_ARDUINO_NAME = env('ARENA_ARDUINO_NAME', 'arena', group='Periphery', desc='name of the arena arduino in the periphery config')
 PERIPHERY_HEALTHCHECK = {
-    'CHECK_INTERVAL':    env.float('PERIPHERY_HEALTHCHECK_INTERVAL',    5.0,   group='Periphery', desc='Seconds between healthcheck polls'),
-    'MAX_CHECK_DELAY':   env.int(  'PERIPHERY_HEALTHCHECK_MAX_DELAY',    300,    group='Periphery', desc='Seconds without a heartbeat before logging an error'),
-    'MAX_PUBLISH_DELAY': env.int(  'PERIPHERY_HEALTHCHECK_PUBLISH_DELAY',600,    group='Periphery', desc='Minimum seconds between repeated error logs'),
+    'CHECK_INTERVAL':    env.float('PERIPHERY_HEALTHCHECK_INTERVAL',    0.1,   group='Periphery', desc='Seconds between healthcheck polls'),
+    'MAX_CHECK_DELAY':   env.int(  'PERIPHERY_HEALTHCHECK_MAX_DELAY',    20,    group='Periphery', desc='Seconds without a heartbeat before logging an error'),
+    'MAX_PUBLISH_DELAY': env.int(  'PERIPHERY_HEALTHCHECK_PUBLISH_DELAY',240,    group='Periphery', desc='Minimum seconds between repeated error logs'),
     'MAX_ACTION_DELAY':  env.int(  'PERIPHERY_HEALTHCHECK_ACTION_DELAY',3600,   group='Periphery', desc='Minimum seconds between supervisor-restarts'),
 }
 
