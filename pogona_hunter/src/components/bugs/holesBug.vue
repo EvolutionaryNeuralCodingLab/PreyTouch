@@ -83,6 +83,24 @@ export default {
     },
     isCounterClockWise: function () {
       return this.isLeftExit
+    },
+    circleR() {
+      return Math.abs(this.xTarget - this.x) * this.bugsSettings.circleRadiusScale
+    },
+    circleR0() {
+      return [(this.x + this.xTarget) / 2, this.canvas.height * this.bugsSettings.circleHeightScale]
+    },
+    xToTarget() {
+      const x = this.entranceHolePos[0] + (this.bugsSettings.holeSize[0] / 2)
+      const y = this.entranceHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
+      const xTarget = this.exitHolePos[0] + (this.bugsSettings.holeSize[0] / 2)
+      const yTarget = this.exitHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
+      return {'enter': [x, y], 'exit': [xTarget, yTarget]}
+    },
+    circleTheta() {
+      let theta = this.isRightExit ? (Math.PI + (Math.PI / 5)) : (Math.PI + (2 * Math.PI / 3))
+      theta += this.bugId * (Math.PI / 5)
+      return theta
     }
   },
   methods: {
@@ -160,10 +178,10 @@ export default {
       this.vy = this.currentSpeed * Math.sin(nextAngle)
     },
     initiateStartPosition() {
-      this.x = this.entranceHolePos[0] + (this.bugsSettings.holeSize[0] / 2)
-      this.y = this.entranceHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
-      this.xTarget = this.exitHolePos[0] + (this.bugsSettings.holeSize[0] / 2)
-      this.yTarget = this.exitHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
+      this.x = this.xToTarget.enter[0]
+      this.y = this.xToTarget.enter[1]
+      this.xTarget = this.xToTarget.exit[0]
+      this.yTarget = this.xToTarget.exit[1]
       this.isRetreated = false
       this.isHoleRetreatStarted = false
       this.isCircleTrackReached = true
@@ -174,10 +192,9 @@ export default {
       switch (this.bugsSettings.movementType) {
         case 'circle':
         case 'circle_accelerate':
-          this.theta = this.isRightExit ? (Math.PI + (Math.PI / 5)) : (Math.PI + (2 * Math.PI / 3))
-          this.theta = this.theta + this.bugId * (Math.PI / 5) // fix for cases in which numOfBugs>1
-          this.r = (Math.abs(this.xTarget - this.x) * this.bugsSettings.circleRadiusScale)
-          this.r0 = [(this.x + this.xTarget) / 2, this.canvas.height * this.bugsSettings.circleHeightScale]
+          this.theta = this.circleTheta
+          this.r = this.circleR
+          this.r0 = this.circleR0
           break
         case 'half_circle':
           this.theta = this.isCounterClockWise ? (Math.PI + (Math.PI / 4)) : (Math.PI + (Math.PI / 4))

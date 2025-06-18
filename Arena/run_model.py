@@ -33,12 +33,13 @@ def load_predictor(pconf, model_name, cam_name):
     prd_module = importlib.import_module(prd_module)
     return getattr(prd_module, prd_class)(cam_name, pconf['model_path'])
 
-
+import traceback
 def predict_video(prd, video_path):
     try:
         prd.predict_video(video_path=video_path)
     except Exception as e:
-        print(e)
+        print("An error occurred while predicting the video:")
+        traceback.print_exc()
     finally:
         torch.cuda.empty_cache()
 
@@ -53,11 +54,14 @@ if __name__ == "__main__":
     arg_parser.add_argument('--calib_dir', default=config.CALIBRATION_DIR, help='specify the calibration directory')
     arg_parser.add_argument('--start_x', default=None, help='specify X start position of the screen')
     arg_parser.add_argument('--pix_cm', default=None, help='specify ratio of pixels to centimeters for the screen')
+    arg_parser.add_argument('--screen_y',  default=None, help='location of screen along Y axis in cm')
+
     args = arg_parser.parse_args()
     pred_conf = config.load_configuration('predict')
 
-    config.SCREEN_START_X_CM = args.start_x
-    config.SCREEN_PIX_CM = args.pix_cm
+    config.SCREEN_START_X_CM = float(args.start_x)
+    config.SCREEN_PIX_CM = float(args.pix_cm)
+    config.SCREEN_Y_CM = float(args.screen_y)
     config.IS_SCREEN_CONFIGURED_FOR_POSE = (args.start_x is not None) and (args.pix_cm is not None)
     config.CALIBRATION_DIR = args.calib_dir
 
