@@ -246,7 +246,7 @@ class ImageSink(ArenaProcess):
         self.write_output_dir = self.cam_config[config.output_dir_key]
         is_color = self.cam_config.get('is_color', False)
 
-        writer_fps = self.cam_config.get('writing_fps')
+        writer_fps = self.writing_fps
         if writer_fps is None and self.is_trigger_mode():
             writer_fps = self.extract_writer_fps_in_trigger_mode()
         if cache.get(cc.IS_BLANK_CONTINUOUS_RECORDING) or self.cam_config.get('mode') == 'tracking':

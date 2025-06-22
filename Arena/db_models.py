@@ -296,6 +296,9 @@ class ORM:
             for k in ['reward_bugs', 'bug_types']:  # convert lists to strings
                 if isinstance(kwargs[k], list):
                     kwargs[k] = ','.join(kwargs[k])
+            # fix for blocks with multiple bug speeds. Set 0 if it's list
+            if isinstance(kwargs['bug_speed'], list):
+                kwargs['bug_speed'] = 0
             b = Block(**kwargs)
             s.add(b)
             s.commit()

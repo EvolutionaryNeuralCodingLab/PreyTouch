@@ -1314,7 +1314,7 @@ class VideoPoseScanner:
                     if blk is None or blk.block_type != 'bugs':
                         continue
 
-                if self.only_strikes_vids and not blk.strikes:
+                if blk is None or (self.only_strikes_vids and not blk.strikes):
                     continue
 
                 video_path = Path(vid.path)
@@ -1452,10 +1452,11 @@ if __name__ == '__main__':
     # commit_video_pred_to_db(animal_ids="PV163")
     # VideoPoseScanner().fix_calibrations()
     # VideoPoseScanner().predict_all(max_videos=20, is_tqdm=True)
-    VideoPoseScanner(cam_name='front', animal_ids=['PV91b'], is_use_db=False,
-                     model_path="/data/PreyTouch/output/models/deeplabcut/front_head_only_resnet_152"
-                     ).fix_calibrations(experiments_dir='/media/sil2/Data/regev/experiments/reptilearn4',
-                                        calibration_dir='/media/sil2/Data/regev/calibrations/reptilearn4')
+    VideoPoseScanner(only_strikes_vids=True).predict_all(is_tqdm=True)
+    # VideoPoseScanner(cam_name='front', animal_ids=['PV91b'], is_use_db=False,
+    #                  model_path="/data/PreyTouch/output/models/deeplabcut/front_head_only_resnet_152"
+    #                  ).fix_calibrations(experiments_dir='/media/sil2/Data/regev/experiments/reptilearn4',
+    #                                     calibration_dir='/media/sil2/Data/regev/calibrations/reptilearn4')
     # VideoPoseScanner(cam_name='top', animal_ids=['PV157'], is_use_db=False).predict_video('/data/Pogona_Pursuit/output/experiments/PV157/20240307/block2/videos/top_20240307T141316.mp4')
     # VideoPoseScanner(cam_name='top', animal_ids=['PV157'], is_use_db=True, only_strikes_vids=False).predict_all()
     # VideoPoseScanner(animal_id='PV163').add_bug_trajectory(videos=[Path('/media/reptilearn4/experiments/PV163/20240201/block10/videos/front_20240201T173016.mp4')])

@@ -3,7 +3,7 @@ import yaml
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
-
+import re
 import utils
 from db_models import ORM, Block, Experiment
 from cache import RedisCache, CacheColumns as cc
@@ -76,7 +76,12 @@ class Agent:
                 return trial_name
 
     def get_upcoming_agent_schedules(self):
-        return {s.experiment_name: s.date for s in self.orm.get_upcoming_schedules().all()}
+        res = {}
+        for s in self.orm.get_upcoming_schedules().all():
+            # ignore all the non-experiment schedules (e.g. SWITCH:, FEEDER:,...)
+            if not re.match(r'[A-Z]+\:.*', s.experiment_name):
+                res[s.experiment_name] = s.date
+        return res
 
     def get_possible_times(self):
         now = datetime.now()
@@ -125,10 +130,25 @@ class Agent:
 
                         if isinstance(counts, dict):  # case of per
                             for metric_name, metric_counts in counts.items():
-                                if getattr(blk, metric_name) in metric_counts:
-                                    metric_counts[getattr(blk, metric_name)] += blk_count
+                                if metric_name == 'bug_speed':
+                                    self.parse_bug_speed_from_trials(blk, metric_counts, count_key)
+                                else:
+                                    if getattr(blk, metric_name) in metric_counts:
+                                        metric_counts[getattr(blk, metric_name)] += blk_count
                         elif isinstance(counts, int):
                             self.history[trial_name]['counts'] += blk_count
+
+    @staticmethod
+    def parse_bug_speed_from_trials(blk, metric_counts, count_key):
+        """bug speed is not saved in the block level, thus the count is done over the trials"""
+        for tr in blk.trials:
+            trial_speed = getattr(tr, 'bug_speed')
+            if trial_speed in metric_counts:
+                if count_key == 'engaged_trials':
+                    if len(tr.strikes) > 0:
+                        metric_counts[trial_speed] += 1
+                else:
+                    metric_counts[trial_speed] += len(getattr(tr, count_key))
 
     def publish(self, msg):
         last_publish = self.cache.get(cc.LAST_TIME_AGENT_MESSAGE)

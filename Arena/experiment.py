@@ -235,8 +235,10 @@ class Block:
         self.exp_validation = ExperimentValidation(logger=self.logger, cache=self.cache, orm=self.orm)
         if isinstance(self.bug_speed, list):
             bug_speed_choices = ','.join([str(s) for s in self.bug_speed])
-            self.bug_speed = random.choice(self.bug_speed)
-            self.logger.info(f'Start block with bug speed {self.bug_speed}. Given speed options: {bug_speed_choices}')
+            # self.bug_speed = random.choice(self.bug_speed)
+            self.logger.info(f'Multiple bug speeds. options: {bug_speed_choices}')
+        elif self.block_type == 'bugs':
+            self.logger.info(f'Start block with bug speed: {self.bug_speed}')
         if self.periphery is None:
             self.periphery = PeripheryIntegrator()
         if isinstance(self.bug_types, str):
@@ -448,6 +450,12 @@ class Block:
         self.take_trial_image()
         time.sleep(1)
 
+    def get_bug_speed_for_trial(self):
+        if isinstance(self.bug_speed, list):
+            return random.choice(self.bug_speed)
+        else:
+            return self.bug_speed
+
     def hide_visual_app_content(self):
         if self.is_blank_block:
             return
@@ -550,7 +558,7 @@ class Block:
             'numTrials': self.num_trials,
             'iti': self.iti,
             'trialDuration': self.trial_duration,
-            'speed': self.bug_speed,
+            'speed': self.get_bug_speed_for_trial(),
             'bugTypes': self.bug_types,
             'rewardBugs': self.reward_bugs,
             'movementType': self.movement_type,
