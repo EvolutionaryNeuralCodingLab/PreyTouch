@@ -25,6 +25,7 @@ import os
 if Path('.').resolve().name != 'Arena':
     os.chdir('..')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+import re
 import config
 from calibration import CharucoEstimator
 from loggers import get_logger
@@ -387,7 +388,21 @@ class ArenaPose:
             'Asia/Jerusalem').dt.tz_localize(None)
         frames_ts.index = frames_ts.index.astype(int)
         return frames_ts
-    
+
+    def rename_bug_columns(self, df):
+        df = df.copy()
+        rename_map = {}
+        for col in df.columns:
+            # match axis + numeric suffix
+            m = re.fullmatch(r'([xy])(\d+)$', col)
+            if m:
+                axis, idx = m.groups()
+                rename_map[col] = f'bug{idx}_{axis}'
+            # axis
+            elif col in ('x', 'y'):
+                rename_map[col] = f'bug_{col}'
+        return df.rename(columns=rename_map)
+
     def load_bug_trajectory(self, db_video_id: int, video_path: str):
         if self.is_use_db:
             bug_trajs = []
@@ -413,7 +428,7 @@ class ArenaPose:
         if bug_trajs is None or len(bug_trajs) == 0:
             return
 
-        bug_trajs = bug_trajs.rename(columns={'x': 'bug_x', 'y': 'bug_y'})
+        bug_trajs = self.rename_bug_columns(bug_trajs)
         bug_trajs['datetime'] = pd.to_datetime(bug_trajs['time']).dt.tz_localize(None)
         bug_trajs['timestamp'] = bug_trajs.datetime.astype(int).div(10**9)
         bug_trajs = bug_trajs.sort_values(by='datetime').reset_index(drop=True)
@@ -428,17 +443,43 @@ class ArenaPose:
 
     def add_bug_traj(self, pred_row, bug_traj, timestamp):
         dt = (bug_traj.timestamp - timestamp).abs()
-        pred_row[('bug_x_cm', '')] = np.nan
+        cols = [c if isinstance(c, str) else c[0] for c in bug_traj.columns]   # flatten any MultiIndex columns down to their string names
+        bug_x_cols = [nm for nm in cols if re.match(r'bug(?:\d+)?_x$', nm)]    # find all “bug…_x” columns and extract their indices
+        bug_indices = sorted(
+            int(m.group(1)) if (m := re.match(r'bug(\d+)_x', nm)) and m.group(1).isdigit() else 0
+            for nm in bug_x_cols
+        )
 
-        for col in ['bug_x', 'bug_y', 'trial_id']:
-            if dt.min() < 0.03:  # in case the diff is bigger than 30 msec, it means that this frame is not with bug.
-                if col not in bug_traj.columns:
-                    continue
-                pred_row[(col, '')] = bug_traj.loc[dt.idxmin(), col]
-                if col == 'bug_x' and config.IS_SCREEN_CONFIGURED_FOR_POSE:
-                    pred_row[('bug_x_cm', '')] = config.SCREEN_START_X_CM + (bug_traj.loc[dt.idxmin(), col] * config.SCREEN_PIX_CM)
+        for i in bug_indices:
+            single = (len(bug_indices) == 1 and i == 0)
+            if single:
+                x_name, y_name, trial_name = 'bug_x',   'bug_y',   'trial_id'
+                xcm_name, ycm_name           = 'bug_x_cm','bug_y_cm'
             else:
-                pred_row[(col, '')] = np.nan
+                x_name, y_name               = f'bug{i}_x',   f'bug{i}_y'
+                trial_name                   = 'trial_id'
+                xcm_name, ycm_name           = f'bug{i}_x_cm', f'bug{i}_y_cm'
+
+            for nm in (x_name, y_name, trial_name, xcm_name, ycm_name):
+                pred_row[(nm, '')] = np.nan
+
+            if dt.min() < 0.03:  # in case the diff is bigger than 30 msec, it means that this frame is not with bug.
+                idx = dt.idxmin()
+
+                for col in (x_name, y_name, trial_name):
+                    if col in bug_traj.columns:
+                        val = bug_traj.loc[idx, col]
+                        pred_row[(col, '')] = val
+
+                        if col == x_name and config.IS_SCREEN_CONFIGURED_FOR_POSE:
+                            pred_row[(xcm_name, '')] = (
+                                config.SCREEN_START_X_CM + val * config.SCREEN_PIX_CM
+                            )
+                            raw_y = bug_traj.loc[idx, y_name]
+                            pred_row[(ycm_name, '')] = (
+                                config.SCREEN_Y_CM       + raw_y * config.SCREEN_PIX_CM
+                            )
+
         return pred_row
 
     def get_video_path(self, db_video_id: int) -> str:
@@ -551,15 +592,33 @@ class DLCArenaPose(ArenaPose):
     def add_bug_traj(self, pred_row, bug_traj, timestamp):
         pred_row = super().add_bug_traj(pred_row, bug_traj, timestamp)
         p = pred_row.iloc[0] if isinstance(pred_row, pd.DataFrame) else pred_row
-        bug_x_col = ('bug_x_cm', '')
-        if self.is_lizard_head \
-                and all(p[(bp, 'prob')] >= 0.8 for bp in self.lizard_head_bodyparts) \
-                and not np.isnan(p[bug_x_col]) \
-                and config.SCREEN_Y_CM is not None:
-            pred_row[('dev_angle', '')] = self.calc_gaze_deviation_angle(ang=p[('angle', '')], bug_x=p[bug_x_col], 
-                                                                         x=p[('nose', 'x')], y=p[('nose', 'y')])
-        else:
-            pred_row[('dev_angle', '')] = np.nan
+        
+        # find all bug_x_cm columns ( ('bug_x_cm','') or ('bug1_x_cm',''))
+        bug_x_cols = [col for col in pred_row.columns if re.match(r"bug\d*_x_cm", col[0])]
+        
+        for bug_x_col in bug_x_cols:
+            m = re.search(r"bug(\d*)_x_cm", bug_x_col[0])   # extract the bug index (default to 0 if none)
+            i = int(m.group(1)) if m and m.group(1).isdigit() else 0
+            # 'dev_angle' if only one bug, otherwise 'dev_angle{i}'
+            dev_name = ('dev_angle', '') if (i == 0 and len(bug_x_cols) == 1) else (f'dev_angle{i}', '')
+
+            # compute deviation only if conditions are met
+            if ( self.is_lizard_head
+                and all(p[(bp, 'prob')] >= 0.8 for bp in self.lizard_head_bodyparts)
+                and not np.isnan(p[bug_x_col])
+                and not np.isnan(p[('nose','x')])
+                and not np.isnan(p[('nose','y')])
+                and config.SCREEN_Y_CM is not None
+            ):                
+                pred_row.loc[pred_row.index, dev_name] = self.calc_gaze_deviation_angle(
+                    ang=p[('angle', '')],
+                    bug_x=p[bug_x_col],
+                    x=p[('nose', 'x')],
+                    y=p[('nose', 'y')]
+                )
+            else:
+                pred_row.loc[pred_row.index, dev_name] = np.nan
+
         return pred_row
 
     def calc_gaze_deviation_angle(self, ang: float, bug_x: float, x: float, y: float):

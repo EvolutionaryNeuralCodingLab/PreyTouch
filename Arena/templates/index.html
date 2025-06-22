@@ -501,6 +501,27 @@
                     $(`#bugSizeDiv${i}`).show()
                 }
             }).trigger('change')
+
+            // set number of bugs more than 2
+            let $numOfBugs = $(`#numOfBugs${i}`);
+            $numOfBugs.change(function () {
+              let numOfBugs = Number($numOfBugs.val());
+              if (numOfBugs === 1) {
+                  $(`#multipleBugsConf${i}`).hide();
+              } else {
+                  $(`#multipleBugsConf${i}`).show();
+              }
+
+              if (numOfBugs > 1) {
+                  $(`#isSplitBugsView${i}`).prop('checked', true);
+                  $(`#splitRandomizeTiming${i}`).prop('checked', true);
+              } else {
+                  $(`#isSplitBugsView${i}`).prop('checked', false);
+                  $(`#splitRandomizeTiming${i}`).prop('checked', false);
+              }
+            }).trigger('change')
+
+
             let $movementType = $(`#movementTypeSelect${i}`)
             $movementType.change(function () {
                 if (['static', 'random_speeds', 'random_low_horizontal'].indexOf($movementType.val()) !== -1) {
