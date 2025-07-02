@@ -108,7 +108,7 @@ def scan_cameras(is_print=True) -> pd.DataFrame:
     with system as v:
         cams = v.get_all_cameras()
         if is_print:
-            print('Cameras found: {}'.format(len(cams)))
+            print('AlliedVision cameras found: {}'.format(len(cams)))
         info = []
         for cam in cams:
             info.append(get_cam_info(cam))

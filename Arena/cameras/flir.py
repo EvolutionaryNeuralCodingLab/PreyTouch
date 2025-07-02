@@ -212,8 +212,10 @@ def scan_cameras(is_print=True) -> pd.DataFrame:
     if len(cam_list) > 0:
         del cam, sc
     if is_print:
-        output = f'\nCameras Info:\n\n{df.to_string()}\n'
-        print(output)
+        if not df.empty:
+            print(f'\nFLIR Cameras Info:\n\n{df.to_string()}\n')
+        else:
+            print('No FLIR Cameras were found')
     cam_list.Clear()
     system.ReleaseInstance()
     return df
