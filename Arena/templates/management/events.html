@@ -196,18 +196,20 @@
 
     $("#init_bugs").click(function (e) {
         let blockValues = new Block(1).values
-        let animalSettingsValues = AnimalIDFields.values
+        // let animalSettingsValues = AnimalIDFields.values
         let payload = {
             numOfBugs: blockValues.num_of_bugs,
+            isSplitBugsView: blockValues.is_split_bugs_view,
+            splitRandomizeTiming: blockValues.split_randomize_timing,
             numTrials: blockValues.num_trials,
             iti: blockValues.iti,
             trialDuration: blockValues.trial_duration,
             speed: blockValues.bug_speed,
-            bugTypes: animalSettingsValues.bug_types || ['cockroach'],
-            rewardBugs: animalSettingsValues.reward_bugs || [],
+            bugTypes: blockValues.bug_types || ['cockroach'],
+            rewardBugs: blockValues.reward_bugs || [],
             movementType: blockValues.movement_type,
-            backgroundColor: animalSettingsValues.background_color,
-            exitHole: animalSettingsValues.exit_hole
+            backgroundColor: blockValues.background_color,
+            exitHole: blockValues.exit_hole
         }
         if (!$("#isDefaultBugSize1").is(':checked')) {
             Object.assign(payload, {bugSize: Number($("#bugSize1").val())})
