@@ -332,32 +332,51 @@ class AppHealthCheck(Subscriber):
 
 class PeripheryHealthCheck(Subscriber):
     sub_name = 'periphery_healthcheck'
-
     def __init__(self, stop_event: threading.Event, log_queue=None, channel=None, callback=None):
         super().__init__(stop_event, log_queue, channel, callback)
         self.last_health_check_time = time.time()
-        self.last_publish_error_time = None
-        self.last_action_time = None
-        self.max_check_delay = 20  # if there's no new healthcheck message for 10 seconds log error
-        self.max_publish_delay = 120
-        self.max_action_delay = 60 * 60
+        self.last_publish_error_time = 0
+        self.last_action_time = 0
+        self.periphery = PeripheryIntegrator()
+
+
+        cfg = config.PERIPHERY_HEALTHCHECK
+        self.check_interval    = cfg['CHECK_INTERVAL']
+        self.max_check_delay   = cfg['MAX_CHECK_DELAY']  # if there's no new healthcheck message for 10 seconds log error
+        self.max_publish_delay = cfg['MAX_PUBLISH_DELAY']
+        self.max_action_delay  = cfg['MAX_ACTION_DELAY']
 
     def run(self):
         try:
             def hc_callback(payload):
-                self.last_health_check_time = time.time()
+                now = time.time()
+                toggles_state = self.periphery.check_toggles_states()
+                if any("light" in key for key in toggles_state):
+                    self.last_health_check_time = now
 
-            listener = MQTTListener(topics=['healthcheck'], is_debug=False, callback=hc_callback)
+            listener = MQTTListener(topics=['arena/listening', 'arena/value'], is_debug=False, callback=hc_callback)
             self.logger.debug('periphery_healthcheck started')
             while not self.stop_event.is_set():
                 listener.loop()
-                time.sleep(0.1)
+                time.sleep(self.check_interval)
                 if time.time() - self.last_health_check_time > self.max_check_delay:
                     if self.last_publish_error_time and time.time() - self.last_publish_error_time < self.max_publish_delay:
+                        # self.logger.debug(f"No healthcheck received for {time.time() - self.last_health_check_time:.1f} seconds, last action was {time.time() - self.last_action_time:.1f} seconds ago")
                         continue
+                    hc = self.periphery.check_periphery_healthcheck()
+                    tc = self.periphery.check_toggles_states()
                     self.logger.error('Arena periphery MQTT bridge is down')
+                    tel_message = f'Arena periphery MQTT bridge is down; ' \
+                                  f'last healthcheck received {time.time() - self.last_health_check_time:.1f} seconds ago; ' \
+                                  f'last action was {time.time() - self.last_action_time:.1f} seconds ago'
+                    if hc:
+                        tel_message += f'; periphery_healthcheck={hc}'
+                    if tc:
+                        tel_message += f'; toggles_healthcheck={tc}'
+                    send_telegram_message(tel_message)
                     if not self.last_action_time or time.time() - self.last_action_time > self.max_action_delay:
                         self.logger.warning('Running restart for arena periphery process')
+                        send_telegram_message('Restarting arena periphery process')
                         next(run_command('supervisorctl restart reptilearn_arena'))
                         self.last_action_time = time.time()
                         time.sleep(4)
@@ -366,7 +385,6 @@ class PeripheryHealthCheck(Subscriber):
 
         except:
             self.logger.exception(f'Error in subscriber {self.name}')
-
 
 class WebSocketServer(mp.Process):
     def __init__(self, stop_event: threading.Event):
@@ -396,7 +414,7 @@ class WebSocketServer(mp.Process):
 
     async def main_loop(self):
         host, port = config.WEBSOCKET_URL.replace('ws://', '').split(':')
-        async with websockets.serve(self.echo, host, int(port), ping_interval=None):
+        async with websockets.serve(self.echo, host, int(port), ping_interval=None, max_size=2**24):
             while not self.stop_event.is_set():
                 await asyncio.sleep(0.1)
 
@@ -443,7 +461,13 @@ def start_management_subscribers(arena_shutdown_event, log_queue, subs_dict):
     if not config.DISABLE_PERIPHERY:
         threads['temperature'] = TemperatureLogger(arena_shutdown_event, log_queue)
         threads['temperature'].start()
-        # threads['periphery_healthcheck'] = PeripheryHealthCheck(arena_shutdown_event, log_queue, channel='mqtt')
+        if config.SUBSCRIBE_TO_MQTT:
+            threads['periphery_healthcheck'] = PeripheryHealthCheck(arena_shutdown_event, log_queue, channel='mqtt')
+            threads['periphery_healthcheck'].start()
+        # threads['periphery_healthcheck'] = PeripheryHealthCheckPassive(
+        #     arena_shutdown_event,
+        #     log_queue
+        # )
         # threads['periphery_healthcheck'].start()
     return threads
 

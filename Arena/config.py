@@ -138,6 +138,7 @@ shm_buffer_dtype = 'uint8'
 
 # Periphery
 DISABLE_PERIPHERY = env.bool('DISABLE_PERIPHERY', False, group='Periphery', desc='Disable all periphery integration')
+SUBSCRIBE_TO_MQTT = env.bool('SUBSCRIBE_TO_MQTT', False, group='Periphery', desc='Whether to subscribe to the MQTT to detect failures in the periphery')
 mqtt = {
     'host': env('MQTT_HOST', 'localhost', group='Periphery', desc='Host of the MQTT server'),
     'port': env.int('MQTT_PORT', 1883, group='Periphery', desc='Port of the MQTT server'),
@@ -148,6 +149,13 @@ IR_LIGHT_NAME = env('IR_LIGHT_NAME', '', group='Periphery', desc='Name of infrar
 DAY_LIGHT_NAME = env('DAY_LIGHT_NAME', '', group='Periphery', desc='Name of LED lights in periphery config')
 CAM_TRIGGER_ARDUINO_NAME = env('CAM_TRIGGER_ARDUINO_NAME', 'camera trigger', group='Periphery', desc='name of the camera trigger arduino in the periphery config')
 ARENA_ARDUINO_NAME = env('ARENA_ARDUINO_NAME', 'arena', group='Periphery', desc='name of the arena arduino in the periphery config')
+PERIPHERY_HEALTHCHECK = {
+    'CHECK_INTERVAL':    env.float('PERIPHERY_HEALTHCHECK_INTERVAL',    0.1,   group='Periphery', desc='Seconds between healthcheck polls'),
+    'MAX_CHECK_DELAY':   env.int(  'PERIPHERY_HEALTHCHECK_MAX_DELAY',    20,    group='Periphery', desc='Seconds without a heartbeat before logging an error'),
+    'MAX_PUBLISH_DELAY': env.int(  'PERIPHERY_HEALTHCHECK_PUBLISH_DELAY',240,    group='Periphery', desc='Minimum seconds between repeated error logs'),
+    'MAX_ACTION_DELAY':  env.int(  'PERIPHERY_HEALTHCHECK_ACTION_DELAY',3600,   group='Periphery', desc='Minimum seconds between supervisor-restarts'),
+}
+
 
 # Calibration
 MIN_CALIBRATION_IMAGES = env.int('MIN_CALIBRATION_IMAGES', 7, group='Calibration', desc='Nuber of minimum calibration images per camera')
@@ -187,7 +195,7 @@ MAX_DAILY_REWARD = env.int('MAX_DAILY_REWARD', 40, group='Experiments', desc='Ma
 MAX_DURATION_CONT_BLANK = env.int('MAX_DURATION_CONT_BLANK', 48*3600, group='Experiments', desc='Max duration in seconds of a blank continuous experiment')
 CHECK_ENGAGEMENT_HOURS = env.int('CHECK_ENGAGEMENT_SPAN', 0, group='Experiments', desc='Hours before to check engagement or whether there were any strikes. If there are no strikes in this time span, give reward. Setting 0 will disable this check.')
 CACHED_EXPERIMENTS_DIR = env('CACHED_EXPERIMENTS_DIR', 'cached_experiments', group='Experiments', desc='Folder name in the main Arena folder to store saved experiments')
-TRIAL_IMAGE_CAMERA = env('TRIAL_IMAGE_CAMERA', 'back', group='Experiments', desc='Camera used for trial images generation')
+TRIAL_IMAGE_CAMERA = env('TRIAL_IMAGE_CAMERA', None, group='Experiments', desc='Camera used for trial images generation')
 experiment_types = {
     'bugs': ['bug_types', 'reward_bugs', 'bug_speed', 'movement_type', 'exit_hole'],
     'media': ['media_url'],
