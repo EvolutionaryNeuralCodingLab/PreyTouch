@@ -91,12 +91,13 @@ class LSTMModel(nn.Module):
 
 class LizardTrajDataSet(Dataset):
     def __init__(self, strk_df, trajs, ids, variables, targets_values, is_standardize=True, target_name='block_speed',
-                 is_resample=True, sub_section=None, is_shuffled_target=False):
+                 is_resample=True, sub_section=None, is_shuffled_target=False, is_debug=True):
         self.samples = ids
         self.variables = variables
         self.targets = targets_values
         self.target_name = target_name
         self.sub_section = sub_section
+        self.is_debug = is_debug
         # concatenate the trjaectories into a single dataframe
         self.X = pd.concat([t for t in trajs.values()], axis=0).sort_values(by=['id', 'time']).reset_index(
             drop=True)
@@ -107,7 +108,8 @@ class LizardTrajDataSet(Dataset):
         self.X = self.X.query(f'id in {self.samples}')
         self.y = strk_df[target_name].loc[self.samples]
         if is_shuffled_target:
-            print(f'Notice! Shuffling randomly the target values')
+            if self.is_debug:
+                print(f'Notice! Shuffling randomly the target values')
             self.y = pd.Series(index=self.y.index, data=np.random.choice(self.y.unique(), len(self.y)))
 
         if is_resample:
@@ -122,7 +124,8 @@ class LizardTrajDataSet(Dataset):
     def resample_trajs(self):
         min_count = self.y.value_counts().min()
         self.samples = pd.DataFrame(self.y).groupby(self.target_name).apply(lambda x: x.sample(min_count, random_state=0)).index.get_level_values(1).values.tolist()
-        print(f'Resampling trajectories to {min_count} samples from each {self.target_name} class')
+        if self.is_debug:
+            print(f'Resampling trajectories to {min_count} samples from each {self.target_name} class')
         self.X = self.X.query(f'id in {self.samples}')
         self.y = self.y.loc[self.samples]
 
@@ -234,7 +237,7 @@ class TrajClassifier(ClassificationTrainer):
         strikes_ids = sdf.index.values.tolist()
 
         dataset = LizardTrajDataSet(strk_df, trajs, strikes_ids, self.feature_names, self.targets,
-                                    target_name=self.target_name, sub_section=self.sub_section,
+                                    target_name=self.target_name, sub_section=self.sub_section, is_debug=self.is_debug,
                                     is_resample=self.is_resample, is_shuffled_target=self.is_shuffled_target)
         if is_print_size:
             self.print(f'Traj classes count: {pd.Series(dataset.y).value_counts().sort_index().set_axis(self.targets).to_dict()}')
