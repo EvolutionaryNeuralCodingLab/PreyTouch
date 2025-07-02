@@ -5,8 +5,8 @@ import numpy as np
 import pandas as pd
 import cv2
 import math
+import os
 if Path('.').resolve().name != 'Arena':
-    import os
     os.chdir('../..')
 import config
 from analysis.pose import ArenaPose
@@ -23,7 +23,7 @@ class MissingStrikeData(Exception):
 
 class Loader:
     def __init__(self, db_id, cam_name, raise_no_pose=False, raise_no_traj=True, is_use_db=True, is_debug=True, orm=None,
-                 sec_before=1, sec_after=1, is_dwh=False, is_trial=False):
+                 sec_before=1, sec_after=1, is_replace_exp_dir=False, is_trial=False):
         self.db_id = db_id
         self.is_trial = is_trial
         self.cam_name = cam_name
@@ -33,7 +33,7 @@ class Loader:
         self.is_debug = is_debug
         self.sec_before = sec_before
         self.sec_after = sec_after
-        self.is_dwh = is_dwh
+        self.is_replace_exp_dir = is_replace_exp_dir
         self.orm = orm if orm is not None else ORM()
         self.frames_delta = None
         self.n_frames_back = None
@@ -174,12 +174,10 @@ class Loader:
 
     def set_video_path(self, vid):
         video_path = Path(vid.path).resolve()
-        # # fix for cases in which the analysis runs from other servers
-        # if DEFAULT_OUTPUT_DIR != config.OUTPUT_DIR and video_path.as_posix().startswith(DEFAULT_OUTPUT_DIR):
-        #     video_path = Path(video_path.as_posix().replace(DEFAULT_OUTPUT_DIR, config.OUTPUT_DIR))
-        if self.is_dwh:
-            # TODO: move to config
-            video_path = Path(f'/media/sil2/Data/regev/experiments/{self.arena_name}/' + '/'.join(video_path.parts[-5:]))
+        if self.is_replace_exp_dir:
+            vid_exp_dir = os.path.join(*video_path.parts[:-5])
+            if vid_exp_dir != config.EXPERIMENTS_DIR:
+                video_path = Path(video_path.as_posix().replace(vid_exp_dir, config.EXPERIMENTS_DIR))
         if not video_path.exists():
             if self.is_debug:
                 print(f'Video path does not exist: {video_path}')
@@ -338,6 +336,6 @@ class Loader:
 
 
 if __name__ == "__main__":
-    ld = Loader(5353, 'top', is_use_db=True, is_dwh=False, is_trial=True)
+    ld = Loader(5353, 'top', is_use_db=True, is_replace_exp_dir=False, is_trial=True)
     # ld = Loader(611, 'top', is_use_db=True, is_dwh=False, is_trial=True)
     ld.play_trial(cam_name='right')

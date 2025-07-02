@@ -1,4 +1,4 @@
-import sys
+import os
 import tempfile
 import time
 from pathlib import Path
@@ -17,12 +17,14 @@ from analysis.predictors.tongue_out import TongueTrainer
 
 
 class BugTrialsAnalyzer:
-    def __init__(self, is_use_db=True, is_only_pose=False, is_tqdm=True, animal_ids=None, is_debug=True, is_dwh=False):
+    def __init__(self, is_use_db=True, is_only_pose=False, is_tqdm=True, animal_ids=None, is_debug=True, is_dwh=False,
+                 is_replace_exp_dir=False):
         self.is_use_db = is_use_db
         self.is_only_pose = is_only_pose  # only scan trials with pose data
         self.is_tqdm = is_tqdm
         self.is_debug = is_debug
         self.is_dwh = is_dwh
+        self.is_replace_exp_dir = is_replace_exp_dir
         self.animal_ids = animal_ids
         self.tongue_model = self.init_tongue_model()
         self.orm = ORM()
@@ -71,7 +73,7 @@ class BugTrialsAnalyzer:
             orm_res = s.query(Block, Experiment).join(
                 Experiment, Experiment.id == Block.experiment_id).filter(*filters).all()
             for blk, exp in orm_res:
-                parent_path = Path(f'{exp.experiment_path}/block{blk.block_id}')
+                parent_path = self._get_block_path(exp, blk)
                 cache_path = self.get_trials_analysis_filename(parent_path)
                 if (cache_path.exists() and is_cache) or len(blk.trials) == 0 or \
                     (skip_no_strikes_blocks and len(blk.strikes) == 0):
@@ -83,7 +85,7 @@ class BugTrialsAnalyzer:
         if strikes_times is None:
             strikes_times = self.get_strike_times_for_trial(trial_id)
         ld = Loader(trial_id, self.get_tongue_camera(), is_use_db=self.is_use_db, is_trial=True, raise_no_pose=True,
-                    orm=self.orm, is_debug=False)
+                    orm=self.orm, is_debug=False, is_replace_exp_dir=self.is_replace_exp_dir)
         pose_df = (pd.concat([ld.frames_df[['time', 'bug_x', 'bug_y', 'angle']].droplevel(1, axis=1),
                                    ld.frames_df['nose']],
                              axis=1).reset_index().rename(columns={'index': 'frame_id', 'prob': 'pose_prob'}))
@@ -198,7 +200,7 @@ class BugTrialsAnalyzer:
             if blk is None:
                 raise Exception(f'could not find block with id: {block_id}')
             exp = s.query(Experiment).filter_by(id=blk.experiment_id).first()
-            block_path = Path(f'{exp.experiment_path}/block{blk.block_id}')
+            block_path = self._get_block_path(exp, blk)
             trials_data = []
             for tr in blk.trials:
                 row = {}
@@ -209,6 +211,13 @@ class BugTrialsAnalyzer:
                 trials_data.append(row)
             trials_data = pd.DataFrame(trials_data)
         return block_path, trials_data
+
+    def _get_block_path(self, exp, blk):
+        experiment_dir = Path(exp.experiment_path)
+        if self.is_replace_exp_dir:
+            main_exp_dir = os.path.join(*experiment_dir.parts[:-2])
+            experiment_dir = Path(experiment_dir.as_posix().replace(main_exp_dir, config.EXPERIMENTS_DIR))
+        return Path(f'{experiment_dir}/block{blk.block_id}')
 
     def get_block_id_from_block_path(self, block_path):
         block_id = None
@@ -339,7 +348,7 @@ class TrialImagesCreator:
 
 if __name__ == "__main__":
     # TrialImagesCreator().scan(animal_ids=['PV91', 'PV99', 'PV41'], movement_type='circle', skip_no_strikes_blocks=True)
-    ts = BugTrialsAnalyzer(is_debug=True, animal_ids=['PV213']).run(movement_type='circle_accelerate')
+    ts = BugTrialsAnalyzer(is_debug=True, animal_ids=['PV91', 'PV148', 'PV210'], is_replace_exp_dir=True).run(movement_type='circle')
     # blk_path = '/data/PreyTouch/output/experiments/PV162/20240414/block1'
     # ts.run(is_cache=True)
     # ts.run(892, is_cache=False)
