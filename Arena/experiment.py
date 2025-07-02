@@ -207,7 +207,7 @@ class Block:
     block_type: str = 'bugs'  # options: 'bugs', 'blank', 'media', 'psycho'
 
     num_of_bugs: int = 1
-    is_split_bugs_view: bool = True
+    is_split_bugs_view: bool = False
     split_repeated_pos_ratio: float = 1
     split_bugs_order: list = None
     split_randomize_timing: bool = True

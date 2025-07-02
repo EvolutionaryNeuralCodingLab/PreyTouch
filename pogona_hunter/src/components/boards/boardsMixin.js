@@ -123,7 +123,7 @@ export default {
        if (this.bugsSettings.exitHole === 'right') {
          types.reverse()
        }
-       
+
        this.bugsSettings.bugTypes = types
       }
       this.spawnBugs(this.bugsSettings.numOfBugs)
@@ -337,7 +337,7 @@ export default {
     },
     startLogBugTrajectory() {
       console.log('trajectory log started')
-      this.trajectoryLogInterval = setInterval(() => {  
+      this.trajectoryLogInterval = setInterval(() => {
         const bugs = this.$refs.bugChild || []
         if (bugs.length === 0) {
           console.log('no bugs to log')
