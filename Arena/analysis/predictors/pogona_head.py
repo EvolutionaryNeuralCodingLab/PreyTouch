@@ -17,7 +17,6 @@ from analysis.predictors.yolov5.utils.augmentations import letterbox
 from analysis.predictors.yolov5.utils.general import check_img_size, non_max_suppression
 from loggers import get_logger
 
-THRESHOLD = 0.5
 GRACE_PERIOD = 2  # seconds
 MAX_GRACE = 5  # num frames
 MIN_DISTANCE = 5  # cm
@@ -45,7 +44,7 @@ class PogonaHead(Predictor):
             img = self.plot_predictions(img, 0, det)
 
         if return_centroid:
-            return self.to_centroid(det), img
+            return self.to_centroid(det),  img
         else:
             return pd.Series(det, index=['xA', 'yA', 'xB', 'yB', 'confidence']), img
 
@@ -70,11 +69,12 @@ class PogonaHead(Predictor):
 
 @dataclass
 class YOLOv5Detector:
-    weights_path: str = "analysis/predictors/yolov5/runs/train/exp/weights/best.pt"
+    # weights_path: str = "analysis/predictors/yolov5/runs/train/exp/weights/best.pt"
+    weights_path: str = "/data/PreyTouch/output/models/yolov5/runs/train/pogona_head_yolov5n/weights/best.pt"
     data_path: str = 'analysis/predictors/yolov5/data/coco128.yaml'
     model_width: int = 640
     model_height: int = 480
-    conf_thres: float = THRESHOLD
+    conf_thres: float = 0.0
     iou_thres: float = 0.45
     device: str = 'cuda:0'
     return_neareast_detection: bool = False
