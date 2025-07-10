@@ -257,7 +257,7 @@ export default {
       this.$refs.bugChild[bugIndex].isDead = true
       this.isBloodOnScreen = true
       if (isRewardBug) {
-        this.$refs.audio1.play()
+        // this.$refs.audio1.play()
         this.$store.commit('increment')
       }
       const bloodTimeout = setTimeout(() => {
