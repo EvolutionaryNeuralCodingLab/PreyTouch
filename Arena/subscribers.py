@@ -237,9 +237,6 @@ class TouchLogger(ExperimentLogger):
     def handle_hit(self, payload):
         if self.cache.get(cc.IS_ALWAYS_REWARD) and payload.get('is_reward_bug') and \
                 (payload.get('is_hit') or payload.get('is_reward_any_touch')):
-            if payload.get('feeder_delay'):
-                self.logger.info(f'waiting for {payload["feeder_delay"]} seconds before activating the feeder')
-                time.sleep(payload['feeder_delay'])
             self.periphery.feed()
             return True
 

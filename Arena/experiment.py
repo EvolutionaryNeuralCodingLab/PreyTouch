@@ -225,7 +225,6 @@ class Block:
     reward_any_touch_prob: float = 0.0
     agent_label: str = None
     accelerate_multiplier: float = 3.0
-    feeder_delay: float = 0.0
 
     media_url: str = ''
 
@@ -604,8 +603,7 @@ class Block:
             'holesHeightScale': self.holes_height_scale,
             'circleHeightScale': self.circle_height_scale,
             'circleRadiusScale': self.circle_radius_scale,
-            'accelerateMultiplier': self.accelerate_multiplier,
-            'feederDelay': self.feeder_delay
+            'accelerateMultiplier': self.accelerate_multiplier
         }
 
     @property

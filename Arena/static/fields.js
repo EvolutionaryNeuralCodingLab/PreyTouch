@@ -246,8 +246,7 @@ const blockFields = {
     accelerate_multiplier: new FieldObject('accelerateMultiplier', NumericalField),
     holes_height_scale: new FieldObject('holesHeight', NumericalField),
     circle_height_scale: new FieldObject('circleHeight', NumericalField),
-    circle_radius_scale: new FieldObject('circleRadius', NumericalField),
-    feeder_delay: new FieldObject('feederDelay', NumericalField)
+    circle_radius_scale: new FieldObject('circleRadius', NumericalField)
   },
   media: {
     media_url: new FieldObject('media-url', Field)

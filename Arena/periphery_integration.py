@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 import time
 from datetime import datetime
@@ -83,11 +84,15 @@ class PeripheryIntegrator:
             if count == 0:
                 continue
 
-            self.mqtt_publish(config.mqtt['publish_topic'], f'["dispense","{feeder_name}"]')
             log_str = f'Reward given by {feeder_name}'
             if config.FEEDER_AUDIO_PATH:
                 self.activate_feeder_audio()
                 log_str += f' and playing audio {config.FEEDER_AUDIO_PATH}'
+            if self.cache.get(cc.FEEDER_DELAY):
+                self.logger.info(f'Feeder delay active for {feeder_name}')
+                time.sleep(self.cache.get(cc.FEEDER_DELAY))
+
+            self.mqtt_publish(config.mqtt['publish_topic'], f'["dispense","{feeder_name}"]')
             self.update_reward_count(feeder_name, count - 1)
             self.logger.info(log_str)
             self.orm.commit_reward(datetime.now(), is_manual=is_manual)
@@ -96,12 +101,10 @@ class PeripheryIntegrator:
     def activate_feeder_audio(self):
         """Plays sound for the feeder activation"""
         wav_path = config.FEEDER_AUDIO_PATH
-        wav = Path(wav_path)
-        if not wav.exists():
-            self.logger.error(f"Cannot play sound: {wav} not found.")
+        if not Path(wav_path).exists():
+            self.logger.error(f"Cannot play sound: {wav_path} not found.")
             return
-        cmd = f"aplay {wav}"
-        next(utils.run_command(cmd))
+        os.system(f"aplay {wav_path}")
 
     def mqtt_publish(self, topic, payload):
         self.mqtt_client.connect(config.mqtt['host'], config.mqtt['port'], keepalive=60)
