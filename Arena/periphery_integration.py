@@ -84,10 +84,24 @@ class PeripheryIntegrator:
                 continue
 
             self.mqtt_publish(config.mqtt['publish_topic'], f'["dispense","{feeder_name}"]')
+            log_str = f'Reward given by {feeder_name}'
+            if config.FEEDER_AUDIO_PATH:
+                self.activate_feeder_audio()
+                log_str += f' and playing audio {config.FEEDER_AUDIO_PATH}'
             self.update_reward_count(feeder_name, count - 1)
-            self.logger.info(f'Reward was given by {feeder_name}')
+            self.logger.info(log_str)
             self.orm.commit_reward(datetime.now(), is_manual=is_manual)
             break
+
+    def activate_feeder_audio(self):
+        """Plays sound for the feeder activation"""
+        wav_path = config.FEEDER_AUDIO_PATH
+        wav = Path(wav_path)
+        if not wav.exists():
+            self.logger.error(f"Cannot play sound: {wav} not found.")
+            return
+        cmd = f"aplay {wav}"
+        next(utils.run_command(cmd))
 
     def mqtt_publish(self, topic, payload):
         self.mqtt_client.connect(config.mqtt['host'], config.mqtt['port'], keepalive=60)
