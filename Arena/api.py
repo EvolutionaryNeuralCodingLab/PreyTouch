@@ -94,7 +94,7 @@ def check():
         res['agent_active'] = not cache.get(cc.HOLD_AGENT)
 
     if config.IS_ANALYSIS_ONLY:
-        res.update({'reward_left': 0, 'schedules': {}})
+        res.update({'reward_left': 0, 'schedules': {}, 'feeder_delay': 0})
     else:
         res['reward_left'] = periphery_mgr.get_feeders_counts()
         res['periphery_hc'] = ','.join(periphery_mgr.check_periphery_healthcheck())
@@ -203,6 +203,23 @@ def update_reward_count():
     reward_count = int(data.get('reward_count', 0))
     arena_mgr.logger.info(f'Update {feeder_name} to {reward_count}')
     periphery_mgr.update_reward_count(feeder_name, reward_count)
+    return Response('ok')
+
+
+@app.route('/get_feeder_data', methods=['GET'])
+def get_feeder_data():
+    audio_path = config.FEEDER_AUDIO_PATH or 'No audio is configured'
+    return jsonify({
+        'feeder_delay': periphery_mgr.get_feeder_delay(),
+        'audio_path': audio_path
+    })
+
+
+@app.route('/update_feeder_delay', methods=['POST'])
+def update_feeder_delay():
+    data = request.json
+    delay = data['feeder_delay']
+    periphery_mgr.update_feeder_delay(delay)
     return Response('ok')
 
 

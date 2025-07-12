@@ -13,6 +13,7 @@
                     {% set modal_name = '#' + conf_name + 'ConfigEditor' %}
                     <button class="btn btn-sm btn-primary mr-1" data-toggle="modal" data-target={{modal_name}}>{{conf_name}}</button>
                 {% endfor %}
+                <button class="btn btn-sm btn-primary mr-1" id="feederSettingsBtn" type="button">feeder</button>
             </div>
             <div id="conf-accordion" class="accordion">
                 {% for group, d in config_envs.items() %}
@@ -261,6 +262,50 @@
 <!-- . -->
 
 
+<div class="modal fade" id="feederSettingsModal" tabindex="-1" role="dialog"
+     aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Feeder Settings</h3>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <form>
+                <div class="modal-body">
+                    <div class="mb-5">
+                        <div class="row">
+                            <div class="col-sm-4"><b>Audio Path</b></div>
+                            <div class="col p-0" id="audioPathText"></div>
+                        </div>
+                        <div class="row col mt-1" style="font-size: small">
+                            Audio file to be played when reward is triggered. Change this using the configuration FEEDER_AUDIO_PATH (Periphery section).
+                            Notice! audio is always played when reward is triggered, even if feeder delay is configured.
+                        </div>
+                    </div>
+                    <div class="mb-5">
+                        <div class="row">
+                            <div class="col-sm-4 mt-1"><b>Feeder Delay</b></div>
+                            <div class="col-sm-3 pl-0">
+                                <input type="number" class="form-control" id="feederDelay">
+                            </div>
+                            <div class="col-sm-3 mt-1" style="flex-basis: content;">
+                                <label for="updateFeederDelay" class="col-form-label"></label>
+                                <button id="updateFeederDelay" type="button" class="btn btn-sm btn-outline-info">Update</button>
+                            </div>
+                        </div>
+                        <div class="row col mt-1" style="font-size: small">
+                            Delay in seconds of feeder activation after reward is triggered
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+
 <script>
     {% for group, d in config_envs.items() %}
         {% for key, map in d.items() %}
@@ -462,6 +507,29 @@
         $.get('/load_example_config/agent').done((res) => {
             res = JSON.parse(res)
             editors['agent'].set(res)
+        })
+    })
+
+    $("#feederSettingsBtn").click(() => {
+        $.get('/get_feeder_data', (data) => {
+            $("#feederDelay").val(data['feeder_delay'])
+            $("#audioPathText").text(data['audio_path'])
+        })
+        $("#feederSettingsModal").modal('toggle');
+    })
+
+    $("#updateFeederDelay").click(() => {
+        let newFeederDelay = $("#feederDelay").val()
+        $.ajax({
+            url: "/update_feeder_delay",
+            type: "POST",
+            data: JSON.stringify({
+                'feeder_delay': Number(newFeederDelay)
+            }),
+            contentType: "application/json",
+            error: function (data) {
+                console.log(data.responseText)
+            }
         })
     })
 

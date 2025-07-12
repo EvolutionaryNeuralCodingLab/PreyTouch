@@ -122,6 +122,14 @@ class PeripheryIntegrator:
         new_counts = [str(c.get(feeder, 0)) for feeder in self.feeders]
         self.cache.set(cc.REWARD_LEFT, new_counts)
 
+    def get_feeder_delay(self):
+        delay = self.cache.get(cc.FEEDER_DELAY)
+        return delay or 0
+
+    def update_feeder_delay(self, delay):
+        self.logger.info(f'Updating feeder delay to {delay}')
+        self.cache.set(cc.FEEDER_DELAY, delay)
+
     def check_periphery_healthcheck(self):
         res = []
         for port_name in self.periphery_config.keys():
