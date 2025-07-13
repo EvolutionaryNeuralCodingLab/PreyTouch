@@ -7,9 +7,9 @@ import config
 from pathlib import Path
 from arena import ImageHandler, QueueException
 from cache import RedisCache, CacheColumns as cc
-from utils import run_in_thread
+from analysis.pose_utils import put_text
 from analysis.predictors.tongue_out import TongueOutAnalyzer, TONGUE_CLASS
-from analysis.pose import ArenaPose
+from analysis.pose import ArenaPose, PogonaHeadPose
 
 
 class PredictHandler(ImageHandler):
@@ -147,18 +147,14 @@ class TongueOutHandler(PredictHandler):
 class PogonaHeadHandler(PredictHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.arena_pose = ArenaPose(self.cam_name, 'pogona_head')
-        self.last_det = None
+        self.arena_pose = PogonaHeadPose(self.cam_name)
 
     def __str__(self):
         return f'pogona-head-{self.cam_name}'
 
     def loop(self):
         detector = self.arena_pose.predictor.detector
-        self.logger.info(
-            f"YOLOv5 detector loaded successfully ({detector.model_width}x{detector.model_height} "
-            f"weights: {detector.weights_path})."
-        )
+        self.logger.info(f"YOLO detector loaded successfully")
         super().loop()
 
     def _init(self, img):
@@ -166,22 +162,21 @@ class PogonaHeadHandler(PredictHandler):
         self.is_initiated = True
 
     def predict_frame(self, img, timestamp):
-        """Get detection of pogona head on frame; {det := [x1, y1, x2, y2, confidence]}"""
-        det, img = self.arena_pose.predictor.predict(img, return_centroid=False)
-        return det, img
+        """Get detection of pogona head on frame"""
+        is_plot_preds = self.pred_image_size is not None and self.is_streaming
+        if len(img.shape) == 2 or img.shape[-1] == 1:
+            # convert gray image to 3-channels
+            img = cv2.merge((img, img, img))
+        pred_row_df, img = self.arena_pose.predictor.predict(img, is_plot_preds=is_plot_preds)
+        return pred_row_df, img
 
-    def analyze_prediction(self, timestamp, det):
-        if det[0] is None:
-            return
-
+    def analyze_prediction(self, timestamp, pred_row_df):
         db_video_id = self.get_db_video_id()
-        cam_x, cam_y = self.arena_pose.predictor.to_centroid(det)
-        self.prediction_summary = self.arena_pose.analyze_frame(timestamp, cam_x, cam_y, db_video_id)
+        self.prediction_summary = self.arena_pose.analyze_frame(timestamp, pred_row_df, db_video_id)
 
-    def draw_pred_on_image(self, det, img, font=cv2.FONT_HERSHEY_SIMPLEX, color=(255, 0, 0)):
-        img = self.arena_pose.predictor.draw_predictions(det, img)
-        h, w = img.shape[:2]
-        if self.prediction_summary:
-            img = cv2.putText(img, str(self.prediction_summary), (20, h-30), font, 1, color, 2, cv2.LINE_AA)
-        self.last_det = det
+    def draw_pred_on_image(self, pred_row, img, font=cv2.FONT_HERSHEY_SIMPLEX, color=(255, 0, 0)):
+        angle = pred_row.iloc[0][('angle', '')]
+        x, y = pred_row.iloc[0][('nose', 'x')], pred_row.iloc[0][('nose', 'y')]
+        text = f'({round(x), round(y)}), head_angle={round(np.rad2deg(angle))}' if not np.isnan(x) else 'No Lizard Detection'
+        img = put_text(text, img, 20, self.pred_image_size[0]-20)
         return img
