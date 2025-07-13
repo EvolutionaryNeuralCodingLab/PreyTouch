@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 import time
 from datetime import datetime
@@ -83,11 +84,27 @@ class PeripheryIntegrator:
             if count == 0:
                 continue
 
+            log_str = f'Reward given by {feeder_name}'
+            if config.FEEDER_AUDIO_PATH:
+                self.activate_feeder_audio()
+                log_str += f' and playing audio {config.FEEDER_AUDIO_PATH}'
+            if self.cache.get(cc.FEEDER_DELAY):
+                self.logger.info(f'Feeder delay active for {feeder_name}')
+                time.sleep(self.cache.get(cc.FEEDER_DELAY))
+
             self.mqtt_publish(config.mqtt['publish_topic'], f'["dispense","{feeder_name}"]')
             self.update_reward_count(feeder_name, count - 1)
-            self.logger.info(f'Reward was given by {feeder_name}')
+            self.logger.info(log_str)
             self.orm.commit_reward(datetime.now(), is_manual=is_manual)
             break
+
+    def activate_feeder_audio(self):
+        """Plays sound for the feeder activation"""
+        wav_path = config.FEEDER_AUDIO_PATH
+        if not Path(wav_path).exists():
+            self.logger.error(f"Cannot play sound: {wav_path} not found.")
+            return
+        os.system(f"aplay {wav_path}")
 
     def mqtt_publish(self, topic, payload):
         self.mqtt_client.connect(config.mqtt['host'], config.mqtt['port'], keepalive=60)
@@ -104,6 +121,14 @@ class PeripheryIntegrator:
         c[feeder_name] = reward_count
         new_counts = [str(c.get(feeder, 0)) for feeder in self.feeders]
         self.cache.set(cc.REWARD_LEFT, new_counts)
+
+    def get_feeder_delay(self):
+        delay = self.cache.get(cc.FEEDER_DELAY)
+        return delay or 0
+
+    def update_feeder_delay(self, delay):
+        self.logger.info(f'Updating feeder delay to {delay}')
+        self.cache.set(cc.FEEDER_DELAY, delay)
 
     def check_periphery_healthcheck(self):
         res = []

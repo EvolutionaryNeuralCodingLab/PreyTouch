@@ -155,7 +155,7 @@ PERIPHERY_HEALTHCHECK = {
     'MAX_PUBLISH_DELAY': env.int(  'PERIPHERY_HEALTHCHECK_PUBLISH_DELAY',240,    group='Periphery', desc='Minimum seconds between repeated error logs'),
     'MAX_ACTION_DELAY':  env.int(  'PERIPHERY_HEALTHCHECK_ACTION_DELAY',3600,   group='Periphery', desc='Minimum seconds between supervisor-restarts'),
 }
-
+FEEDER_AUDIO_PATH = env('FEEDER_AUDIO_PATH', None, group='Periphery', desc='If path is given, audio will be played when the feeder is triggered')
 
 # Calibration
 MIN_CALIBRATION_IMAGES = env.int('MIN_CALIBRATION_IMAGES', 7, group='Calibration', desc='Nuber of minimum calibration images per camera')

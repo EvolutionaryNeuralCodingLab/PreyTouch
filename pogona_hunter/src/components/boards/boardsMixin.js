@@ -24,8 +24,7 @@ export default {
         rewardAnyTouchProb: 0,
         accelerateMultiplier: 3, // times to increase bug speed in tongue detection
         isKillingAllByOneHit: process.env.IS_KILLING_ALL_BY_ONE_HIT, // if true, all bugs will disapear when one is hit successfully
-        splitRandomizeTiming: process.env.SPLIT_RANDOMIZE_TIMING,  // if 1, randomize timing of bugs appearance
-        feederDelay: 0  // add delay in seconds to feeder activation
+        splitRandomizeTiming: process.env.SPLIT_RANDOMIZE_TIMING // if 1, randomize timing of bugs appearance
       },
       mediaUrl: '',
       isHandlingTouch: false,
@@ -248,8 +247,7 @@ export default {
           bug_type: bug.currentBugType,
           bug_size: bug.currentBugSize,
           in_block_trial_id: this.bugsSettings.trialID,
-          trial_id: this.bugsSettings.trialDBId,
-          feeder_delay: this.bugsSettings.feederDelay
+          trial_id: this.bugsSettings.trialDBId
         }))
       console.log('Touch event was sent to the server')
     },
@@ -257,7 +255,7 @@ export default {
       this.$refs.bugChild[bugIndex].isDead = true
       this.isBloodOnScreen = true
       if (isRewardBug) {
-        this.$refs.audio1.play()
+        // this.$refs.audio1.play()
         this.$store.commit('increment')
       }
       const bloodTimeout = setTimeout(() => {

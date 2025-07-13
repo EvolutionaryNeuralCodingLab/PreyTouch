@@ -30,6 +30,7 @@ class CacheColumns:
     CURRENT_ANIMAL_ID = Column('CURRENT_ANIMAL_ID', str, 'static')
     CURRENT_ANIMAL_ID_DB_INDEX = Column('CURRENT_ANIMAL_ID_DB_INDEX', int, 'static')
     REWARD_LEFT = Column('REWARD_LEFT', list, 'static')
+    FEEDER_DELAY = Column('FEEDER_DELAY', int, 'static')
     IS_EXPERIMENT_CONTROL_CAMERAS = Column('IS_EXPERIMENT_CONTROL_CAMERAS', bool, config.EXPERIMENTS_TIMEOUT)
     CAM_TRIGGER_STATE = Column('CAM_TRIGGER_STATE', int, None)
     LAST_TIME_AGENT_MESSAGE = Column('LAST_TIME_AGENT_MESSAGE', float, None)

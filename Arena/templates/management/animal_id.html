@@ -27,16 +27,18 @@
         <div class="col-sm-4" style="max-width: 40%; padding-right: 0">
             <label for="rewardCount" class="col-form-label">{{ feeder }}:</label>
         </div>
-        <div class="col" id="rewardCount-{{ feeder | replace(" ", "-") }}" style="padding-top: 8px"></div>
+        <div class="col-sm-2" id="rewardCount-{{ feeder | replace(" ", "-") }}" style="padding-top: 8px"></div>
         <div class="col-sm-3">
             <input type="number" class="form-control" id="rewardCountInput-{{ feeder | replace(" ", "-") }}">
         </div>
-        <div class="col" style="flex-basis: content; padding-left: 0">
+        <div class="col-sm-3" style="flex-basis: content; padding-left: 0">
             <label for="updateRewardCount-{{ feeder | replace(" ", "-") }}" class="col-form-label"></label>
             <button id="updateRewardCount-{{ feeder | replace(" ", "-") }}" type="button" class="btn btn-sm btn-outline-info">Update</button>
         </div>
     </div>
 {% endfor %}
+
+
 
 <div class="modal fade" id="validateAnimalModal" tabindex="-1" role="dialog"
      aria-labelledby="exampleModalLabel" aria-hidden="true">
