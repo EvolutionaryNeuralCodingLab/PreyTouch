@@ -7,6 +7,7 @@
       :controls="controls"
       :autoplay="autoplay"
       :muted="muted"
+      :loop="loop"
       :initial-time="initialTime"
       width="300"
       height="255"

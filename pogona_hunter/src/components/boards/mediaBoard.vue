@@ -7,6 +7,7 @@
           :src="mediaUrl"
           :autoplay="autoplay"
           :muted="muted"
+          :loop="isLoop"
           @frameupdate="onFrameUpdate"
       />
     <canvas id="media-canvas" v-bind:height="canvasHeight" v-bind:width="canvasWidth"
@@ -30,6 +31,7 @@ export default {
       isMedia: false,
       autoplay: 'autoplay',
       muted: true,
+      isLoop: true,
       canvasWidth: window.innerWidth,
       canvasHeight: window.innerHeight
     }
