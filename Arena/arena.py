@@ -249,7 +249,7 @@ class ImageSink(ArenaProcess):
         writer_fps = self.writing_fps
         if writer_fps is None and self.is_trigger_mode():
             writer_fps = self.extract_writer_fps_in_trigger_mode()
-        if cache.get(cc.IS_BLANK_CONTINUOUS_RECORDING) or self.cam_config.get('mode') == 'tracking':
+        if cache.get(cc.IS_COMPRESSED_LONG_RECORDING) or self.cam_config.get('mode') == 'tracking':
             self.video_out = ImageIOWriter(frame, writer_fps, self.write_output_dir, self.cam_name, is_color)
         else:
             self.video_out = OpenCVWriter(frame, writer_fps, self.write_output_dir, self.cam_name, is_color)
