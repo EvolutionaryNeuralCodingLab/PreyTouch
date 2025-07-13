@@ -90,7 +90,7 @@ class PeripheryIntegrator:
                 log_str += f' and playing audio {config.FEEDER_AUDIO_PATH}'
             if self.cache.get(cc.FEEDER_DELAY):
                 self.logger.info(f'Feeder delay active for {feeder_name}')
-                time.sleep(self.cache.get(cc.FEEDER_DELAY))
+                time.sleep(int(self.cache.get(cc.FEEDER_DELAY)))
 
             self.mqtt_publish(config.mqtt['publish_topic'], f'["dispense","{feeder_name}"]')
             self.update_reward_count(feeder_name, count - 1)
