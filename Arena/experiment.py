@@ -451,6 +451,7 @@ class Block:
 
         if self.block_type == 'psycho':
             self.run_psycho()
+            self.cache.set(cc.IS_VISUAL_APP_ON, True)
 
         if self.block_type in ['bugs', 'media']:
             if self.is_media_block:
