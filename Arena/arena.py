@@ -459,7 +459,7 @@ class CameraUnit:
             if not flag:
                 continue
 
-            time.sleep(0.01)
+            time.sleep(0.05)
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n\r\n')
         self.mp_metadata['is_streaming'].clear()
