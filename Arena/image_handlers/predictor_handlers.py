@@ -84,7 +84,7 @@ class PredictHandler(ImageHandler):
     def draw_pred_on_image(self, det, img):
         return img
 
-    def wait_for_next_frame(self, timeout=2):
+    def wait_for_next_frame(self, timeout=config.PREDICTORS_WAIT_FRAME_TIMEOUT):
         current_timestamp = self.mp_metadata['shm_frame_timestamp'].value
         t0 = time.time()
         while self.last_timestamp and current_timestamp == self.last_timestamp:

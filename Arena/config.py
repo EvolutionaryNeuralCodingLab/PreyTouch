@@ -135,6 +135,7 @@ ARRAY_QUEUE_SIZE_MB = env.int('ARRAY_QUEUE_SIZE_MB', 5 * 20, group='Cameras', de
 COUNT_TIMESTAMPS_FOR_FPS_CALC = env.int('COUNT_TIMESTAMPS_FOR_FPS_CALC', 200, group='Cameras', desc='how many timestamps to gather for calculating FPS')
 WRITING_VIDEO_QUEUE_MAXSIZE = env.int('WRITING_VIDEO_QUEUE_MAXSIZE', 100, group='Cameras', desc='Max frames in the writing video queue')
 shm_buffer_dtype = 'uint8'
+PREDICTORS_WAIT_FRAME_TIMEOUT = env.int('PREDICTORS_WAIT_FRAME_TIMEOUT', 2, group='Cameras', desc='Timeout for waiting frames for a predictor')
 
 # Periphery
 DISABLE_PERIPHERY = env.bool('DISABLE_PERIPHERY', False, group='Periphery', desc='Disable all periphery integration')
