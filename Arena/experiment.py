@@ -556,7 +556,7 @@ class Block:
             text = 'Summary of circle_flip block:\n'
             for trial_id, d in self.special_trials_log.items():
                 extra = ' (flip)' if d['is_flip'] else ''
-                text += f'trial {trial_id}{extra} - engagement:{d["engaged_recs"]/d["total_recs"]:.0f}\n'
+                text += f'trial {trial_id}{extra} - engagement:{d["engaged_recs"]/d["total_recs"]:.0%}\n'
             self.logger.info(text)
 
     def take_trial_image(self):
