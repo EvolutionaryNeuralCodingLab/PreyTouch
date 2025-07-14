@@ -280,7 +280,7 @@ class Scheduler(threading.Thread):
 
     @schedule_method
     def run_pose(self):
-        if not self.is_in_range('run_pose') or cache.get(cc.IS_BLANK_CONTINUOUS_RECORDING) or self.dlc_on.is_set() or \
+        if not self.is_in_range('run_pose') or cache.get(cc.IS_COMPRESSED_LONG_RECORDING) or self.dlc_on.is_set() or \
                 not config.IS_RUN_NIGHTLY_POSE_ESTIMATION:
             return
 
@@ -290,7 +290,7 @@ class Scheduler(threading.Thread):
     @schedule_method
     def tracking_pose(self):
         if predict_tracking is None or not self.is_in_range('tracking_pose') or \
-            cache.get(cc.IS_BLANK_CONTINUOUS_RECORDING) or self.dlc_on.is_set() or \
+            cache.get(cc.IS_COMPRESSED_LONG_RECORDING) or self.dlc_on.is_set() or \
                 not config.IS_RUN_NIGHTLY_POSE_ESTIMATION or self.tracking_pose_on.is_set():
             return
 

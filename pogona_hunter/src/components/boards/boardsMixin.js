@@ -127,6 +127,7 @@ export default {
         this.startLogBugTrajectory()
       }
       this.initDrawing()
+      this.drawSquareForPhotoDiode()
       if (this.isSplitBugsView) {
         // inflate the number of bugs to be equal to the number of bug types
        const baseType = this.bugsSettings.bugTypes[0]
@@ -230,6 +231,7 @@ export default {
       y -= this.canvas.offsetTop
       let strikeDistances = {}
       let isRewardAnyTouch = Math.random() < this.bugsSettings.rewardAnyTouchProb
+      this.drawSquareForPhotoDiode()
       for (let i = 0; i < this.$refs.bugChild.length; i++) {
         let bug = this.$refs.bugChild[i]
         if (bug.isDead || bug.isRetreated) {
@@ -308,6 +310,7 @@ export default {
       this.$socketClient.set('IS_VISUAL_APP_ON', 0)
       this.$socketClient.publish('log/metric/trial_data', JSON.stringify(this.trialData))
       this.clearBoard()
+      this.drawSquareForPhotoDiode()
       this.endLogBugTrajectory()
       console.log(`Trial ${trialID} data was sent to the server`)
     },
@@ -381,6 +384,15 @@ export default {
       this.trajectoryLogInterval = null
       this.bugTrajectoryLog = []
       console.log('trajectory log ended')
+    },
+    drawSquareForPhotoDiode: function () {
+      const canvas = document.getElementById('backgroundCanvas')
+      const ctx = canvas.getContext('2d')
+      ctx.fillRect(0, 0, 50, 50) // Draws a 100x100 black square at (0, 0)
+      let squareTimeout = setTimeout(() => {
+        ctx.clearRect(0, 0, 50, 50)
+        clearTimeout(squareTimeout)
+      }, 100)
     }
   }
 }

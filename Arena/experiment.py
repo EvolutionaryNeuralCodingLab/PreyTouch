@@ -257,7 +257,10 @@ class Block:
         if self.is_continuous_blank:
             self.num_trials, self.iti = 1, 0
             self.trial_duration = config.MAX_DURATION_CONT_BLANK
-            self.cache.set(cc.IS_BLANK_CONTINUOUS_RECORDING, True, timeout=self.trial_duration)
+        if self.is_long_recording:
+            if not self.is_continuous_blank:
+                self.logger.warning('Block is very long. switched to compressed video writer')
+            self.cache.set(cc.IS_COMPRESSED_LONG_RECORDING, True, timeout=self.overall_block_duration)
 
     @property
     def info(self):
@@ -378,8 +381,8 @@ class Block:
 
         self.turn_cameras('off')
         self.cache.delete(cc.EXPERIMENT_BLOCK_PATH)
-        if self.is_continuous_blank:
-            self.cache.delete(cc.IS_BLANK_CONTINUOUS_RECORDING)
+        if self.is_long_recording:
+            self.cache.delete(cc.IS_COMPRESSED_LONG_RECORDING)
 
         if config.CAM_TRIGGER_DELAY_AROUND_BLOCK:
             self.periphery.cam_trigger(1)
@@ -455,6 +458,7 @@ class Block:
 
         if self.block_type == 'psycho':
             self.run_psycho()
+            self.cache.set(cc.IS_VISUAL_APP_ON, True)
 
         if self.block_type in ['bugs', 'media']:
             if self.is_media_block:
@@ -675,6 +679,10 @@ class Block:
     @property
     def is_continuous_blank(self):
         return self.blank_rec_type == 'continuous'
+
+    @property
+    def is_long_recording(self):
+        return self.overall_block_duration > config.MAX_TIME_SHORT_RECORDING_DURATION
 
     @property
     def is_random_low_horizontal(self):

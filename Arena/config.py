@@ -129,6 +129,7 @@ VIDEO_WRITER_FORMAT = env('VIDEO_WRITER_FORMAT', 'MJPG', group='Cameras', desc='
 DEFAULT_EXPOSURE = env.int('DEFAULT_EXPOSURE', 5000, group='Cameras', desc='Default exposure for cameras')
 IS_TRACKING_CAMERAS_ALLOWED = env.bool('IS_TRACKING_CAMERAS_ALLOWED', False, group='Cameras', desc='Allow cameras that are configured for tracking to create tracking videos')
 MAX_VIDEO_TIME_SEC = env.int('MAX_VIDEO_TIME_SEC', 60 * 10, group='Cameras', desc='Maximum duration for output videos in seconds')
+MAX_TIME_SHORT_RECORDING_DURATION = env.int('MAX_TIME_SHORT_RECORDING_DURATION', 60*60*1, group='Cameras', desc='Maximum duration of short blocks in seconds, if greater, use compressed video writer')
 CAMERA_ON_MIN_DURATION = env.float('CAMERA_ON_MIN_DURATION', 10*60, group='Cameras', desc="used by the scheduler to set the duration (seconds) in which 'manual' \
                                    mode cameras would stay on, or for any type of camera this would set the duration it stays on outside of camera_on time.")
 FRAMES_TIMESTAMPS_DIR = env('FRAMES_TIMESTAMPS_DIR', 'frames_timestamps', group='Cameras', is_map=False, desc='Name of the folder to be created in the experiment output directory to store all frames timestamps files')
