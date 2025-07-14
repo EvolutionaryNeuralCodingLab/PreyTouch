@@ -186,7 +186,8 @@ export default {
     },
     flipCircle() {
       if (this.$refs.bugChild) {
-          this.$refs.bugChild.forEach(bug => bug.flipCircle())
+        this.$refs.bugChild.forEach(bug => bug.flipCircle())
+        this.drawSquareForPhotoDiode()
         }
     },
     setCanvasTouch(event) {
@@ -231,7 +232,6 @@ export default {
       y -= this.canvas.offsetTop
       let strikeDistances = {}
       let isRewardAnyTouch = Math.random() < this.bugsSettings.rewardAnyTouchProb
-      this.drawSquareForPhotoDiode()
       for (let i = 0; i < this.$refs.bugChild.length; i++) {
         let bug = this.$refs.bugChild[i]
         if (bug.isDead || bug.isRetreated) {
@@ -249,6 +249,7 @@ export default {
         if ((isHit || isRewardAnyTouch) && !this.isClimbing && !this.isBloodOnScreen) {
             this.destruct(i, x, y, isRewardBug)
         }
+        this.drawSquareForPhotoDiode()
         this.logTouch(x, y, bug, isHit, isRewardBug, isRewardAnyTouch)
       }
       this.isHandlingTouch = false
