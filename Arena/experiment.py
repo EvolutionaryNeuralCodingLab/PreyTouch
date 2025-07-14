@@ -548,7 +548,7 @@ class Block:
             if (trial_id >= special_trials.get('initial_flip_trial') and not is_flipped
                     and trial_dict['total_recs'] > 5 and is_engaged):
                 self.cache.publish_command('flip_circle_direction')
-                self.logger.info(f'Flip circle, trial {trial_id+1}')
+                self.logger.info(f'Flip circle, trial {trial_id}')
                 trial_dict['is_flip'] = True
 
     def summary_special_trials(self):
@@ -556,7 +556,7 @@ class Block:
             text = 'Summary of circle_flip block:\n'
             for trial_id, d in self.special_trials_log.items():
                 extra = ' (flip)' if d['is_flip'] else ''
-                text += f'trial {trial_id+1}{extra} - engagement:{d["engaged_recs"]/d["total_recs"]:.0f}\n'
+                text += f'trial {trial_id}{extra} - engagement:{d["engaged_recs"]/d["total_recs"]:.0f}\n'
             self.logger.info(text)
 
     def take_trial_image(self):
