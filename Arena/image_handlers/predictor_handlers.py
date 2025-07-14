@@ -148,6 +148,7 @@ class PogonaHeadHandler(PredictHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.arena_pose = PogonaHeadPose(self.cam_name)
+        self.mp_metadata['is_pred_on'].set()
         self.engagement_min_duration = 5
         self.engagement_min_score = 0.5
         self.engagement_stack = []
