@@ -333,11 +333,11 @@ class Block:
         # check engagement of the animal
         self.check_engagement_level()
         # start cameras for experiment with their predictors and set the output dir for videos
+        self.turn_cameras('on')
         if config.CAM_TRIGGER_DELAY_AROUND_BLOCK:
             self.periphery.cam_trigger(0)  # turn off trigger
             self.logger.info('trigger is off')
         t0 = time.time()
-        self.turn_cameras('on')
         # screencast
         if config.IS_RECORD_SCREEN_IN_EXPERIMENT:
             threading.Thread(target=self.record_screen).start()
