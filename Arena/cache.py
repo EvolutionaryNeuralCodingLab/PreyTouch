@@ -69,7 +69,7 @@ class RedisCache:
         elif cache_column.type == list:
             value = ','.join(value)
 
-        kwargs = {'ex': timeout} if (not timeout or isinstance(timeout, int)) else {'px': timeout*1000}
+        kwargs = {'ex': timeout} if (not timeout or isinstance(timeout, int)) else {'px': round(timeout*1000)}
         return self._redis.set(cache_column.name, value, **kwargs)
 
     def update_cam_dict(self, cam_name, **kwargs):
