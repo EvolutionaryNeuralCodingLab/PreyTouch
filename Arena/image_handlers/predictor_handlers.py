@@ -205,7 +205,7 @@ class PogonaHeadHandler(PredictHandler):
         head_angel = pred_row_df.iloc[0][('angle', '')]
         y = pred_row_df.iloc[0][('nose', 'y')]
         # if not np.isnan(head_angel) and not np.isnan(y) and 20 < head_angel < 160:
-        if not np.isnan(head_angel) and not np.isnan(y) and 0 < head_angel < 360:
+        if not np.isnan(head_angel) and not np.isnan(y) and (np.pi/9) < head_angel < (8*np.pi/9):
             is_engaged = True
         self.engagement_stack.append((timestamp, is_engaged))
 
