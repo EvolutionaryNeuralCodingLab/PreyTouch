@@ -154,10 +154,12 @@
                         $("#streamButton").prop('disabled', !onCameras.length)
                     }
                     for (let cam_name in data['cam_units_fps']) {
-                        $(`#cam-fps-${cam_name}`).text(data['cam_units_fps'][cam_name]['cam_fps'].toFixed(1))
-                        $(`#sink-fps-${cam_name}`).text(data['cam_units_fps'][cam_name]['sink_fps'].toFixed(1))
-                        $(`#pred-fps-${cam_name}`).text(data['cam_units_fps'][cam_name]['pred_fps'].toFixed(1))
-                        $(`#pred-delay-${cam_name}`).text(`${data['cam_units_fps'][cam_name]['pred_delay'].toFixed(1)}ms`)
+                        let cam_obj = data['cam_units_fps'][cam_name]
+                        $(`#cam-fps-${cam_name}`).text(cam_obj['cam_fps'].toFixed(1))
+                        $(`#sink-fps-${cam_name}`).text(cam_obj['sink_fps'].toFixed(1))
+                        $(`#pred-fps-${cam_name}`).text(cam_obj['pred_fps'].toFixed(1))
+                        let predDelay = cam_obj['pred_delay'] > 1000 ? '>1000' : cam_obj['pred_delay'].toFixed(1)
+                        $(`#pred-delay-${cam_name}`).text(`${predDelay}ms`)
                     }
                     for (let cam_name in data['cam_units_predictors']) {
                         $(`#predictors-${cam_name}`).text(data['cam_units_predictors'][cam_name])
@@ -791,7 +793,6 @@
                 $(this).prepend(container).dequeue()
             })
         }
-
     })
 </script>
 

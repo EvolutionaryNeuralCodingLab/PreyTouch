@@ -86,7 +86,8 @@ commands_topics = {
     'hide_media': 'cmd/visual_app/hide_media',
     'reload_app': 'cmd/visual_app/reload_app',
     'app_healthcheck': 'cmd/visual_app/healthcheck',
-    'strike_predicted': 'cmd/visual_app/strike_predicted'
+    'strike_predicted': 'cmd/visual_app/strike_predicted',
+    'flip_circle_direction': 'cmd/visual_app/flip_circle_direction'
 }
 subscription_topics = {
     'arena_operations': 'cmd/arena/*',

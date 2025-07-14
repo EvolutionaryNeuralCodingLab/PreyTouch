@@ -233,6 +233,7 @@ class Block:
 
     blank_rec_type: str = 'trials'  # options: 'trials', 'continuous'
     trial_images = []
+    special_trials_log = {}
 
     def __post_init__(self):
         self.logger = get_logger(f'{self.experiment_name}-Block {self.block_id}')
@@ -294,12 +295,13 @@ class Block:
     def run_block(self):
         """Run block flow"""
         self.init_block()
-        self.wait(self.extra_time_recording, label='Extra Time Rec')
+        self.wait(self.extra_time_recording, None, label='Extra Time Rec')
         # if self.is_split_bugs_view, take self.ratio and change the order of self.bug_types in each trial by creating
         # an array the size of the trial that combinatorially put 1 and -1, where 1 indicates the current bugs order and -1 indicates the opposite order
         if self.is_split_bugs_view:
             self.create_bugs_order()
 
+        special_trials = self.init_special_trials()
         for trial_id in range(1, self.num_trials + 1):
             if self.block_type == 'bugs':
                 if not self.exp_validation.is_reward_left():
@@ -309,14 +311,16 @@ class Block:
                     utils.send_telegram_message(f'Max daily rewards of {config.MAX_DAILY_REWARD} reached; stopping experiment')
                     raise EndExperimentException(f'Max daily rewards of {config.MAX_DAILY_REWARD} reached; stopping experiment')
             self.start_trial(trial_id)
-            self.wait(self.trial_duration, check_visual_app_on=True, label=f'Trial {trial_id}',
-                      take_img_after=self.trial_duration/2)
+            self.wait(self.trial_duration, trial_id, check_visual_app_on=True, label=f'Trial {trial_id}',
+                      take_img_after=self.trial_duration/2, special_trials=special_trials)
             self.end_trial()
             self.save_trial_images(trial_id)
-            self.wait(self.iti, label='ITI')
+            self.wait(self.iti, trial_id, label='ITI')
 
-        self.wait(self.extra_time_recording, label='Extra Time Rec')
+        self.wait(self.extra_time_recording, None, label='Extra Time Rec')
         self.end_block()
+        if special_trials:
+            self.summary_special_trials()
 
     def init_block(self):
         mkdir(self.block_path)
@@ -499,7 +503,7 @@ class Block:
             with open(f'{self.block_path}/notes.txt', 'w') as f:
                 f.write(self.notes)
 
-    def wait(self, duration, check_visual_app_on=False, label='', take_img_after=None):
+    def wait(self, duration, trial_id, check_visual_app_on=False, label='', take_img_after=None, special_trials=None):
         """Sleep while checking for experiment end"""
         if label:
             label = f'({label}): '
@@ -513,11 +517,43 @@ class Block:
             if check_visual_app_on and not self.is_blank_block and not self.cache.get(cc.IS_VISUAL_APP_ON):
                 self.logger.debug('Trial ended')
                 return
+            self.check_special_trials(trial_id, special_trials)
             # If take_img_after is set, and we have not taken 2 images yet, take one now.
             # This is used for taking a middle trial image during the wait loop
             if take_img_after and len(self.trial_images) < 2 and time.time() - t0 > take_img_after:
                 self.take_trial_image()
             time.sleep(0.1)
+
+    def init_special_trials(self):
+        special_trials = {}
+        if self.is_circle_flip:
+            assert self.num_trials > 9, 'Num trials must be > 9 in circle_flip trials'
+            special_trials['initial_flip_trial'] = random.choice([6, 7, 8])
+        return special_trials
+
+    def check_special_trials(self, trial_id, special_trials):
+        if not special_trials or trial_id is None:
+            return
+
+        if self.is_circle_flip:
+            trial_dict = self.special_trials_log.setdefault(trial_id, {'engaged_recs': 0, 'total_recs': 0, 'is_flip': False})
+            is_engaged = self.cache.get(cc.IS_ANIMAL_ENGAGED) or 0
+            trial_dict['engaged_recs'] += int(is_engaged)
+            trial_dict['total_recs'] += 1
+            is_flipped = any([d['is_flip'] for _, d in self.special_trials_log.items()])
+            if (trial_id >= special_trials.get('initial_flip_trial') and not is_flipped
+                    and trial_dict['total_recs'] > 5 and is_engaged):
+                self.cache.publish_command('flip_circle_direction')
+                self.logger.info(f'Flip circle, trial {trial_id+1}')
+                trial_dict['is_flip'] = True
+
+    def summary_special_trials(self):
+        if self.is_circle_flip:
+            text = 'Summary of circle_flip block:\n'
+            for trial_id, d in self.special_trials_log.items():
+                extra = ' (flip)' if d['is_flip'] else ''
+                text += f'trial {trial_id+1}{extra} - engagement:{d["engaged_recs"]/d["total_recs"]:.0f}\n'
+            self.logger.info(text)
 
     def take_trial_image(self):
         if not config.TRIAL_IMAGE_CAMERA:
@@ -643,6 +679,10 @@ class Block:
     @property
     def is_random_low_horizontal(self):
         return self.movement_type == 'random_low_horizontal'
+
+    @property
+    def is_circle_flip(self):
+        return self.movement_type == 'circle_flip'
 
     @property
     def is_always_reward(self):

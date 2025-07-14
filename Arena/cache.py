@@ -38,6 +38,7 @@ class CacheColumns:
     IS_BLANK_CONTINUOUS_RECORDING = Column('IS_BLANK_CONTINUOUS_RECORDING', bool, config.MAX_DURATION_CONT_BLANK)
     TEMPERATURE = Column('TEMPERATURE', str, 60)
     HOLD_AGENT = Column('HOLD_AGENT', bool, 'static')
+    IS_ANIMAL_ENGAGED = Column('IS_ANIMAL_ENGAGED', bool, 1)
 
 
 class RedisCache:

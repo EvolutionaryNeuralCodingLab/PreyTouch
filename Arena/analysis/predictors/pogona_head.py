@@ -15,16 +15,20 @@ class PogonaHead(Predictor):
         self.is_initialized = False
 
     def init(self, img):
+        self._predict(img)
         self.is_initialized = True
 
     def predict(self, frame, frame_id=0, is_plot_preds=False):
-        res = self.detector(frame, save=False, imgsz=640, conf=self.threshold, iou=0.45, device='cuda:0', verbose=False)[0]
+        res = self._predict(frame)
         preds = res.summary()
         pred = preds[0] if preds else None
         pred_row_df = self.convert_to_dlc_row(pred, frame_id)
         if is_plot_preds:
             frame = res.plot()
         return pred_row_df, frame
+
+    def _predict(self, frame):
+        return self.detector(frame, save=False, imgsz=640, conf=self.threshold, iou=0.45, device='cuda:0', verbose=False)[0]
 
     def convert_to_dlc_row(self, res, frame_id):
         d = {}

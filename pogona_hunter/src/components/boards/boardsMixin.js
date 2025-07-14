@@ -70,6 +70,14 @@ export default {
             event: 'bug_jump'
         })
       },
+      'cmd/visual_app/flip_circle_direction': (payload) => {
+        console.log('received flip_circle_direction command')
+        this.flipCircle()
+        this.eventsLog.push({
+            time: Date.now(),
+            event: 'flip_circle'
+        })
+      },
       'cmd/visual_app/reload_app': (payload) => {
         location.reload()
       },
@@ -95,6 +103,11 @@ export default {
     window.addEventListener('keypress', e => {
       if (e.code === 'KeyJ') {
         this.jumpBugs()
+      }
+    })
+    window.addEventListener('keypress', e => {
+      if (e.code === 'KeyF') {
+        this.flipCircle()
       }
     })
   },
@@ -168,6 +181,11 @@ export default {
     jumpBugs() {
       if (this.$refs.bugChild) {
           this.$refs.bugChild.forEach(bug => bug.jump())
+        }
+    },
+    flipCircle() {
+      if (this.$refs.bugChild) {
+          this.$refs.bugChild.forEach(bug => bug.flipCircle())
         }
     },
     setCanvasTouch(event) {

@@ -44,7 +44,7 @@ class PredictHandler(ImageHandler):
                 pred, img = self.predict_frame(img, timestamp)
                 if not self.is_initiated:
                     self._init(img)
-                self.analyze_prediction(timestamp, pred)
+                pred = self.analyze_prediction(timestamp, pred)
 
                 # copy the image+predictions to pred_shm
                 if self.pred_image_size is not None and self.is_streaming:
@@ -76,7 +76,7 @@ class PredictHandler(ImageHandler):
         return None, img
 
     def analyze_prediction(self, timestamp, pred):
-        pass
+        return pred
 
     def get_db_video_id(self):
         return self.mp_metadata['db_video_id'].value or None
@@ -148,17 +148,20 @@ class PogonaHeadHandler(PredictHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.arena_pose = PogonaHeadPose(self.cam_name)
+        self.engagement_min_duration = 5
+        self.engagement_min_score = 0.5
+        self.engagement_stack = []
 
     def __str__(self):
         return f'pogona-head-{self.cam_name}'
 
     def loop(self):
-        detector = self.arena_pose.predictor.detector
-        self.logger.info(f"YOLO detector loaded successfully")
         super().loop()
 
     def _init(self, img):
         self.arena_pose.init(img)
+        model_info = self.arena_pose.predictor.detector.ckpt['train_args']
+        self.logger.info(f"YOLO detector ({model_info['model']},img_size={model_info['imgsz']}) loaded successfully from: {self.arena_pose.predictor.detector.ckpt_path}")
         self.is_initiated = True
 
     def predict_frame(self, img, timestamp):
@@ -172,11 +175,46 @@ class PogonaHeadHandler(PredictHandler):
 
     def analyze_prediction(self, timestamp, pred_row_df):
         db_video_id = self.get_db_video_id()
-        self.prediction_summary = self.arena_pose.analyze_frame(timestamp, pred_row_df, db_video_id)
+        pred_row_df = self.arena_pose.analyze_frame(timestamp, pred_row_df, db_video_id)
+        pred_row_df = self.check_engagement(pred_row_df, timestamp)
+        return pred_row_df
+
+    def check_engagement(self, pred_row_df, timestamp):
+        self._check_engagement(pred_row_df, timestamp)
+        # check if the stack reached the minimum duration, if not return
+        stack_duration = timestamp - self.engagement_stack[0][0] if len(self.engagement_stack) > 1 else 0
+        if stack_duration < self.engagement_min_duration:
+            pred_row_df[('engagement_score', '')] = 'unknown'
+            return
+        # clean earlier records
+        for rec in self.engagement_stack.copy():
+            if timestamp - rec[0] > self.engagement_min_duration:
+                self.engagement_stack.remove(rec)
+            else:
+                break
+
+        engagement_score = sum([rec[1] for rec in self.engagement_stack]) / len(self.engagement_stack)
+        if engagement_score > self.engagement_min_score:
+            self.cache.set(cc.IS_ANIMAL_ENGAGED, True, timeout=0.5)
+        pred_row_df[('engagement_score', '')] = f'{engagement_score:.0%}'
+        return pred_row_df
+
+    def _check_engagement(self, pred_row_df, timestamp):
+        is_engaged = False
+        head_angel = pred_row_df.iloc[0][('angle', '')]
+        y = pred_row_df.iloc[0][('nose', 'y')]
+        # if not np.isnan(head_angel) and not np.isnan(y) and 20 < head_angel < 160:
+        if not np.isnan(head_angel) and not np.isnan(y) and 0 < head_angel < 360:
+            is_engaged = True
+        self.engagement_stack.append((timestamp, is_engaged))
 
     def draw_pred_on_image(self, pred_row, img, font=cv2.FONT_HERSHEY_SIMPLEX, color=(255, 0, 0)):
+        if pred_row is None:
+            return img
+
         angle = pred_row.iloc[0][('angle', '')]
         x, y = pred_row.iloc[0][('nose', 'x')], pred_row.iloc[0][('nose', 'y')]
         text = f'({round(x), round(y)}), head_angle={round(np.rad2deg(angle))}' if not np.isnan(x) else 'No Lizard Detection'
-        img = put_text(text, img, 20, self.pred_image_size[0]-20)
+        img = put_text(text, img, 10, self.pred_image_size[0]-50)
+        img = put_text(f"engagement={pred_row.iloc[0][('engagement_score', '')]}", img, 10, self.pred_image_size[0]-20)
         return img
