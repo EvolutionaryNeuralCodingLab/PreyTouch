@@ -196,7 +196,7 @@ class PogonaHeadHandler(PredictHandler):
 
         engagement_score = sum([rec[1] for rec in self.engagement_stack]) / len(self.engagement_stack)
         if engagement_score > self.engagement_min_score:
-            self.cache.set(cc.IS_ANIMAL_ENGAGED, True, timeout=0.5)
+            self.cache.set(cc.IS_ANIMAL_ENGAGED, True, timeout=1)
         pred_row_df[('engagement_score', '')] = f'{engagement_score:.0%}'
         return pred_row_df
 
