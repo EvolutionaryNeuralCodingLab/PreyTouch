@@ -854,7 +854,7 @@ def restart():
 def start_app(queue):
     global cache, arena_mgr, periphery_mgr, queue_app
     queue_app = queue
-    if pytest.main(['-x', 'tests', '-s', '--tb=line', '--color=yes']) != 0:
+    if pytest.main(['-x', 'unittests', '-s', '--tb=line', '--color=yes']) != 0:
         queue_app.put('stop')
         return
 
