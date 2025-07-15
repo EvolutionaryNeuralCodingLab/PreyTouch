@@ -104,7 +104,8 @@ class PeripheryIntegrator:
         if not Path(wav_path).exists():
             self.logger.error(f"Cannot play sound: {wav_path} not found.")
             return
-        os.system(f"aplay {wav_path}")
+        cmd = f'XDG_RUNTIME_DIR="/run/user/$(id -u)" paplay {wav_path}'
+        next(utils.run_command(cmd))
 
     def mqtt_publish(self, topic, payload):
         self.mqtt_client.connect(config.mqtt['host'], config.mqtt['port'], keepalive=60)
