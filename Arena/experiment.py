@@ -532,7 +532,7 @@ class Block:
         special_trials = {}
         if self.is_circle_flip:
             assert self.num_trials > 9, 'Num trials must be > 9 in circle_flip trials'
-            special_trials['initial_flip_trial'] = random.choice([6, 7, 8])
+            special_trials['initial_flip_trial'] = random.choice([4, 5, 6])
         return special_trials
 
     def check_special_trials(self, trial_id, special_trials):
@@ -540,16 +540,34 @@ class Block:
             return
 
         if self.is_circle_flip:
-            trial_dict = self.special_trials_log.setdefault(trial_id, {'engaged_recs': 0, 'total_recs': 0, 'is_flip': False})
+            t = time.time()
+            trial_dict = self.special_trials_log.setdefault(trial_id,
+                                                            {'engaged_recs': 0, 'total_recs': 0, 'is_flip': False,
+                                                             'first_engaged_t': None, 'grace_count': 0})
             is_engaged = self.cache.get(cc.IS_ANIMAL_ENGAGED) or 0
             trial_dict['engaged_recs'] += int(is_engaged)
             trial_dict['total_recs'] += 1
-            is_flipped = any([d['is_flip'] for _, d in self.special_trials_log.items()])
-            if (trial_id >= special_trials.get('initial_flip_trial') and not is_flipped
-                    and trial_dict['total_recs'] > 5 and is_engaged):
-                self.cache.publish_command('flip_circle_direction')
-                self.logger.info(f'Flip circle, trial {trial_id}')
-                trial_dict['is_flip'] = True
+            # check the engagement duration with a grace count of 5
+            if not is_engaged:
+                if trial_dict['grace_count'] < 5:
+                    trial_dict['grace_count'] += 1
+                else:
+                    trial_dict['first_engaged_t'] = None
+            else:
+                trial_dict['grace_count'] = 0
+                if not trial_dict['first_engaged_t']:
+                    trial_dict['first_engaged_t'] = t
+            engage_duration = t - trial_dict['first_engaged_t'] if trial_dict['first_engaged_t'] else 0
+            # check flips history
+            n_flips = sum([d['is_flip'] for _, d in self.special_trials_log.items()])
+            is_flipped_this_trial = trial_dict['is_flip']
+            # send flip command
+            if trial_id >= special_trials.get('initial_flip_trial'):
+                if (not n_flips and engage_duration >= 5) or \
+                        (not is_flipped_this_trial and n_flips <= 3 and engage_duration >= 20):
+                    self.cache.publish_command('flip_circle_direction')
+                    self.logger.info(f'Flip circle, trial {trial_id}')
+                    trial_dict['is_flip'] = True
 
     def summary_special_trials(self):
         if self.is_circle_flip:
