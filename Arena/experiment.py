@@ -549,7 +549,7 @@ class Block:
             trial_dict['total_recs'] += 1
             # check the engagement duration with a grace count of 5
             if not is_engaged:
-                if trial_dict['grace_count'] < 5:
+                if trial_dict['grace_count'] < 60:
                     trial_dict['grace_count'] += 1
                 else:
                     trial_dict['first_engaged_t'] = None
