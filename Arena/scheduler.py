@@ -254,7 +254,8 @@ class Scheduler(threading.Thread):
 
     @schedule_method
     def compress_videos(self):
-        if self.is_in_range('cameras_on') or not self.is_compression_thread_available() or config.DISABLE_DB or config.IS_COMPRESSION_DISABLED:
+        if (self.is_in_range('cameras_on') or not self.is_compression_thread_available() or config.DISABLE_DB or
+                config.IS_COMPRESSION_DISABLED or cache.get_current_experiment()):
             return
 
         videos = get_videos_ids_for_compression(self.arena_mgr.orm, sort_by_size=True)
@@ -280,7 +281,7 @@ class Scheduler(threading.Thread):
 
     @schedule_method
     def run_pose(self):
-        if not self.is_in_range('run_pose') or cache.get(cc.IS_COMPRESSED_LONG_RECORDING) or self.dlc_on.is_set() or \
+        if not self.is_in_range('run_pose') or cache.get_current_experiment() or self.dlc_on.is_set() or \
                 not config.IS_RUN_NIGHTLY_POSE_ESTIMATION:
             return
 
@@ -290,7 +291,7 @@ class Scheduler(threading.Thread):
     @schedule_method
     def tracking_pose(self):
         if predict_tracking is None or not self.is_in_range('tracking_pose') or \
-            cache.get(cc.IS_COMPRESSED_LONG_RECORDING) or self.dlc_on.is_set() or \
+                cache.get_current_experiment() or self.dlc_on.is_set() or \
                 not config.IS_RUN_NIGHTLY_POSE_ESTIMATION or self.tracking_pose_on.is_set():
             return
 
@@ -312,6 +313,7 @@ def _run_pose_callback(dlc_on, errors_cache):
         VideoPoseScanner().predict_all(max_videos=20, errors_cache=errors_cache, is_tqdm=False)
     finally:
         dlc_on.clear()
+
 
 def _run_tracking_pose(tracking_pose_on):
     try:

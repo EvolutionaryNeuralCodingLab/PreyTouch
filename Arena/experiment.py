@@ -458,7 +458,7 @@ class Block:
 
         if self.block_type == 'psycho':
             self.run_psycho()
-            self.cache.set(cc.IS_VISUAL_APP_ON, True)
+            self.cache.set(cc.IS_VISUAL_APP_ON, True, timeout=int(self.trial_duration)+10)
 
         if self.block_type in ['bugs', 'media']:
             if self.is_media_block:
@@ -473,7 +473,7 @@ class Block:
             options['trialID'] = trial_id
             options['trialDBId'] = trial_db_id
             self.cache.publish_command(command, json.dumps(options))
-            self.cache.set(cc.IS_VISUAL_APP_ON, True)
+            self.cache.set(cc.IS_VISUAL_APP_ON, True, timeout=int(self.trial_duration)+10)
             time.sleep(1)  # wait for data to be sent
         self.take_trial_image()
 
