@@ -613,9 +613,10 @@ class Block:
     def toggle_led_ir(self):
         ir_state = self.periphery.check_toggle(config.IR_LIGHT_NAME)
         start_state = int(not ir_state)
+        self.logger.info(f'Start IR toggle initial_state: {start_state}, then wait for {config.IR_TOGGLE_DELAY_AROUND_BLOCK} seconds and set state to {int(not start_state)}')
         self.periphery.switch(config.IR_LIGHT_NAME, start_state)
         time.sleep(config.IR_TOGGLE_DELAY_AROUND_BLOCK)
-        self.periphery.switch(config.IR_LIGHT_NAME, int(not ir_state))
+        self.periphery.switch(config.IR_LIGHT_NAME, int(not start_state))
         self.last_ir_toggle_time = time.time()
 
     def run_psycho(self):
