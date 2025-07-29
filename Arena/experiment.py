@@ -25,7 +25,7 @@ import config
 import utils
 from loggers import get_logger
 from cache import RedisCache, CacheColumns as cc
-from utils import mkdir, to_integer, turn_display_on, turn_display_off, run_command, get_hdmi_xinput_id, get_psycho_files
+from utils import mkdir, to_integer, turn_display_on, turn_display_off, run_command, get_hdmi_xinput_id, get_psycho_files, run_in_thread
 from subscribers import Subscriber, start_experiment_subscribers
 from periphery_integration import PeripheryIntegrator
 from db_models import ORM, Experiment as Experiment_Model, Strike
@@ -234,6 +234,7 @@ class Block:
     blank_rec_type: str = 'trials'  # options: 'trials', 'continuous'
     trial_images = []
     special_trials_log = {}
+    last_ir_toggle_time = None
 
     def __post_init__(self):
         self.logger = get_logger(f'{self.experiment_name}-Block {self.block_id}')
@@ -354,19 +355,18 @@ class Block:
 
         if config.IR_TOGGLE_DELAY_AROUND_BLOCK:
             time.sleep(1)
-            self.periphery.switch(config.IR_LIGHT_NAME, 1)
-            time.sleep(config.IR_TOGGLE_DELAY_AROUND_BLOCK)
-            self.periphery.switch(config.IR_LIGHT_NAME, 0)
+            self.toggle_led_ir()
 
     def end_block(self):
         if self.block_type == 'psycho' and self.psycho_proc_pid:
-            os.killpg(os.getpgid(self.psycho_proc_pid), signal.SIGTERM)
+            try:
+                os.killpg(os.getpgid(self.psycho_proc_pid), signal.SIGTERM)
+            except Exception as exc:
+                self.logger.warning(f'Unable to kill psycho process: {self.psycho_proc_pid}; {exc}')
             self.psycho_proc_pid = 0
 
         if config.IR_TOGGLE_DELAY_AROUND_BLOCK:
-            self.periphery.switch(config.IR_LIGHT_NAME, 1)
-            time.sleep(config.IR_TOGGLE_DELAY_AROUND_BLOCK)
-            self.periphery.switch(config.IR_LIGHT_NAME, 0)
+            self.toggle_led_ir()
             time.sleep(1)
 
         t0 = time.time()
@@ -522,6 +522,10 @@ class Block:
                 self.logger.debug('Trial ended')
                 return
             self.check_special_trials(trial_id, special_trials)
+            # toggle IR if IR_TOGGLE_EVERY has reached
+            if check_visual_app_on and config.IR_TOGGLE_DELAY_AROUND_BLOCK and \
+                (time.time() - self.last_ir_toggle_time) > config.IR_TOGGLE_EVERY:
+                self.toggle_led_ir()
             # If take_img_after is set, and we have not taken 2 images yet, take one now.
             # This is used for taking a middle trial image during the wait loop
             if take_img_after and len(self.trial_images) < 2 and time.time() - t0 > take_img_after:
@@ -604,6 +608,15 @@ class Block:
             res = s.query(Strike).filter(Strike.time > datetime.now() - timedelta(hours=config.CHECK_ENGAGEMENT_HOURS)).all()
         if not res:
             self.periphery.feed(is_manual=True)
+
+    @run_in_thread
+    def toggle_led_ir(self):
+        ir_state = self.periphery.check_toggle(config.IR_LIGHT_NAME)
+        start_state = int(not ir_state)
+        self.periphery.switch(config.IR_LIGHT_NAME, start_state)
+        time.sleep(config.IR_TOGGLE_DELAY_AROUND_BLOCK)
+        self.periphery.switch(config.IR_LIGHT_NAME, int(not ir_state))
+        self.last_ir_toggle_time = time.time()
 
     def run_psycho(self):
         psycho_files = get_psycho_files()

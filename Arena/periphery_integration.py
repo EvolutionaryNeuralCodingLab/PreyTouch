@@ -141,10 +141,13 @@ class PeripheryIntegrator:
     def check_toggles_states(self):
         res = {}
         for toggle in self.toggles:
-            value = self.cache.get(Column(f'{TOGGLES_STATE_PREFIX}{toggle}', bool, TOGGLES_STATE_TIMEOUT))
+            value = self.check_toggle(toggle)
             if value is not None:
                 res[toggle] = value
         return res
+
+    def check_toggle(self, toggle):
+        return self.cache.get(Column(f'{TOGGLES_STATE_PREFIX}{toggle}', bool, TOGGLES_STATE_TIMEOUT))
 
     def send_toggles_healthcheck(self):
         for toggle in self.toggles:
