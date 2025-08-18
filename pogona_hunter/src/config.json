@@ -90,6 +90,16 @@
       },
       "stepsPerImage": 5
     },
+    "scram_ant": {
+      "text": "Scramble Ant",
+      "numImagesPerBug": 7,
+      "speed": 3,
+      "radiusRange": {
+        "min": 120,
+        "max": 130
+      },
+      "stepsPerImage": 5
+    },
     "centipede": {
       "text": "Centipede",
       "numImagesPerBug": 4,

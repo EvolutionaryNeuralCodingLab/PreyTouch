@@ -59,9 +59,9 @@ if __name__ == "__main__":
     args = arg_parser.parse_args()
     pred_conf = config.load_configuration('predict')
 
-    config.SCREEN_START_X_CM = float(args.start_x)
-    config.SCREEN_PIX_CM = float(args.pix_cm)
-    config.SCREEN_Y_CM = float(args.screen_y)
+    config.SCREEN_START_X_CM = config.SCREEN_START_X_CM or float(args.start_x)
+    config.SCREEN_PIX_CM = config.SCREEN_PIX_CM or float(args.pix_cm)
+    config.SCREEN_Y_CM = config.SCREEN_Y_CM or float(args.screen_y)
     config.IS_SCREEN_CONFIGURED_FOR_POSE = (args.start_x is not None) and (args.pix_cm is not None)
     config.CALIBRATION_DIR = args.calib_dir
 

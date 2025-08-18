@@ -6,6 +6,7 @@
 
 <script>
 import holesBug from '../bugs/holesBug.vue'
+import {distance} from '@/js/helpers'
 
 export default {
   name: `mirroredBug`,
@@ -107,6 +108,15 @@ export default {
         this.straightMove()
       }
       this.draw()
+    },
+    isHit(x, y) {
+      // fraction r take value from config 
+      let r = this.bugsSettings.hitRadiusFraction || 1
+      let acceptedDistance = this.currentBugSize / r
+      let isInsideHoleBoundaries = this.bugId % 2 === 0 ? this.x < this.rightBoundary  
+                                                        : this.x > this.leftBoundary
+      console.log("RIGHT:", this.rightBoundary, "LEFT", this.leftBoundary, "TOUCH:", this.x, this.y, isInsideHoleBoundaries)
+      return distance(x, y, this.x, this.y) <= acceptedDistance && isInsideHoleBoundaries
     },
     initSplitBugPosition() {
         const totalSteps = this.entranceApproachDuration / (1000 / 60)
