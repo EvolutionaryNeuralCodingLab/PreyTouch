@@ -385,6 +385,100 @@ class PeripheryHealthCheck(Subscriber):
 
         except:
             self.logger.exception(f'Error in subscriber {self.name}')
+            
+
+def _norm01(v):
+    if isinstance(v, bool): return 1 if v else 0
+    try:
+        f = float(v); return 0 if f == 0 else 1
+    except Exception:
+        s = str(v).strip().lower()
+        if s in ("1","true","on","yes"): return 1
+        if s in ("0","false","off","no",""): return 0
+        return 1 if s else 0
+
+class MqttEdgeGate:
+    """
+    Gating helper that listens via Arena's MQTTListener (same as PeripheryHealthCheck).
+    Fires when field transitions 0->1 (rising) or 1->0 (falling).
+    """
+    def __init__(self, topic, field, edge="rising", debounce_ms=300, *, logger=None):
+        # Accept single topic or comma-separated list
+        topics = topic if isinstance(topic, (list, tuple)) else [t.strip() for t in str(topic).split(',') if t.strip()]
+        self._listener = MQTTListener(topics=topics, is_debug=False, callback=self._on_msg)
+
+        self.field = field
+        self.edge = str(edge).lower()
+        self.debounce_ms = int(debounce_ms)
+
+        self._last_val = None
+        self._last_fire_ms = 0
+        self._hit = False
+        self._logger = logger
+
+        if self._logger:
+            self._logger.debug(f"MqttEdgeGate: listening on topics={topics}, field='{self.field}', edge={self.edge}, debounce_ms={self.debounce_ms}")
+
+    # Called by MQTTListener with payload (string or dict)
+    def _on_msg(self, payload):
+        now_ms = int(time.time() * 1000)
+        if now_ms - self._last_fire_ms < self.debounce_ms:
+            return
+
+        # Parse JSON payload if needed
+        if isinstance(payload, (bytes, str)):
+            try:
+                payload = json.loads(payload.decode('utf-8') if isinstance(payload, bytes) else payload)
+            except Exception:
+                return
+        if not isinstance(payload, dict):
+            return
+        if self.field not in payload:
+            return
+
+        try:
+            cur = _norm01(payload[self.field])
+        except Exception:
+            return
+
+        if self._last_val is None:
+            self._last_val = cur
+            if self._logger:
+                self._logger.debug(f"MqttEdgeGate: init {self.field}={cur}")
+            return
+
+        rising  = (self._last_val == 0 and cur == 1)
+        falling = (self._last_val == 1 and cur == 0)
+        if (self.edge == "rising" and rising) or (self.edge == "falling" and falling):
+            self._hit = True
+            self._last_fire_ms = now_ms
+            if self._logger:
+                self._logger.info(f"MqttEdgeGate: edge detected on '{self.field}' ({self._last_val}->{cur})")
+
+        self._last_val = cur
+
+    def wait_for_edge(self, timeout_s=None, poll_ms=20):
+        """
+        Pump the MQTTListener and wait until an edge occurs or timeout is reached.
+        Returns True on edge, False on timeout.
+        """
+        self._hit = False
+        deadline = None if timeout_s is None else (time.time() + float(timeout_s))
+        while True:
+            self._listener.loop()  # same loop pumping as PeripheryHealthCheck
+
+            if self._hit:
+                self._hit = False
+                return True
+
+            if deadline is not None and time.time() >= deadline:
+                return False
+
+            time.sleep(poll_ms / 1000.0)
+
+    def close(self):
+        # MQTTListener manages its own lifecycle; nothing to close explicitly.
+        pass
 
 class WebSocketServer(mp.Process):
     def __init__(self, stop_event: threading.Event):

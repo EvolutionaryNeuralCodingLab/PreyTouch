@@ -9,7 +9,7 @@ import json
 import threading
 import time
 import cv2
-from typing import Union
+from typing import Union, Optional, Dict
 import humanize
 import re
 from datetime import datetime, timedelta
@@ -26,9 +26,10 @@ import utils
 from loggers import get_logger
 from cache import RedisCache, CacheColumns as cc
 from utils import mkdir, to_integer, turn_display_on, turn_display_off, run_command, get_hdmi_xinput_id, get_psycho_files
-from subscribers import Subscriber, start_experiment_subscribers
+from subscribers import Subscriber, start_experiment_subscribers, MqttEdgeGate
 from periphery_integration import PeripheryIntegrator
 from db_models import ORM, Experiment as Experiment_Model, Strike
+from config_utils import parse_gated_trigger
 
 
 @dataclass
@@ -86,7 +87,8 @@ class Experiment:
         """Main Function for starting an experiment"""
         def _start():
             self.logger.info(f'Experiment started for {humanize.precisedelta(self.experiment_duration)}'
-                             f' with cameras: {",".join(self.cameras.keys())}')
+                             f' with cameras: {",".join(self.cameras.keys())}'
+                             f' and number of trials in first block: {self.blocks[0].num_trials}')
             self.orm.commit_experiment(self)
             self.turn_screen('on', board=self.get_board())
             if not config.IS_CHECK_SCREEN_MAPPING:
@@ -225,6 +227,8 @@ class Block:
     reward_any_touch_prob: float = 0.0
     agent_label: str = None
     accelerate_multiplier: float = 3.0
+    is_gated: bool = False
+    trial_gate: Optional[Dict] = None
 
     media_url: str = ''
 
@@ -252,6 +256,17 @@ class Block:
         elif not self.reward_bugs:
             self.logger.debug(f'No reward bugs were given, using all bug types as reward; {self.reward_bugs}')
             self.reward_bugs = self.bug_types
+        # ---- gate defaults from config when not explicitly set on the Block ----
+        if self.is_gated or config.IS_GATED_BLOCK:
+            self.is_gated = True
+
+        if self.is_gated:
+            # Max duration default from config if not provided/invalid
+            self.block_max_s = int(config.GATED_BLOCK_MAX_DURATION)
+            self.logger.info(f'Starting gated block; max block seconds: {self.block_max_s}')
+            if not self.trial_gate:
+                self.trial_gate = parse_gated_trigger(config.GATED_BLOCK_TRIGGER)
+            self.logger.info(f'Gated trigger config: {self.trial_gate}')
 
         if self.is_continuous_blank:
             self.num_trials, self.iti = 1, 0
@@ -283,7 +298,10 @@ class Block:
             self.cache.set(cc.IS_ALWAYS_REWARD, True, timeout=self.block_duration)
         self.hide_visual_app_content()
         try:
-            self.run_block()
+            if self.is_gated:
+                self.run_gated_block()
+            else:
+                self.run_block()
         except EndExperimentException as exc:
             self.hide_visual_app_content()
             self.logger.warning('block stopped externally')
@@ -296,31 +314,72 @@ class Block:
 
     def run_block(self):
         """Run block flow"""
+        self.logger.info('Starting regular block')
         self.init_block()
         self.wait(self.extra_time_recording, label='Extra Time Rec')
         # if self.is_split_bugs_view, take self.ratio and change the order of self.bug_types in each trial by creating
         # an array the size of the trial that combinatorially put 1 and -1, where 1 indicates the current bugs order and -1 indicates the opposite order
         if self.is_split_bugs_view:
             self.create_bugs_order()
-
+        
         for trial_id in range(1, self.num_trials + 1):
-            if self.block_type == 'bugs':
-                if not self.exp_validation.is_reward_left():
-                    utils.send_telegram_message('No reward left in feeder; stopping experiment')
-                    raise EndExperimentException('No reward left; stopping experiment')
-                elif self.exp_validation.is_max_reward_reached():
-                    utils.send_telegram_message(f'Max daily rewards of {config.MAX_DAILY_REWARD} reached; stopping experiment')
-                    raise EndExperimentException(f'Max daily rewards of {config.MAX_DAILY_REWARD} reached; stopping experiment')
-            self.start_trial(trial_id)
-            self.wait(self.trial_duration, check_visual_app_on=True, label=f'Trial {trial_id}',
-                      take_img_after=self.trial_duration/2)
-            self.end_trial()
-            self.save_trial_images(trial_id)
-            self.wait(self.iti, label='ITI')
+            self._run_one_trial(trial_id)
 
         self.wait(self.extra_time_recording, label='Extra Time Rec')
         self.end_block()
 
+    def run_gated_block(self):
+        self.logger.info('Starting gated block')
+        self.init_block()
+        self.wait(self.extra_time_recording, label='Extra Time Rec')
+
+        if self.is_split_bugs_view:
+            self.create_bugs_order()
+
+        tg = self.trial_gate or {}
+        gate = MqttEdgeGate(
+            topic=tg.get('topic', 'arena/value'),
+            field=tg.get('field', 'day_lights'),
+            edge=tg.get('edge',  'rising'),
+            debounce_ms=int(tg.get('debounce_ms', 300)),
+            logger=self.logger
+        )
+        try:
+            t0 = time.time()
+            self._run_one_trial(trial_id=1, iti_suffix_label=f' min wait before next trial is triggered by {tg.get("field","day_lights")} signal.')
+            trials_done = 1
+
+            while trials_done < self.num_trials:
+                # hard wall-clock cap
+                elapsed = time.time() - t0
+                remaining = self.block_max_s - elapsed
+                if remaining <= 0:
+                    self.logger.info(f'GATED exit: timeout reached; trials_done={trials_done}/{self.num_trials}')
+                    break
+
+                # allow external stop during gating
+                if not self.cache.get(cc.EXPERIMENT_NAME):
+                    raise EndExperimentException()
+
+                # self.logger.info(f"Waiting for {tg.get('field','day_lights')} signal... {remaining}")
+                fired = gate.wait_for_edge(timeout_s=max(0.5, min(10.0, remaining)))
+                if not fired and remaining > 0:
+                    continue  # timed out this slice; loop will re-check remaining
+
+                # small safety check at the boundary
+                if (time.time() - t0) >= self.block_max_s:
+                    self.logger.info(f'GATED exit right after edge due to timeout; trials_done={trials_done}/{self.num_trials}')
+                    break
+
+                self._run_one_trial(trials_done + 1)
+                trials_done += 1
+
+            self.logger.info(f"Finished gated block with {trials_done} trials (planned {self.num_trials})")
+            self.wait(self.extra_time_recording, label='Extra Time Rec')
+            self.end_block()
+        finally:
+            gate.close()
+        
     def init_block(self):
         mkdir(self.block_path)
         self.save_block_log_files()
@@ -353,6 +412,22 @@ class Block:
             self.periphery.switch(config.IR_LIGHT_NAME, 1)
             time.sleep(config.IR_TOGGLE_DELAY_AROUND_BLOCK)
             self.periphery.switch(config.IR_LIGHT_NAME, 0)
+
+    def _run_one_trial(self, trial_id:int, suffix_label:str='', iti_suffix_label:str=''):
+        if self.block_type == 'bugs':
+            if not self.exp_validation.is_reward_left():
+                utils.send_telegram_message('No reward left in feeder; stopping experiment')
+                raise EndExperimentException('No reward left; stopping experiment')
+            elif self.exp_validation.is_max_reward_reached():
+                utils.send_telegram_message(f'Max daily rewards of {config.MAX_DAILY_REWARD} reached; stopping experiment')
+                raise EndExperimentException(f'Max daily rewards of {config.MAX_DAILY_REWARD} reached; stopping experiment')
+
+        self.start_trial(trial_id)
+        self.wait(self.trial_duration, check_visual_app_on=True, label=f'Trial {trial_id} {suffix_label}',
+                  take_img_after=self.trial_duration/2)
+        self.end_trial()
+        self.save_trial_images(trial_id)
+        self.wait(self.iti, label=f'ITI {iti_suffix_label}')
 
     def end_block(self):
         if self.block_type == 'psycho' and self.psycho_proc_pid:
@@ -658,13 +733,20 @@ class Block:
 
     @property
     def overall_block_duration(self):
-        if not self.is_blank_block:
-            return self.block_duration + 2 * self.extra_time_recording
-        else:
+        if self.is_blank_block:
             return config.MAX_DURATION_CONT_BLANK
+        # For gated blocks, the wall-clock is the configured max + padding
+        if self.is_gated:
+            return int(self.block_max_s) + 2 * self.extra_time_recording
+        # Legacy calculation
+        return self.block_duration + 2 * self.extra_time_recording
 
     @property
     def block_duration(self):
+        # In gated mode, the effective block duration is the configured wall-clock cap
+        if self.is_gated:
+            return int(self.block_max_s)
+        # Legacy estimate used by recorders and timeouts
         return round((self.num_trials * self.trial_duration + (self.num_trials - 1) * self.iti) * 1.5)
 
     @property

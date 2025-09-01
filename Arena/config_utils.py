@@ -4,7 +4,7 @@ from environs import Env
 from pathlib import Path
 from functools import wraps
 from dotenv import set_key
-
+from typing import Dict, Union
 
 _env = Env()
 env_path = 'configurations/.env'
@@ -147,3 +147,51 @@ class Validator:
             return
         pred_config = load_configuration('predict')
         assert pred_name in pred_config, f'Predictor {pred_name} does not exist'
+        
+        
+
+def _fill_gate_defaults(g: Dict) -> Dict:
+    """Fill missing keys and host/port defaults."""
+    g = (g or {}).copy()
+    g.setdefault('topic', 'arena/value')
+    g.setdefault('field', 'day_lights')
+    g.setdefault('edge',  'rising')
+    g.setdefault('debounce_ms', 300)
+
+    # Prefer values from .env via _env (config_utils already loads .env)
+    try:
+        host = _env('MQTT_HOST', 'localhost')
+    except Exception:
+        host = 'localhost'
+    try:
+        port = _env.int('MQTT_PORT', 1883)
+    except Exception:
+        port = 1883
+    g.setdefault('host', host)
+    g.setdefault('port', int(port))
+    return g
+
+def parse_gated_trigger(val: Union[str, Dict, None]) -> Dict:
+    """
+    Accept a dict or a JSON string (e.g. from GATED_BLOCK_TRIGGER env).
+    Returns a dict with sane defaults merged.
+    """
+    if not val:
+        return _fill_gate_defaults({})
+    if isinstance(val, dict):
+        return _fill_gate_defaults(val)
+    if isinstance(val, str):
+        try:
+            return _fill_gate_defaults(json.loads(val))
+        except Exception:
+            # Optional compact "topic:field:edge:debounce_ms" form
+            parts = [p.strip() for p in val.split(':')]
+            g: Dict[str, Union[str, int]] = {}
+            if len(parts) >= 1: g['topic'] = parts[0] or 'arena/value'
+            if len(parts) >= 2: g['field'] = parts[1] or 'day_lights'
+            if len(parts) >= 3: g['edge']  = parts[2] or 'rising'
+            if len(parts) >= 4:
+                try: g['debounce_ms'] = int(parts[3])
+                except: g['debounce_ms'] = 300
+            return _fill_gate_defaults(g)
+    return _fill_gate_defaults({})        

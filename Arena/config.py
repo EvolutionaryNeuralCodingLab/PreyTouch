@@ -197,6 +197,9 @@ MAX_DURATION_CONT_BLANK = env.int('MAX_DURATION_CONT_BLANK', 48*3600, group='Exp
 CHECK_ENGAGEMENT_HOURS = env.int('CHECK_ENGAGEMENT_SPAN', 0, group='Experiments', desc='Hours before to check engagement or whether there were any strikes. If there are no strikes in this time span, give reward. Setting 0 will disable this check.')
 CACHED_EXPERIMENTS_DIR = env('CACHED_EXPERIMENTS_DIR', 'cached_experiments', group='Experiments', desc='Folder name in the main Arena folder to store saved experiments')
 TRIAL_IMAGE_CAMERA = env('TRIAL_IMAGE_CAMERA', None, group='Experiments', desc='Camera used for trial images generation')
+IS_GATED_BLOCK = env.bool('IS_GATED_BLOCK', False, group='Experiments', desc='Whether the blocks in the experiment are gated, meaning that the trials within will wait till specific trigger recieved')
+GATED_BLOCK_TRIGGER = env('GATED_BLOCK_TRIGGER', None, group='Experiments', desc='The trigger for the gated block')
+GATED_BLOCK_MAX_DURATION = env.int('GATED_BLOCK_MAX_DURATION', 60*60, group='Experiments', desc='Maximum duration of a gated block in seconds')
 experiment_types = {
     'bugs': ['bug_types', 'reward_bugs', 'bug_speed', 'movement_type', 'exit_hole'],
     'media': ['media_url'],
