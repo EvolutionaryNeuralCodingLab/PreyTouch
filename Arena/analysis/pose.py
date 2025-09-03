@@ -490,6 +490,7 @@ class ArenaPose:
             return vid.path
 
     def get_video_db_id(self, video_path: Path):
+        video_path = Path(video_path)
         with self.orm.session() as s:
             vid = s.query(Video).filter(Video.path.contains(video_path.stem)).first()
             if vid is None:
@@ -662,6 +663,12 @@ class DLCArenaPose(ArenaPose):
     def body_parts(self):
         return [b for b in self.pose_df.columns.get_level_values(0).unique()
                 if b and isinstance(self.pose_df[b], pd.DataFrame)]
+
+
+class PogonaHeadPose(DLCArenaPose):
+    def __init__(self, cam_name, predictor_name='pogona_head', is_use_db=True, orm=None, commit_bodypart='mid_ears',
+                 **kwargs):
+        super().__init__(cam_name, predictor_name, is_use_db, orm, commit_bodypart=commit_bodypart, **kwargs)
 
 
 class SpatialAnalyzer:
@@ -1505,19 +1512,8 @@ class VideoPoseScanner:
 
 
 if __name__ == '__main__':
-    # matplotlib.use('TkAgg')
-    # DLCArenaPose('front').test_loaders(19)
-    # print(get_videos_to_predict('PV148'))
-    # commit_video_pred_to_db(animal_ids="PV163")
-    # VideoPoseScanner().fix_calibrations()
-    # VideoPoseScanner().predict_all(max_videos=20, is_tqdm=True)
-    VideoPoseScanner(only_strikes_vids=True).predict_all(is_tqdm=True)
-    # VideoPoseScanner(cam_name='front', animal_ids=['PV91b'], is_use_db=False,
-    #                  model_path="/data/PreyTouch/output/models/deeplabcut/front_head_only_resnet_152"
-    #                  ).fix_calibrations(experiments_dir='/media/sil2/Data/regev/experiments/reptilearn4',
-    #                                     calibration_dir='/media/sil2/Data/regev/calibrations/reptilearn4')
-    # VideoPoseScanner(cam_name='top', animal_ids=['PV157'], is_use_db=False).predict_video('/data/Pogona_Pursuit/output/experiments/PV157/20240307/block2/videos/top_20240307T141316.mp4')
-    # VideoPoseScanner(cam_name='top', animal_ids=['PV157'], is_use_db=True, only_strikes_vids=False).predict_all()
+    PogonaHeadPose('top').predict_video(video_path='/data/PreyTouch/output/experiments/PV51/20250130/block2/videos/top_20250130T163032.mp4')
+    # VideoPoseScanner(only_strikes_vids=True).predict_all(is_tqdm=True)
     # VideoPoseScanner(animal_id='PV163').add_bug_trajectory(videos=[Path('/media/reptilearn4/experiments/PV163/20240201/block10/videos/front_20240201T173016.mp4')])
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/Archive/front/20221205T093815_front.png', 0)
     # print(run_predict('pogona_head', [img]))

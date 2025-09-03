@@ -14,10 +14,10 @@ if _env.bool('IS_PROD', 0):
 
 
 configurations = {
-    'cameras': ('configurations/cam_config.json', ('tests.test_cam_config', 'TestCamConfig')),
-    'periphery': ('configurations/periphery_config.json', ('tests.test_periphery', 'TestPeripheryConfig')),
-    'predict': ('configurations/predict_config.json', ('tests.test_predict_config', 'TestPredictConfig')),
-    'agent': ('configurations/agent_config.json', ('tests.test_agent_config', 'TestAgentConfig'))
+    'cameras': ('configurations/cam_config.json', ('unittests.test_cam_config', 'TestCamConfig')),
+    'periphery': ('configurations/periphery_config.json', ('unittests.test_periphery', 'TestPeripheryConfig')),
+    'predict': ('configurations/predict_config.json', ('unittests.test_predict_config', 'TestPredictConfig')),
+    'agent': ('configurations/agent_config.json', ('unittests.test_agent_config', 'TestAgentConfig'))
 }
 
 

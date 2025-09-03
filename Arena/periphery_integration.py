@@ -104,7 +104,8 @@ class PeripheryIntegrator:
         if not Path(wav_path).exists():
             self.logger.error(f"Cannot play sound: {wav_path} not found.")
             return
-        os.system(f"aplay {wav_path}")
+        cmd = f'XDG_RUNTIME_DIR="/run/user/$(id -u)" paplay {wav_path}'
+        next(utils.run_command(cmd))
 
     def mqtt_publish(self, topic, payload):
         self.mqtt_client.connect(config.mqtt['host'], config.mqtt['port'], keepalive=60)
@@ -140,10 +141,13 @@ class PeripheryIntegrator:
     def check_toggles_states(self):
         res = {}
         for toggle in self.toggles:
-            value = self.cache.get(Column(f'{TOGGLES_STATE_PREFIX}{toggle}', bool, TOGGLES_STATE_TIMEOUT))
+            value = self.check_toggle(toggle)
             if value is not None:
                 res[toggle] = value
         return res
+
+    def check_toggle(self, toggle):
+        return self.cache.get(Column(f'{TOGGLES_STATE_PREFIX}{toggle}', bool, TOGGLES_STATE_TIMEOUT))
 
     def send_toggles_healthcheck(self):
         for toggle in self.toggles:
