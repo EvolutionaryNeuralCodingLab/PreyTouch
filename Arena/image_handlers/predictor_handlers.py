@@ -1,7 +1,9 @@
+import json
 import cv2
 import time
 import numpy as np
 import pandas as pd
+import os
 
 import config
 from pathlib import Path
@@ -152,7 +154,32 @@ class PogonaHeadHandler(PredictHandler):
         self.engagement_min_duration = 5
         self.engagement_min_score = 0.5
         self.engagement_stack = []
+        self._last_pose_norm = None
+        try:
+            model_info = self.arena_pose.predictor.detector.ckpt['train_args']
+            self.logger.info(
+                f"YOLO detector ({model_info.get('model')}, img_size={model_info.get('imgsz')}) "
+                f"loaded from: {self.arena_pose.predictor.detector.ckpt_path}"
+            )
+        except Exception:
+            self.logger.debug("Could not read detector metadata", exc_info=True)
+        self.is_initiated = True
 
+    def _first_finite(self, row, *keys, default=np.nan):
+        """
+        Return the first finite numeric value among multiindex keys.
+        Each key can be a tuple like ('nose','y') or a flat string like 'nose_y'.
+        """
+        for k in keys:
+            try:
+                v = row[k] if not isinstance(k, str) else row.get(k, default)
+                v = float(v)
+                if np.isfinite(v):
+                    return v
+            except Exception:
+                pass
+        return default
+            
     def __str__(self):
         return f'pogona-head-{self.cam_name}'
 
@@ -177,7 +204,15 @@ class PogonaHeadHandler(PredictHandler):
     def analyze_prediction(self, timestamp, pred_row_df):
         db_video_id = self.get_db_video_id()
         pred_row_df = self.arena_pose.analyze_frame(timestamp, pred_row_df, db_video_id)
-        pred_row_df = self.check_engagement(pred_row_df, timestamp)
+        # pred_row_df = self.check_engagement(pred_row_df, timestamp)
+        try:
+            if bool(self.cache.get(cc.POSE_EXPORT_ON)):
+                self._export_pose_for_gate(pred_row_df)
+            else:
+                pred_row_df = self.check_engagement(pred_row_df, timestamp)
+        except Exception:
+            self.logger.debug("pose export failed", exc_info=True)
+
         return pred_row_df
 
     def check_engagement(self, pred_row_df, timestamp):
@@ -207,14 +242,111 @@ class PogonaHeadHandler(PredictHandler):
         if not np.isnan(head_angel) and not np.isnan(y) and (np.pi/6) <= head_angel <= (5*np.pi/6):
             is_engaged = True
         self.engagement_stack.append((timestamp, is_engaged))
+            
+    def _export_pose_for_gate(self, pred_row_df):
+        if pred_row_df is None or (hasattr(pred_row_df, "empty") and pred_row_df.empty):
+            self.logger.info("No pose to export")
+            return
+
+        row0 = pred_row_df.iloc[0]
+
+        # Prefer calibrated y; if NaN, fall back to camera y
+        world_y = self._first_finite(row0, ('nose','y'))
+        if not np.isfinite(world_y):
+            cam_y = self._first_finite(row0, ('nose','cam_y'))
+            if np.isfinite(cam_y):
+
+                y_val = cam_y
+                is_real_world_values = 0
+            else:
+
+                return
+        else:
+            y_val = world_y
+            is_real_world_values = 1
+
+        # if getattr(self, "_last_pose_norm", None) is not None and abs(y_norm - self._last_pose_norm) <= eps:
+        #     return
+        self._last_pose_norm = y_val
+
+        # === Publish ===
+        payload = {"camera": self.cam_name, "nose_y": float(y_val), "is_real_world_values": is_real_world_values, "ts": time.time()}
+
+        try:
+            direct_mqtt_publish(self.cam_name, payload, qos=1, retain=False)
+        except Exception:
+            self.logger.debug("MQTT publish via PeripheryIntegrator failed; falling back to localhost", exc_info=True)
+            direct_mqtt_publish(self.cam_name, payload, qos=1, retain=False)
 
     def draw_pred_on_image(self, pred_row, img, font=cv2.FONT_HERSHEY_SIMPLEX, color=(255, 0, 0)):
-        if pred_row is None:
+        
+        if pred_row is None or (hasattr(pred_row, "empty") and pred_row.empty):
             return img
 
-        angle = pred_row.iloc[0][('angle', '')]
-        x, y = pred_row.iloc[0][('nose', 'x')], pred_row.iloc[0][('nose', 'y')]
-        text = f'({round(x), round(y)}), head_angle={round(np.rad2deg(angle))}' if not np.isnan(x) else 'No Lizard Detection'
-        img = put_text(text, img, 10, self.pred_image_size[0]-50)
-        img = put_text(f"engagement={pred_row.iloc[0][('engagement_score', '')]}", img, 10, self.pred_image_size[0]-20)
-        return img
+
+        # Safe getters
+        def _get(col, default=np.nan):
+            try:
+                v = pred_row.iloc[0][col]
+                return float(v)
+            except Exception:
+                return default
+
+        x = _get(('nose', 'x'))
+        y = _get(('nose', 'y'))
+        ang = _get(('angle', ''))
+
+        if np.isfinite(x) and np.isfinite(y):
+            ang_txt = f", head_angle={int(round(np.rad2deg(ang)))}" if np.isfinite(ang) else ""
+            text = f"({int(round(x))}, {int(round(y))}){ang_txt}"
+        else:
+            # Fallback: bbox present but nose missing
+            if ('bbox', 'x1') in getattr(pred_row, 'columns', []):
+                text = "Head detected (nose missing)"
+            else:
+                text = "No lizard detected"
+
+        img = put_text(text, img, 10, self.pred_image_size[0] - 50)
+        # engagement text if present
+        try:
+            eng = pred_row.iloc[0][('engagement_score', '')]
+            img = put_text(f"engagement={eng}", img, 10, self.pred_image_size[0] - 20)
+        except Exception:
+            pass
+
+        return img  # ← no trailing comma
+    
+    
+    
+def direct_mqtt_publish(cam_name, payload,
+                        host=None, port=None, topic=None,
+                        qos=1, retain=False, timeout=3.0):
+    
+    try:
+        import paho.mqtt.client as mqtt
+    except Exception as e:
+        self.logger.error(f"[MQTT-direct] paho-mqtt not installed: {e}")
+        return False
+
+    host = host or os.getenv("POSE_MQTT_HOST", "127.0.0.1")
+    port = int(port or os.getenv("POSE_MQTT_PORT", "1883"))
+    topic = topic or os.getenv("POSE_MQTT_TOPIC", "arena/pose/head")
+
+    client_id = f"pose-debug-{cam_name}-{int(time.time()*1000)}"
+    c = mqtt.Client(client_id=client_id, clean_session=True)
+
+    try:
+        c.connect(host, port, keepalive=30)
+        c.loop_start()
+        info = c.publish(topic, json.dumps(payload), qos=qos, retain=retain)
+        info.wait_for_publish(timeout=timeout)
+        ok = getattr(info, "is_published", lambda: True)()
+        return ok
+    except Exception as e:
+        return False
+    finally:
+        try:
+            c.loop_stop()
+            c.disconnect()
+        except Exception:
+            pass

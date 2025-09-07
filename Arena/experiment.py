@@ -33,6 +33,7 @@ from subscribers import Subscriber, start_experiment_subscribers, MqttEdgeGate
 from periphery_integration import PeripheryIntegrator
 from db_models import ORM, Experiment as Experiment_Model, Strike
 from config_utils import parse_gated_trigger
+from trial_gates import build_gate
 
 
 @dataclass
@@ -264,6 +265,7 @@ class Block:
         # ---- gate defaults from config when not explicitly set on the Block ----
         if self.is_gated or config.IS_GATED_BLOCK:
             self.is_gated = True
+            self.logger.info('GATED block requested')
 
         if self.is_gated:
             # Max duration default from config if not provided/invalid
@@ -271,6 +273,7 @@ class Block:
             self.logger.info(f'Starting gated block; max block seconds: {self.block_max_s}')
             if not self.trial_gate:
                 self.trial_gate = parse_gated_trigger(config.GATED_BLOCK_TRIGGER)
+                self.trial_gate['arena_size_y'] = config.ARENA_SIZE_Y_CM
             self.logger.info(f'Gated trigger config: {self.trial_gate}')
 
         if self.is_continuous_blank:
@@ -330,6 +333,8 @@ class Block:
         special_trials = self.init_special_trials()
         for trial_id in range(1, self.num_trials + 1):
             self._run_one_trial(trial_id, special_trials=special_trials)
+            self.wait(self.trial_duration, trial_id, check_visual_app_on=True, label=f'Trial {trial_id}',
+            take_img_after=self.trial_duration/2, special_trials=special_trials)
 
         self.wait(self.extra_time_recording, None, label='Extra Time Rec')
         self.end_block()
@@ -340,60 +345,55 @@ class Block:
     def run_gated_block(self):
         self.logger.info('Starting gated block')
         self.init_block()
-        self.wait(self.extra_time_recording, None,  label='Extra Time Rec')
+        self.wait(self.extra_time_recording, None, label='Extra Time Rec')
 
         if self.is_split_bugs_view:
             self.create_bugs_order()
 
         tg = self.trial_gate or {}
-        gate = MqttEdgeGate(
-            topic=tg.get('topic', 'arena/value'),
-            field=tg.get('field', 'day_lights'),
-            edge=tg.get('edge',  'rising'),
-            debounce_ms=int(tg.get('debounce_ms', 300)),
-            logger=self.logger
-        )
+        gate = build_gate(tg, logger=self.logger)
+        gate_label_field = tg.get('type') or tg.get('emit_field') or tg.get('camera') or 'signal'
+        iti_msg = f'trial done, waiting for gate to trigger {gate_label_field} signal.'
+
         special_trials = self.init_special_trials()
-        label = f' min wait before next trial is triggered by {tg.get("field", "day_lights")} signal.'
         try:
             t0 = time.time()
-            self._run_one_trial(trial_id=1, iti_suffix_label=label, special_trials=special_trials)
+            self._run_one_trial(trial_id=1, special_trials=special_trials)
+            self.logger.info(iti_msg)
             trials_done = 1
+            block_max_s = self.block_max_s - self.trial_duration - self.iti - self.extra_time_recording
 
             while trials_done < self.num_trials:
-                # hard wall-clock cap
                 elapsed = time.time() - t0
-                remaining = self.block_max_s - elapsed
+                remaining = block_max_s - elapsed
                 if remaining <= 0:
                     self.logger.info(f'GATED exit: timeout reached; trials_done={trials_done}/{self.num_trials}')
                     break
-
-                # allow external stop during gating
                 if not self.cache.get(cc.EXPERIMENT_NAME):
                     raise EndExperimentException()
 
-                # self.logger.info(f"Waiting for {tg.get('field','day_lights')} signal... {remaining}")
                 fired = gate.wait_for_edge(timeout_s=max(0.5, min(10.0, remaining)))
                 if not fired and remaining > 0:
-                    continue  # timed out this slice; loop will re-check remaining
-
-                # small safety check at the boundary
-                if (time.time() - t0) >= self.block_max_s:
+                    continue
+                if (time.time() - t0) >= block_max_s:
                     self.logger.info(f'GATED exit right after edge due to timeout; trials_done={trials_done}/{self.num_trials}')
                     break
-
-                self._run_one_trial(trials_done + 1)
+                self.wait(self.iti, trials_done + 1, label='ITI')
+                self._run_one_trial(trial_id=trials_done + 1, special_trials=special_trials)
+                self.logger.info(iti_msg)
                 trials_done += 1
 
-            self.logger.info(
-                f"Finished gated block with {trials_done} trials "
-                f"(planned {self.num_trials})"
-            )
+            self.logger.info(f"Finished gated block with {trials_done} trials (planned {self.num_trials})")
             self.wait(self.extra_time_recording, None, label='Extra Time Rec')
             self.end_block()
         finally:
             gate.close()
-        
+
+    def _pose_gate_requested(self) -> bool:
+        tg = self.trial_gate or {}
+        return self.is_gated and (tg.get('type', '').lower() == 'pose_distance')
+
+     
     def init_block(self):
         mkdir(self.block_path)
         self.save_block_log_files()
@@ -401,8 +401,13 @@ class Block:
         self.cache.set(cc.EXPERIMENT_BLOCK_PATH, self.block_path, timeout=self.overall_block_duration + self.iti)
         # check engagement of the animal
         self.check_engagement_level()
+        
         # start cameras for experiment with their predictors and set the output dir for videos
-        self.turn_cameras('on')
+        pose_required = self._pose_gate_requested()
+        if pose_required:
+            self.cache.set(cc.POSE_EXPORT_ON, True, timeout=self.overall_block_duration)
+
+        self.turn_cameras('on', pose_required=pose_required)
         if config.CAM_TRIGGER_DELAY_AROUND_BLOCK:
             self.periphery.cam_trigger(0)  # turn off trigger
             self.logger.info('trigger is off')
@@ -425,7 +430,7 @@ class Block:
             time.sleep(1)
             self.toggle_led_ir()
 
-    def _run_one_trial(self, trial_id:int, suffix_label:str='', iti_suffix_label:str='', special_trials=None):
+    def _run_one_trial(self, trial_id:int, suffix_label:str='', special_trials=None):
         if self.block_type == 'bugs':
             if not self.exp_validation.is_reward_left():
                 utils.send_telegram_message('No reward left in feeder; stopping experiment')
@@ -439,7 +444,7 @@ class Block:
                   take_img_after=self.trial_duration/2, special_trials=special_trials)
         self.end_trial()
         self.save_trial_images(trial_id)
-        self.wait(self.iti, trial_id, label=f'ITI {iti_suffix_label}')
+        
 
     def end_block(self):
         if self.block_type == 'psycho' and self.psycho_proc_pid:
@@ -471,6 +476,10 @@ class Block:
         if config.CAM_TRIGGER_DELAY_AROUND_BLOCK:
             self.periphery.cam_trigger(1)
             self.logger.info(f'Trigger was off for {time.time() - t0:.2f} sec')
+        try:
+            self.cache.delete(cc.POSE_EXPORT_ON)
+        except Exception:
+            pass
 
     def create_bugs_order(self) -> list:
         """
@@ -487,7 +496,7 @@ class Block:
 
         return bugs_order
 
-    def turn_cameras(self, required_state):
+    def turn_cameras(self, required_state, **kwargs):
         """Turn on cameras if needed, and load the experiment predictors"""
         assert required_state in ['on', 'off']
         for cam_name, cu in self.cam_units.items():
@@ -505,11 +514,11 @@ class Block:
 
             if required_state == 'on':
                 if not cu.is_on():
-                    cu.start(is_experiment=True, movement_type=self.movement_type)
+                    cu.start(is_experiment=True, movement_type=self.movement_type, **kwargs)
                 else:
-                    cu.reload_predictors(is_experiment=True, movement_type=self.movement_type)
+                    cu.reload_predictors(is_experiment=True, movement_type=self.movement_type, **kwargs)
             else:  # required_state == 'off'
-                cu.reload_predictors(is_experiment=False, movement_type=self.movement_type)
+                cu.reload_predictors(is_experiment=False, movement_type=self.movement_type, **kwargs)
 
         t0 = time.time()
         # wait maximum 30 seconds for cameras to finish start / stop and predictors to initiate
@@ -517,23 +526,6 @@ class Block:
                 (time.time() - t0 < 30):
             time.sleep(0.1)
 
-        if required_state == 'on':  # check predictors are up
-            for cam_name, cu in self.cam_units.items():
-                exp_predictors = [pr_name for pr_name, pr_dict in cu.get_conf_predictors().items()
-                                  if pr_dict.get('mode') == 'experiment' and self.movement_type in pr_dict.get('movement_type', [])]
-                for ep in exp_predictors:
-                    is_on = False
-                    t0 = time.time()
-                    while time.time() - t0 < 60:
-                        if ep in cu.processes and cu.processes[ep].is_on():
-                            is_on = True
-                            break
-                    if not is_on:
-                        msg = f'Aborting experiment since predictor {ep} is not alive and is configured for camera {cam_name}'
-                        utils.send_telegram_message(msg)
-                        self.logger.error(msg)
-                        raise EndExperimentException()
-            self.logger.info('finished cameras initialization for experiment')
 
     def start_trial(self, trial_id):
         trial_db_id = self.orm.commit_trial({

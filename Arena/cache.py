@@ -39,6 +39,7 @@ class CacheColumns:
     TEMPERATURE = Column('TEMPERATURE', str, 60)
     HOLD_AGENT = Column('HOLD_AGENT', bool, 'static')
     IS_ANIMAL_ENGAGED = Column('IS_ANIMAL_ENGAGED', bool, 1)
+    POSE_EXPORT_ON = Column('POSE_EXPORT_ON', bool, 1)
 
 
 class RedisCache:

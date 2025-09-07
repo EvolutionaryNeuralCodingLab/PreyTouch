@@ -489,6 +489,8 @@ class CameraUnit:
         predictors = self.cam_config.get('predictors', {})
         self.is_starting = True
         self.mp_metadata['predictors_stop'].clear()
+        pose_required = bool(kwargs.get('pose_required', False))
+        kw_match = {k: v for k, v in kwargs.items() if k != 'pose_required'}
         for pred_name, pred_dict in predictors.items():
             try:
                 self.logger.debug(f'start predictor {pred_name}')
@@ -497,11 +499,14 @@ class CameraUnit:
                         (mode == 'experiment' and not is_experiment) or \
                         (mode == 'no_experiment' and is_experiment):
                     continue
-
-                # continue if there's something in kwargs that also appears in the predictor dict, and they're different
-                if any(k in pred_dict and (v not in pred_dict[k] if isinstance(pred_dict[k], list) else v != pred_dict[k])
-                       for k, v in kwargs.items()):
-                    continue
+                
+                can_gate = bool(pred_dict.get('can_control_gate', False))
+                relax = pose_required and can_gate
+                if not relax: 
+                    # continue if there's something in kwargs that also appears in the predictor dict, and they're different
+                    if any(k in pred_dict and (v not in pred_dict[k] if isinstance(pred_dict[k], list) else v != pred_dict[k])
+                        for k, v in kw_match.items()):
+                        continue
 
                 self._start_predictor(pred_dict, pred_name)
             except Exception:
