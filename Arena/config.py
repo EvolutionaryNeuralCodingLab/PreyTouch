@@ -102,7 +102,8 @@ subscription_topics.update(commands_topics)
 arena_modules = {
     'cameras': {
         'allied_vision': ('cameras.allied_vision', 'AlliedVisionCamera'),
-        'flir': ('cameras.flir', 'FLIRCamera')
+        'flir': ('cameras.flir', 'FLIRCamera'),
+        'file': ('cameras.file', 'FileCamera')
     },
     'image_handlers': {
         'pogona_head': ('image_handlers.predictor_handlers', 'PogonaHeadHandler'),
@@ -203,6 +204,7 @@ TRIAL_IMAGE_CAMERA = env('TRIAL_IMAGE_CAMERA', None, group='Experiments', desc='
 IS_GATED_BLOCK = env.bool('IS_GATED_BLOCK', False, group='Experiments', desc='Whether the blocks in the experiment are gated, meaning that the trials within will wait till specific trigger recieved')
 GATED_BLOCK_TRIGGER = env('GATED_BLOCK_TRIGGER', None, group='Experiments', desc='The trigger for the gated block')
 GATED_BLOCK_MAX_DURATION = env.int('GATED_BLOCK_MAX_DURATION', 60*60, group='Experiments', desc='Maximum duration of a gated block in seconds')
+ARENA_SIZE_Y_CM = env.float('ARENA_SIZE_Y_CM', 96.0, group='Experiments', desc='Size of the arena along the Y axis in cm. Used for pose distance gate')
 experiment_types = {
     'bugs': ['bug_types', 'reward_bugs', 'bug_speed', 'movement_type', 'exit_hole'],
     'media': ['media_url'],

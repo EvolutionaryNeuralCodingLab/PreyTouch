@@ -29,7 +29,7 @@ class TestCamConfig:
                     assert isinstance(d[col], types), f'{cam_name}, {col} must be of type {types}. found: {type(d[col])}'
 
             assert not d['output_dir'], f'{cam_name} - output_dir must be empty'
-            assert d['module'] in ['allied_vision', 'flir'], f'{cam_name} module: {d["module"]}, but possible options are "allied_vision" and "flir"'
+            assert d['module'] in ['allied_vision', 'flir', 'file'], f'{cam_name} module: {d["module"]}, but possible options are "allied_vision" and "flir"'
             assert len(d['image_size']) in [2, 3], f'{cam_name} image_size must be list with size 2 or 3'
             if d.get('is_color'):
                 assert len(d['image_size']) == 3, f'{cam_name} image_size must be of size 3 in color cameras'
