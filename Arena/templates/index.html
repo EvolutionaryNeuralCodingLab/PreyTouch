@@ -508,6 +508,10 @@
               let numOfBugs = Number($numOfBugs.val());
               if (numOfBugs === 1) {
                   $(`#multipleBugsConf${i}`).hide();
+                  if ($(`#movementTypeSelect${i}`).val() === 'circle') {
+                    $(`#multipleBugsConf${i}`).show();
+                    $(`#splitRandomizeTimingDiv${i}`).hide();
+                  }
               } else {
                   $(`#multipleBugsConf${i}`).show();
               }

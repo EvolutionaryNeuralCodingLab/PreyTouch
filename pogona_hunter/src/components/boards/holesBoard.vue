@@ -48,7 +48,7 @@ export default {
   },
   computed: {
     isSplitBugsView: function () {
-      return this.bugsSettings.isSplitBugsView && this.bugsSettings.numOfBugs > 1
+      return this.bugsSettings.isSplitBugsView //&& this.bugsSettings.numOfBugs > 1
     },
     bugComponent: function () {
       if (this.isSplitBugsView) {

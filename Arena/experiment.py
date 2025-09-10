@@ -319,6 +319,7 @@ class Block:
             self.wait(self.iti, label='ITI')
 
         self.wait(self.extra_time_recording, label='Extra Time Rec')
+        utils.send_telegram_message(f'Block ended: {self.extended_block_summary}')
         self.end_block()
 
     def init_block(self):
@@ -615,6 +616,35 @@ class Block:
         log_string = f'Summary of Block {self.block_id}:\n'
         touches_file = Path(self.block_path) / config.experiment_metrics.get("touch", {}).get('csv_file', 'touch.csv')
         num_hits = 0
+        if touches_file.exists() and touches_file.is_file():
+            touches_df = pd.read_csv(touches_file, parse_dates=['time'], index_col=0).reset_index(drop=True)
+            log_string += f'  Number of touches on the screen: {len(touches_df)}\n'
+            num_hits = len(touches_df.query("is_hit == True"))
+            log_string += f'  Number of successful hits: {num_hits}\n'
+            num_hits_rewarded = len(touches_df.query("is_hit == True & is_reward_bug == True"))
+            log_string += f'  Number of Rewarded hits: {num_hits_rewarded}'
+        else:
+            log_string += 'No screen strikes were recorded.'
+
+        log_string += 2 * '\n'
+
+        if num_hits and self.reward_type == 'end_trial':
+            self.cache.publish(config.subscription_topics['reward'], '')
+
+        return log_string
+
+    @property
+    def extended_block_summary(self):
+        block_start = self.start_time.strftime('%d/%m/%Y %H:%M:%S') if self.start_time else 'N/A'
+        block_bug_types = ','.join(self.bug_types) if self.bug_types else 'N/A'
+        animal_id = self.animal_id if self.animal_id else 'N/A'
+        log_string = f'[{animal_id}]: Summary of Block {self.block_id} ({block_start}):\n ' \
+                     f'  Type: {self.block_type}, Bug types: {block_bug_types}, ' \
+                     f'Trial duration: {self.trial_duration}s, Num trials: {self.num_trials}, ' \
+                     f'ITI: {self.iti}s, Movement type: {self.movement_type}, Reward type: {self.reward_type}\n ------ \n'
+        touches_file = Path(self.block_path) / config.experiment_metrics.get("touch", {}).get('csv_file', 'touch.csv')
+        num_hits = 0
+        num_rewarded_hits = 0
         if touches_file.exists() and touches_file.is_file():
             touches_df = pd.read_csv(touches_file, parse_dates=['time'], index_col=0).reset_index(drop=True)
             log_string += f'  Number of touches on the screen: {len(touches_df)}\n'
