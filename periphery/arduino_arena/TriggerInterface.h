@@ -26,7 +26,13 @@ class TriggerInterface: public ToggleInterface {
   
   int pin_state;
   unsigned long prev_trans_time;
-  unsigned long count;  
+  unsigned long count;
+
+  static const uint8_t MAX_EXTRA_PINS = 8;
+  uint8_t extra_pins[MAX_EXTRA_PINS];
+  uint8_t extra_pins_count = 0;
+
+  void write_all_pins(uint8_t state);
 };
 
 #endif
