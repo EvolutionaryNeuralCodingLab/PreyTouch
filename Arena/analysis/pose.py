@@ -21,6 +21,8 @@ from scipy.spatial import distance
 from scipy.signal import savgol_filter
 from scipy.stats import ttest_ind
 from multiprocessing.pool import ThreadPool
+from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
+import matplotlib.font_manager as fm
 import os
 if Path('.').resolve().name != 'Arena':
     os.chdir('..')
@@ -731,11 +733,17 @@ class SpatialAnalyzer:
         self.orm = orm if orm is not None else ORM()
         self.dlc = DLCArenaPose('front', is_use_db=is_use_db, orm=self.orm)
         self.coords = {
-            'arena': np.array([(-3, -2), (42, 78)]),
-            'arena_close': np.array([(-3, -2), (42, 15)]),
-            'screen': np.array([(-1, -3), (39, -1)])
+            'arena': np.array([(-3, -2), (68, 78)]),
+            'arena_close': np.array([(-3, -2), (68, 15)]),
+            'screen': np.array([(5, -3), (60, -1)])
         }
+        self.max_x_arena = 70
+        self.max_y_arena = 20
         self.pose_dict = self.get_pose()
+        # fix for msi-regev
+        for k, pf in self.pose_dict.items():
+            idx = pf.animal_id.isin(['PV80', 'PV42'])
+            pf.loc[idx, 'x'] = pf.loc[idx, 'x'] * (self.max_x_arena/50)
 
     def get_pose(self) -> dict:
         """
@@ -814,6 +822,11 @@ class SpatialAnalyzer:
                 exps = exps.filter(Experiment.start_time >= self.start_date)
             for exp in exps.all():
                 for blk in exp.blocks:
+                    if exp.animal_id == 'PV163' and self.block_kwargs.get(
+                            'movement_type') == 'low_horizontal' and blk.movement_type == 'rect_tunnel':
+                        blk.movement_type = 'low_horizontal'
+                        blk.exit_hole = 'bottomRight'
+
                     if self.block_kwargs and any(getattr(blk, k) != v for k, v in self.block_kwargs.items()):
                         continue
 
@@ -896,8 +909,8 @@ class SpatialAnalyzer:
             if i == len(pose_dict) - 1 and len(pose_dict) > 1:
                 # cbar_ax = axes_[i].inset_axes([1.05, 0.1, 0.03, 0.8])
                 cbar_ax = axes_[i].inset_axes([0.2, -0.3, 0.6, 0.05])
-            df_ = pose_df.query('0 <= x <= 40 and y<20')
-            self.plot_hist2d(df_, axes_[i], single_animal, animal_colors=animal_colors, cbar_ax=cbar_ax)
+            df_ = pose_df.query(f'0 <= x <= {self.max_x_arena} and y<{self.max_y_arena}')
+            self.plot_hist2d(df_, axes_[i], single_animal, cbar_ax=cbar_ax)
             self.plot_arena(axes_[i], is_close_to_screen_only=True)
             if len(self.split_by) == 1 and self.split_by[0] == 'exit_hole':
                 group_name = r'Left $\rightarrow$ Right' if 'right' in group_name else r'Left $\leftarrow$ Right'
@@ -907,54 +920,27 @@ class SpatialAnalyzer:
             plt.tight_layout()
             plt.show()
 
-    def plot_spatial_x_kde(self, axes=None, cols=4, animal_colors=None, pose_dict=None, is_title=False):
-        if pose_dict is None:
-            pose_dict = self.pose_dict
-
-        axes_ = self.get_axes(cols, len(pose_dict), axes=axes)
-        for i, (group_name, pose_df) in enumerate(pose_dict.items()):
-            df = pose_df.query('0 <= x <= 40 and y<10')
-            for animal_id, df_ in df.groupby('animal_id'):
-                color_kwargs = {'color': animal_colors[animal_id] if animal_colors else None}
-                sns.kdeplot(data=df_, x='x', ax=axes_[i], clip=[0, 40], label=animal_id, **color_kwargs)
-            # inner_ax.legend()
-            axes_[i].axvline(20, linestyle='--', color='tab:orange')
-            axes_[i].set_xticks([0, 20, 40])
-            # inner_ax.set_ylim([0, 0.15])
-            # axes_[i].set_yticks([0.1])
-            # axes_[i].tick_params(axis="y", direction="in", pad=-20)
-            axes_[i].set_ylabel('Probability')
-            axes_[i].set_xlabel(None)
-            axes_[i].set_ylim([0, 0.25])
-
-    @staticmethod
-    def plot_hist2d(df, ax, single_animal, animal_colors=None, cbar_ax=None):
+    def plot_hist2d(self, df, ax, single_animal, cbar_ax=None):
         df_ = df.query(f'animal_id == "{single_animal}"')
         sns.histplot(data=df_, x='x', y='y', ax=ax,
-                     bins=(30, 25), cmap='Greens', stat='probability',
-                     cbar=cbar_ax is not None, cbar_kws=dict(shrink=.75, label='Probability', orientation='horizontal'),
+                     bins=(np.arange(0, self.max_x_arena, 2), np.arange(0, self.max_y_arena, 1)), cmap='Greens', stat='probability',
+                     cbar=cbar_ax is not None, cbar_kws=dict(shrink=.75, label='Probability', orientation='horizontal', ticks=[0, 0.04]),
                      cbar_ax=cbar_ax)
-        ax.set_yticks([0, 5, 10])
-        ax.set_xticks([0, 20, 40])
+        # ax.set_yticks([0, 5, 10])
+        # ax.set_xticks([0, 20, 40, 60])
+        ax.set_yticks([])
+        ax.set_xticks([])
         ax.set_ylabel(None)
         ax.set_xlabel(None)
+        # scalebar
+        fontprops = fm.FontProperties(size=14)
+        scalebar = AnchoredSizeBar(ax.transData, 10, '10cm', 'lower right', pad=1, color='black', frameon=False,
+                                   size_vertical=0.7, fontproperties=fontprops)
+        ax.add_artist(scalebar)
 
         hist_x_ax = ax.inset_axes([0, 1, 1, 0.3])
         sns.histplot(data=df_, x='x', ax=hist_x_ax, bins=30)
         hist_x_ax.axis('off')
-
-        # inner_ax = inset_axes(ax, width="90%", height="40%", loc='upper right', borderpad=1)
-        # for animal_id, df_ in df.groupby('animal_id'):
-        #     color_kwargs = {'color': animal_colors[animal_id] if animal_colors else None}
-        #     sns.kdeplot(data=df_, x='x', ax=inner_ax, clip=[0, 40], label=animal_id, **color_kwargs)
-        # # inner_ax.legend()
-        # inner_ax.axvline(20, linestyle='--', color='tab:orange')
-        # inner_ax.set_xticks([0, 20, 40])
-        # # inner_ax.set_ylim([0, 0.15])
-        # inner_ax.set_yticks([0.1])
-        # inner_ax.tick_params(axis="y", direction="in", pad=-20)
-        # inner_ax.set_ylabel(None)
-        # inner_ax.set_xlabel(None)
 
     def plot_arena(self, ax, is_close_to_screen_only=False):
         for name, c in self.coords.items():
@@ -966,64 +952,43 @@ class SpatialAnalyzer:
         ax.set_ylim(self.coords['arena' if not is_close_to_screen_only else 'arena_close'][:, 1])
         ax.invert_yaxis()
 
-    def plot_trajectories(self, single_animal, cols=2, axes=None, only_to_screen=False, is_title=True,
-                          cbar_indices=None, animal_colors=None):
+    def plot_spatial_x_kde(self, axes=None, cols=4, animal_colors=None, pose_dict=None):
+        if pose_dict is None:
+            pose_dict = self.pose_dict
+
+        axes_ = self.get_axes(cols, len(pose_dict), axes=axes)
+        for i, (group_name, pose_df) in enumerate(pose_dict.items()):
+            df = pose_df.query(f'0 <= x <= {self.max_x_arena} and y<20')
+            sns.violinplot(data=df, x='x', y='animal_id', hue='animal_id', ax=axes_[i], palette=animal_colors, order=list(animal_colors.keys()))
+            axes_[i].set_xlim([0, self.max_x_arena])
+            axes_[i].axvline(self.max_x_arena/2, linestyle='--', color='k')
+            axes_[i].set_yticks([])
+            axes_[i].set_ylabel('Animals')
+
+    def plot_trajectories(self, cols=2, axes=None, only_to_screen=False, is_title=True, animal_colors=None):
         axes_ = self.get_axes(cols, len(self.pose_dict), axes, is_cbar=False)
 
         for i, (group_name, pose_df) in enumerate(self.pose_dict.items()):
-            trajs = self.cluster_trajectories(pose_df, only_to_screen=only_to_screen)
+            trajs = self.cluster_trajectories(pose_df, only_to_screen=only_to_screen, cross_y_val=10)
             if is_title:
                 axes_[i].set_title(group_name.replace(',', '\n'))
             if not trajs:
                 continue
 
-            blocks_ids = sorted(set([t[0] for t in trajs.keys() if t[2] == single_animal]))
-            x = np.linspace(0, 1, len(blocks_ids))
-            cmap = plt.get_cmap('coolwarm')
-            cmap_mat = cmap(x)[:, :3] #.astype(int)
-
             x_values = {}
             for (block_id, frame_id, animal_id), traj in trajs.items():
                 x_values.setdefault(animal_id, []).append(traj.x.values[-1])
-               #  if animal_id != single_animal:
-               #      continue
-               #
-               # # plot single animal trajectories
-               #  traj = np.array(traj)
-               #  # remove NaNs
-               #  traj = traj[~np.isnan(traj).any(axis=1), :]
-               #  total_distance = np.sum(np.sqrt(np.sum(np.diff(traj, axis=0) ** 2, axis=1)))
-               #  if total_distance < 5:
-               #      continue
 
-            #     color = cmap_mat[blocks_ids.index(block_id), :].tolist()
-            #     axes_[i].plot([traj[0, 0], traj[-1, 0]], [traj[0, 1], traj[-1, 1]], color=color)
-            #     axes_[i].scatter(traj[-1, 0], traj[-1, 1], marker='*', color=color)
-            #
-            # axes_[i].set_xticks([0, 20, 40])
-            # axes_[i].set_yticks([0, 5, 10])
-            # if not cbar_indices or i in cbar_indices:
-            #     cbaxes = axes_[i].inset_axes([1.05, 0.1, 0.03, 0.8])
-            #     blocks_ids = [b - blocks_ids[0] for b in blocks_ids]
-            #     matplotlib.colorbar.ColorbarBase(cbaxes, cmap=cmap,
-            #                                      norm=matplotlib.colors.Normalize(vmin=blocks_ids[0], vmax=blocks_ids[-1]),
-            #                                      orientation='vertical', label='Block Number')
-
-            # inner_ax = inset_axes(axes_[i], width="90%", height="40%", loc='upper right', borderpad=1)
             inner_ax = axes_[i]
             for animal_id, x_ in x_values.items():
                 color_kwargs = {'color': animal_colors[animal_id] if animal_colors else None}
-                sns.kdeplot(x=x_, ax=inner_ax, clip=[0, 40], label=animal_id, bw_adjust=.4, **color_kwargs)
-            # inner_ax.legend()
-            inner_ax.axvline(20, linestyle='--', color='tab:orange')
-            inner_ax.set_xticks([0, 20, 40])
-            # inner_ax.set_ylim([0, 0.15])
-            # inner_ax.set_yticks([0.1])
-            # inner_ax.tick_params(axis="y", direction="in", pad=-20)
+                sns.kdeplot(x=x_, ax=inner_ax, label=animal_id, **color_kwargs) # clip=[0, 40], bw_adjust=.4,
+            inner_ax.axvline(self.max_x_arena/2, linestyle='--', color='k')
+            inner_ax.set_xticks([0, 20, 40, 60])
+            inner_ax.set_xlim([0, self.max_x_arena])
             inner_ax.set_ylabel('Probability')
-            inner_ax.set_ylim([0, 0.2])
-            # self.plot_arena(axes_[i], is_close_to_screen_only=True)
-            # axes[i].legend()
+            inner_ax.set_ylim([0, 0.12])
+            # inner_ax.legend()
 
         if axes is None:
             plt.tight_layout()
