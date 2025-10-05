@@ -262,8 +262,8 @@ class Loader:
         frames_times = pd.read_csv(frames_times_path, index_col=0).reset_index().rename(columns={'index': 'frame_id'})
         frames_times['time'] = pd.to_datetime(frames_times['0'], unit='s', utc=True).dt.tz_convert(
             'Asia/Jerusalem').dt.tz_localize(None)
-        orig_frames = self.frames_df.loc[frame_ids][['time']].reset_index().rename(columns={'frame_id': 'orig_frame'})
-        # orig_frames.columns = [c[0] for c in orig_frames.columns]
+        orig_frames = self.frames_df.loc[frame_ids][['time']].reset_index().rename(columns={'index': 'orig_frame'})
+        orig_frames.columns = [c[0] for c in orig_frames.columns]
         merged = pd.merge_asof(left=orig_frames, right=frames_times, left_on='time', right_on='time', 
                                  direction='nearest', tolerance=pd.Timedelta('100 ms'))
         new_frames_ids = sorted(merged.frame_id.unique().tolist())
