@@ -611,7 +611,7 @@ def list_media():
     return media_files
 
 
-@app.route('/get_media_files')
+@app.route('/get_audio_files')
 def get_audio_files():
     audio_files = []
     for f in Path(config.STATIC_FILES_DIR).glob('*'):

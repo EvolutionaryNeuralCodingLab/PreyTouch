@@ -106,8 +106,8 @@ class PeripheryIntegrator:
             return
         self.play_wav_file(wav_path)
 
-    @staticmethod
-    def play_wav_file(wav_path):
+    def play_wav_file(self, wav_path):
+        self.logger.info(f'Playing sound for {wav_path}')
         cmd = f'XDG_RUNTIME_DIR="/run/user/$(id -u)" paplay {wav_path}'
         next(utils.run_command(cmd))
 
