@@ -104,6 +104,10 @@ class PeripheryIntegrator:
         if not Path(wav_path).exists():
             self.logger.error(f"Cannot play sound: {wav_path} not found.")
             return
+        self.play_wav_file(wav_path)
+
+    @staticmethod
+    def play_wav_file(wav_path):
         cmd = f'XDG_RUNTIME_DIR="/run/user/$(id -u)" paplay {wav_path}'
         next(utils.run_command(cmd))
 

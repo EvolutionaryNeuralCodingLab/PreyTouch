@@ -139,6 +139,10 @@ class Scheduler(threading.Thread):
                         cache.set(cc.HOLD_AGENT, agent_state == 'off')
                     elif exp_name.startswith('FEEDER:'):
                         self.periphery.feed()
+                    elif exp_name.startswith('SOUND:'):
+                        wav_name = exp_name.replace('SOUND:', '')
+
+                        self.periphery.play_wav_file(wav_name)
                     else:  # otherwise, start the cached experiment
                         self.arena_mgr.start_cached_experiment(m.group('name'))
 

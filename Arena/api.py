@@ -611,6 +611,15 @@ def list_media():
     return media_files
 
 
+@app.route('/get_media_files')
+def get_audio_files():
+    audio_files = []
+    for f in Path(config.STATIC_FILES_DIR).glob('*'):
+        if f.suffix.lower() in ['.wav']:
+            audio_files.append(f.name)
+    return jsonify(audio_files)
+
+
 @app.route('/media/<filename>')
 def send_media(filename):
     return send_from_directory(config.STATIC_FILES_DIR, filename)
