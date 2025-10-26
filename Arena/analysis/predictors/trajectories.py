@@ -149,7 +149,7 @@ class LizardTrajDataSet(Dataset):
             closest_idx = (group['total_sec'] - self.sub_section[0]).abs().idxmin()
             # Get the position of the closest index in the group
             closest_position = group.index.get_loc(closest_idx)
-            # Get the indexes to sample: from the closest position to closest position + n
+            # Get the indexes to sample: from the closest position to the closest position + n
             sample_indexes = group.iloc[closest_position:closest_position + self.sub_section[1] + 1].index
             return group.loc[sample_indexes]
 
@@ -196,6 +196,7 @@ class TrajClassifier(ClassificationTrainer):
     sub_section: tuple = None  # (start_sec {float}, length of samples after start_sec {int})
     target_name: str = 'block_speed'
     is_shuffled_target: bool = False  # shuffle the target randomly. Used to find baseline for attention.
+    is_one_strike_per_trial: bool = False  # keep only one strike per trial
     targets: List = field(default_factory=lambda: [2, 4, 6, 8])
     feature_names: List = field(default_factory=lambda: ['x', 'y', 'speed'])
     is_attention: bool = False  # use the LSTMWithAttention model
@@ -234,6 +235,8 @@ class TrajClassifier(ClassificationTrainer):
             sdf = sdf.query('animal_id==@self.animal_id')
         if self.is_hit:
             sdf = sdf.query('is_hit')
+        if self.is_one_strike_per_trial:
+            sdf = sdf.query('n_detected_strikes_peaks==1')
         strikes_ids = sdf.index.values.tolist()
 
         dataset = LizardTrajDataSet(strk_df, trajs, strikes_ids, self.feature_names, self.targets,
