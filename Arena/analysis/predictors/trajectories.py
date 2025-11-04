@@ -110,7 +110,8 @@ class LizardTrajDataSet(Dataset):
         if is_shuffled_target:
             if self.is_debug:
                 print(f'Notice! Shuffling randomly the target values')
-            self.y = pd.Series(index=self.y.index, data=np.random.choice(self.y.unique(), len(self.y)))
+            rng = np.random.default_rng(seed=42)
+            self.y = pd.Series(index=self.y.index, data=rng.permutation(self.y.values))
 
         if is_resample:
             self.resample_trajs()
