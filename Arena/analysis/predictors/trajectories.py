@@ -75,7 +75,7 @@ class LSTMWithAttention(nn.Module):
             return out
 
 
-class LSTMModel(nn.Module):
+class LSTMModel_old(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim, num_layers, dropout_prob):
         super(LSTMModel, self).__init__()
         self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True, bidirectional=True, dropout=dropout_prob)
@@ -87,6 +87,32 @@ class LSTMModel(nn.Module):
         x = torch.mean(lstm_output, dim=1)
         out = self.fc(x)
         return out
+
+
+class LSTMModel(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim, num_layers, dropout_prob):
+        super().__init__()
+        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers,
+                            batch_first=True, bidirectional=True,
+                            dropout=dropout_prob if num_layers > 1 else 0.0)
+        self.fc = nn.Sequential(
+            nn.LayerNorm(hidden_dim*2),
+            nn.Linear(hidden_dim*2, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(p=dropout_prob),
+            nn.Linear(hidden_dim, output_dim),
+        )
+
+    def forward(self, x, lengths=None):
+        # x: (B, T, D)
+        if lengths is not None:
+            packed = nn.utils.rnn.pack_padded_sequence(x, lengths.cpu(), batch_first=True, enforce_sorted=False)
+            _, (h_n, _) = self.lstm(packed)
+        else:
+            _, (h_n, _) = self.lstm(x)
+        # h_n: (num_layers*2, B, H)
+        h_last = torch.cat((h_n[-2], h_n[-1]), dim=1)  # (B, 2H)
+        return self.fc(h_last)
 
 
 class LizardTrajDataSet(Dataset):
@@ -111,7 +137,7 @@ class LizardTrajDataSet(Dataset):
             if self.is_debug:
                 print(f'Notice! Shuffling randomly the target values')
             rng = np.random.default_rng(seed=42)
-            self.y = pd.Series(index=self.y.index, data=rng.permutation(self.y.values))
+            self.y = pd.Series(index=self.y.index, data=rng.permutation(self.y.values), name=self.y.name)
 
         if is_resample:
             self.resample_trajs()
