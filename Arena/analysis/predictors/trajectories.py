@@ -32,7 +32,7 @@ from captum.attr import IntegratedGradients, LayerConductance, NeuronConductance
 from pathlib import Path
 from analysis.trainer import ClassificationTrainer
 
-TRAJ_DIR = '/media/sil2/Data/regev/datasets/trajs'
+TRAJ_DIR = '/Users/regev/PhD/internal_models_paper/cache/trajs'
 TRAJ_DATASET = f'{TRAJ_DIR}/trajs_before_120_after_60s_strike.pkl'
 
 
@@ -117,7 +117,7 @@ class LSTMModel(nn.Module):
 
 class LizardTrajDataSet(Dataset):
     def __init__(self, strk_df, trajs, ids, variables, targets_values, is_standardize=True, target_name='block_speed',
-                 is_resample=True, sub_section=None, is_shuffled_target=False, is_debug=True):
+                 is_resample=True, sub_section=None, is_shuffled_target=False, is_debug=True, seed=42):
         self.samples = ids
         self.variables = variables
         self.targets = targets_values
@@ -136,7 +136,7 @@ class LizardTrajDataSet(Dataset):
         if is_shuffled_target:
             if self.is_debug:
                 print(f'Notice! Shuffling randomly the target values')
-            rng = np.random.default_rng(seed=42)
+            rng = np.random.default_rng(seed=seed)
             self.y = pd.Series(index=self.y.index, data=rng.permutation(self.y.values), name=self.y.name)
 
         if is_resample:
@@ -268,7 +268,7 @@ class TrajClassifier(ClassificationTrainer):
 
         dataset = LizardTrajDataSet(strk_df, trajs, strikes_ids, self.feature_names, self.targets,
                                     target_name=self.target_name, sub_section=self.sub_section, is_debug=self.is_debug,
-                                    is_resample=self.is_resample, is_shuffled_target=self.is_shuffled_target)
+                                    is_resample=self.is_resample, is_shuffled_target=self.is_shuffled_target, seed=self.seed)
         if is_print_size:
             self.print(f'Traj classes count: {pd.Series(dataset.y).value_counts().sort_index().set_axis(self.targets).to_dict()}')
 
@@ -734,17 +734,22 @@ def animals_comparison():
 
 
 def hyperparameters_comparison(animal_id='PV91', movement_type='random_low_horizontal', is_resample=False,
-                               sub_section=(-1, 60), feature_names=('x', 'y', 'speed'), **kwargs):
+                               sub_section=(-1, 60), feature_names=('x', 'y', 'speed'), hyps=None, **kwargs):
     from sklearn.model_selection import ParameterGrid
 
+    default_params = dict(dropout_prob=[0.2, 0.4, 0.6], lstm_layers=[1, 2, 3, 4], lstm_hidden_dim=[8, 16, 32])
+    assert hyps is None or isinstance(hyps, dict)
+    if hyps:
+        default_params.update(hyps)
     res_df = []
-    grid = ParameterGrid(dict(dropout_prob=[0.2, 0.4, 0.6], lstm_layers=[1, 2, 3, 4], lstm_hidden_dim=[64, 128]))
+    grid = ParameterGrid(default_params)
     for i, params in tqdm(enumerate(grid), desc='hyperparameter tuning', total=len(grid)):
         if params['lstm_layers'] == 1:
-            if params['dropout_prob'] != 0.4:
-                continue
-            else:
+            # in case of single layer, we set dropout to 0 and run only once
+            if params['dropout_prob'] == default_params['dropout_prob'][0]:
                 params['dropout_prob'] = 0
+            else:
+                continue
         tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=sub_section, feature_names=feature_names,
                             is_debug=False, is_resample=is_resample, animal_id=animal_id, movement_type=movement_type, **kwargs, **params)
         tj.train(is_plot=False)
@@ -779,7 +784,7 @@ def hyperparameters_comparison(animal_id='PV91', movement_type='random_low_horiz
     print(f'\nbest overall model path: {best_model_path}')
     print('\n' + '#' * 50 + '\n')
 
-    return res_df.query(f'metric=="overall_accuracy"').sort_values(by='value', ascending=False).iloc[0][[
+    return res_df.query(f'metric=="accuracy"').sort_values(by='value', ascending=False).iloc[0][[
         'dropout_prob', 'lstm_hidden_dim', 'lstm_layers']].to_dict()
 
 
