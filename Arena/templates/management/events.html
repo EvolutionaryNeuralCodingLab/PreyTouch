@@ -207,9 +207,11 @@
             speed: blockValues.bug_speed,
             bugTypes: blockValues.bug_types || ['cockroach'],
             rewardBugs: blockValues.reward_bugs || [],
+            mainBug: blockValues.main_bug || '',
             movementType: blockValues.movement_type,
             backgroundColor: blockValues.background_color,
-            exitHole: blockValues.exit_hole
+            exitHole: blockValues.exit_hole,
+            bugMappedBackground: blockValues.bug_mapped_background,
         }
         if (!$("#isDefaultBugSize1").is(':checked')) {
             Object.assign(payload, {bugSize: Number($("#bugSize1").val())})

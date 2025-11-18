@@ -28,6 +28,9 @@ export default {
   components: {tunnelBug},
   mixins: [boardsMixin],
   computed: {
+    isSplitBugsView: function () {
+      return this.bugsSettings.isSplitBugsView && this.bugsSettings.numOfBugs > 1
+    },
     tunnelHeight() {
       return 500
     },
@@ -37,16 +40,30 @@ export default {
   },
   methods: {
     initDrawing() {
+      // Draw the background first
+      if (this.isSplitBugsView && this.bugsSettings.bugMappedBackground) {
+        this.drawSplitBackground()
+      } else {
+        this.drawSolidBackground()
+      }
+
+      // Flash photodiode square at trial start
+      this.drawSquareForPhotoDiode()
+
+      // Then draw the tunnel
       let canvas = document.getElementById('tunnelCanvas')
       canvas.style.left = `${(this.canvas.width / 2) - (this.tunnelWidth / 2)}px`
       canvas.style.top = `${this.canvas.height / 2 - this.tunnelHeight / 2}px`
       let ctx = canvas.getContext('2d')
-      ctx.fillStyle = this.bugsSettings.backgroundColor
+      ctx.fillStyle = this.getCurrentBackgroundColor()
       ctx.fillRect(0, 0, canvas.width, canvas.height)
       const img = new Image()
       img.onload = () => {
         console.log('drawing tunnel image')
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+
+        // Draw photodiode square after everything else is drawn
+        this.drawSquareForPhotoDiode()
       }
       // img.src = require('@/assets/wooden-logs-wall.jpg')
       img.src = require('@/assets/tree_trunk.png')

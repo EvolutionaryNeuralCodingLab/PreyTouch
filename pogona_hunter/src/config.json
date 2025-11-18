@@ -50,6 +50,46 @@
       },
       "stepsPerImage": 10
     },
+    "gray_b_worm": {
+      "text": "Gray Blue BG Worm, looks like yellow",
+      "numImagesPerBug": 5,
+      "speed": 1,
+      "radiusRange": {
+        "min": 220,
+        "max": 230
+      },
+      "stepsPerImage": 10
+    },
+    "gray_y_worm": {
+      "text": "Gray Yellow BG Worm, looks like blue",
+      "numImagesPerBug": 5,
+      "speed": 1,
+      "radiusRange": {
+        "min": 220,
+        "max": 230
+      },
+      "stepsPerImage": 10
+    },
+    "yellow_hue_worm": {
+      "text": "Yellow Hue Worm",
+      "numImagesPerBug": 5,
+      "speed": 1,
+      "radiusRange": {
+        "min": 220,
+        "max": 230
+      },
+      "stepsPerImage": 10
+    },
+    "blue_hue_worm": {
+      "text": "Blue Hue Worm",
+      "numImagesPerBug": 5,
+      "speed": 1,
+      "radiusRange": {
+        "min": 220,
+        "max": 230
+      },
+      "stepsPerImage": 10
+    },
     "red_beetle": {
       "text": "Red Beetle",
       "numImagesPerBug": 12,

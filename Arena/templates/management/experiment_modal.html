@@ -251,6 +251,15 @@
                         <div class="col-sm-5">
                             <input type="color" class="form-control" id="backgroundColor{{i}}" value="#e8eaf6">
                         </div>
+                        <div class="col-sm-2">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="bugMappedBackgroundBtn{{i}}" onclick="openBugMappedBackgroundDialog({{i}})">...</button>
+                        </div>
+                    </div>
+                    <div class="form-group row pr-3 bugs-options{{i}}">
+                        <label class="col col-form-label">Bug-mapped Colors:</label>
+                        <div class="col">
+                            <small class="text-muted" id="bugMappedBackground{{i}}Value">None</small>
+                        </div>
                     </div>
 
                     <div class="form-group row pr-3">
@@ -324,6 +333,40 @@
                     <button type="button" class="btn btn-primary closeSaveExperiment">Close</button>
                 </div>
             </form>
+        </div>
+    </div>
+</div>
+
+<!-- Bug Mapped Background Dialog -->
+<div class="modal fade" id="bugMappedBackgroundModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Bug-Mapped Backgrounds</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p><strong>Set background colors for each bug type:</strong></p>
+                <div class="alert alert-info">
+                    <small>
+                        <strong>Bug-Mapped Background Colors:</strong><br>
+                        • Each bug type can have one assigned background color<br>
+                        • <strong>Single Bug Mode:</strong> The background will use the color assigned to that bug type<br>
+                        • <strong>Split View Mode:</strong> Each side will show the color assigned to its respective bug type<br>
+                        • If a bug type has no assigned color, the default background color will be used
+                    </small>
+                </div>
+                <div id="bugMappedBackgroundForm">
+                    <!-- Dynamic content will be added here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-danger" id="clearBugMappedBackground">Clear All</button>
+                <button type="button" class="btn btn-secondary" id="cancelBugMappedBackground">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveBugMappedBackground">OK</button>
+            </div>
         </div>
     </div>
 </div>

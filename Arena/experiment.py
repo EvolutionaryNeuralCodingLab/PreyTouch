@@ -9,7 +9,7 @@ import json
 import threading
 import time
 import cv2
-from typing import Union
+from typing import Union, Optional, Dict
 import humanize
 import re
 from datetime import datetime, timedelta
@@ -25,7 +25,10 @@ import config
 import utils
 from loggers import get_logger
 from cache import RedisCache, CacheColumns as cc
-from utils import mkdir, to_integer, turn_display_on, turn_display_off, run_command, get_hdmi_xinput_id, get_psycho_files, run_in_thread
+from utils import (
+    mkdir, to_integer, turn_display_on, turn_display_off,
+    run_command, get_hdmi_xinput_id, get_psycho_files, run_in_thread
+)
 from subscribers import Subscriber, start_experiment_subscribers
 from periphery_integration import PeripheryIntegrator
 from db_models import ORM, Experiment as Experiment_Model, Strike
@@ -86,7 +89,8 @@ class Experiment:
         """Main Function for starting an experiment"""
         def _start():
             self.logger.info(f'Experiment started for {humanize.precisedelta(self.experiment_duration)}'
-                             f' with cameras: {",".join(self.cameras.keys())}')
+                             f' with cameras: {",".join(self.cameras.keys())}'
+                             f' and number of trials in first block: {self.blocks[0].num_trials}')
             self.orm.commit_experiment(self)
             self.turn_screen('on', board=self.get_board())
             if not config.IS_CHECK_SCREEN_MAPPING:
@@ -204,6 +208,7 @@ class Block:
     iti: int = 10
     notes: str = ''
     background_color: str = ''
+    bug_mapped_background: dict = field(default_factory=dict)
     block_type: str = 'bugs'  # options: 'bugs', 'blank', 'media', 'psycho'
 
     num_of_bugs: int = 1
@@ -222,9 +227,13 @@ class Block:
     exit_hole: str = None
     reward_type: str = 'always'
     reward_bugs: list = None
+    main_bug: str = None
+    trial_bugs_order: list = None
     reward_any_touch_prob: float = 0.0
     agent_label: str = None
     accelerate_multiplier: float = 3.0
+    # is_gated: bool = False
+    trial_gate: Optional[Dict] = None
 
     media_url: str = ''
 
@@ -254,7 +263,6 @@ class Block:
         elif not self.reward_bugs:
             self.logger.debug(f'No reward bugs were given, using all bug types as reward; {self.reward_bugs}')
             self.reward_bugs = self.bug_types
-
         if self.is_continuous_blank:
             self.num_trials, self.iti = 1, 0
             self.trial_duration = config.MAX_DURATION_CONT_BLANK
@@ -298,8 +306,12 @@ class Block:
 
     def run_block(self):
         """Run block flow"""
+        self.logger.info('Starting regular block')
         self.init_block()
         self.wait(self.extra_time_recording, None, label='Extra Time Rec')
+        
+        if self.main_bug and self.main_bug != '':
+            self.combine_trial_bugs()
         # if self.is_split_bugs_view, take self.ratio and change the order of self.bug_types in each trial by creating
         # an array the size of the trial that combinatorially put 1 and -1, where 1 indicates the current bugs order and -1 indicates the opposite order
         if self.is_split_bugs_view:
@@ -307,24 +319,14 @@ class Block:
 
         special_trials = self.init_special_trials()
         for trial_id in range(1, self.num_trials + 1):
-            if self.block_type == 'bugs':
-                if not self.exp_validation.is_reward_left():
-                    utils.send_telegram_message('No reward left in feeder; stopping experiment')
-                    raise EndExperimentException('No reward left; stopping experiment')
-                elif self.exp_validation.is_max_reward_reached():
-                    utils.send_telegram_message(f'Max daily rewards of {config.MAX_DAILY_REWARD} reached; stopping experiment')
-                    raise EndExperimentException(f'Max daily rewards of {config.MAX_DAILY_REWARD} reached; stopping experiment')
-            self.start_trial(trial_id)
-            self.wait(self.trial_duration, trial_id, check_visual_app_on=True, label=f'Trial {trial_id}',
-                      take_img_after=self.trial_duration/2, special_trials=special_trials)
-            self.end_trial()
-            self.save_trial_images(trial_id)
+            self._run_one_trial(trial_id, special_trials=special_trials)
             self.wait(self.iti, trial_id, label='ITI')
 
         self.wait(self.extra_time_recording, None, label='Extra Time Rec')
         self.end_block()
         if special_trials:
             self.summary_special_trials()
+
 
     def init_block(self):
         mkdir(self.block_path)
@@ -333,8 +335,13 @@ class Block:
         self.cache.set(cc.EXPERIMENT_BLOCK_PATH, self.block_path, timeout=self.overall_block_duration + self.iti)
         # check engagement of the animal
         self.check_engagement_level()
+        
         # start cameras for experiment with their predictors and set the output dir for videos
-        self.turn_cameras('on')
+        pose_required = self._pose_gate_requested()
+        if pose_required:
+            self.cache.set(cc.POSE_EXPORT_ON, True, timeout=self.overall_block_duration)
+
+        self.turn_cameras('on', pose_required=pose_required)
         if config.CAM_TRIGGER_DELAY_AROUND_BLOCK:
             self.periphery.cam_trigger(0)  # turn off trigger
             self.logger.info('trigger is off')
@@ -356,6 +363,22 @@ class Block:
         if config.IR_TOGGLE_DELAY_AROUND_BLOCK:
             time.sleep(1)
             self.toggle_led_ir()
+
+    def _run_one_trial(self, trial_id:int, suffix_label:str='', special_trials=None):
+        if self.block_type == 'bugs':
+            if not self.exp_validation.is_reward_left():
+                utils.send_telegram_message('No reward left in feeder; stopping experiment')
+                raise EndExperimentException('No reward left; stopping experiment')
+            elif self.exp_validation.is_max_reward_reached():
+                utils.send_telegram_message(f'Max daily rewards of {config.MAX_DAILY_REWARD} reached; stopping experiment')
+                raise EndExperimentException(f'Max daily rewards of {config.MAX_DAILY_REWARD} reached; stopping experiment')
+        self.logger.info(f'Starting trial {trial_id}/{self.num_trials}')
+        self.start_trial(trial_id)
+        self.wait(self.trial_duration, trial_id, check_visual_app_on=True, label=f'Trial {trial_id} {suffix_label}',
+                  take_img_after=self.trial_duration/2, special_trials=special_trials)
+        self.end_trial()
+        self.save_trial_images(trial_id)
+        
 
     def end_block(self):
         if self.block_type == 'psycho' and self.psycho_proc_pid:
@@ -387,6 +410,10 @@ class Block:
         if config.CAM_TRIGGER_DELAY_AROUND_BLOCK:
             self.periphery.cam_trigger(1)
             self.logger.info(f'Trigger was off for {time.time() - t0:.2f} sec')
+        try:
+            self.cache.delete(cc.POSE_EXPORT_ON)
+        except Exception:
+            pass
 
     def create_bugs_order(self) -> list:
         """
@@ -402,8 +429,41 @@ class Block:
         self.split_bugs_order = bugs_order
 
         return bugs_order
+    
 
-    def turn_cameras(self, required_state):
+    def combine_trial_bugs(self) -> list:
+        """Balanced pairs: keep main_bug first, use other bugs equally, then shuffle."""
+        combined_bugs = []
+        if self.num_of_bugs < len(self.bug_types):
+            others = [b for b in self.bug_types if b != self.main_bug]
+
+            if self.num_of_bugs == 2:
+                # balance companions across trials
+                k = len(others)
+                base = self.num_trials // k
+                rem  = self.num_trials % k
+
+                for i, ob in enumerate(others):
+                    combined_bugs += [[self.main_bug, ob]] * base
+                    if i < rem:
+                        combined_bugs.append([self.main_bug, ob])
+
+                random.shuffle(combined_bugs)
+
+            else:
+                # fallback: simple sampling, as you had
+                combined_bugs = [
+                    [self.main_bug] + random.sample(others, self.num_of_bugs - 1)
+                    for _ in range(self.num_trials)
+                ]
+
+            self.logger.info(f'Combined bugs for trials: {combined_bugs}')
+            self.trial_bugs_order = combined_bugs
+
+        return combined_bugs
+
+
+    def turn_cameras(self, required_state, **kwargs):
         """Turn on cameras if needed, and load the experiment predictors"""
         assert required_state in ['on', 'off']
         for cam_name, cu in self.cam_units.items():
@@ -421,11 +481,11 @@ class Block:
 
             if required_state == 'on':
                 if not cu.is_on():
-                    cu.start(is_experiment=True, movement_type=self.movement_type)
+                    cu.start(is_experiment=True, movement_type=self.movement_type, **kwargs)
                 else:
-                    cu.reload_predictors(is_experiment=True, movement_type=self.movement_type)
+                    cu.reload_predictors(is_experiment=True, movement_type=self.movement_type, **kwargs)
             else:  # required_state == 'off'
-                cu.reload_predictors(is_experiment=False, movement_type=self.movement_type)
+                cu.reload_predictors(is_experiment=False, movement_type=self.movement_type, **kwargs)
 
         t0 = time.time()
         # wait maximum 30 seconds for cameras to finish start / stop and predictors to initiate
@@ -433,23 +493,6 @@ class Block:
                 (time.time() - t0 < 30):
             time.sleep(0.1)
 
-        if required_state == 'on':  # check predictors are up
-            for cam_name, cu in self.cam_units.items():
-                exp_predictors = [pr_name for pr_name, pr_dict in cu.get_conf_predictors().items()
-                                  if pr_dict.get('mode') == 'experiment' and self.movement_type in pr_dict.get('movement_type', [])]
-                for ep in exp_predictors:
-                    is_on = False
-                    t0 = time.time()
-                    while time.time() - t0 < 60:
-                        if ep in cu.processes and cu.processes[ep].is_on():
-                            is_on = True
-                            break
-                    if not is_on:
-                        msg = f'Aborting experiment since predictor {ep} is not alive and is configured for camera {cam_name}'
-                        utils.send_telegram_message(msg)
-                        self.logger.error(msg)
-                        raise EndExperimentException()
-            self.logger.info('finished cameras initialization for experiment')
 
     def start_trial(self, trial_id):
         trial_db_id = self.orm.commit_trial({
@@ -467,8 +510,12 @@ class Block:
                 command, options = 'init_bugs', self.bug_options
                 if self.is_random_low_horizontal:
                     options = self.set_random_low_horizontal_trial(options)
+                trial_bugs = self.bug_types
+                if self.main_bug and self.main_bug != '' and self.trial_bugs_order:
+                    trial_bugs = self.trial_bugs_order[trial_id - 1]
+                
                 if self.is_split_bugs_view and self.split_repeated_pos_ratio < 1:
-                    ordered_bugs = self.bug_types[::self.split_bugs_order[trial_id - 1]]
+                    ordered_bugs = trial_bugs[::self.split_bugs_order[trial_id - 1]]
                     options = self.set_bugs_order_trial(options, ordered_bugs)
             options['trialID'] = trial_id
             options['trialDBId'] = trial_db_id
@@ -670,6 +717,7 @@ class Block:
             'isLogTrajectory': True,
             'bugSize': self.bug_size,
             'backgroundColor': self.background_color,
+            'bugMappedBackground': self.bug_mapped_background,
             'exitHole': random.choice(['left', 'right']) if self.exit_hole == 'random' else self.exit_hole,
             'rewardAnyTouchProb': self.reward_any_touch_prob,
             'holesHeightScale': self.holes_height_scale,
@@ -730,13 +778,14 @@ class Block:
 
     @property
     def overall_block_duration(self):
-        if not self.is_blank_block:
-            return self.block_duration + 2 * self.extra_time_recording
-        else:
+        if self.is_blank_block:
             return config.MAX_DURATION_CONT_BLANK
+        # Legacy calculation
+        return self.block_duration + 2 * self.extra_time_recording
 
     @property
     def block_duration(self):
+        # Legacy estimate used by recorders and timeouts
         return round((self.num_trials * self.trial_duration + (self.num_trials - 1) * self.iti) * 1.5)
 
     @property

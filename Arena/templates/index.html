@@ -480,9 +480,11 @@
             $bugType.bsMultiSelect()
             $bugType.change(() => {
                 let $rewardBug = $(`#rewardBugDiv${i}`)
+                let $mainBug = $(`#mainBugDiv${i}`)
                 $(`#rewardBugSelect${i} option`).remove()
                 if ($bugType.val().length <= 1) {
                     $rewardBug.hide()
+                    $mainBug.hide()
                 } else {
                     let $el = $(`#rewardBugSelect${i}`)
                     $(`#bugTypeSelect${i} option`).each(function (v) {
@@ -492,6 +494,21 @@
                     });
                     $el.bsMultiSelect("UpdateData")
                     $rewardBug.show()
+                    // Show main bug selection only when there are more than 2 bug types
+                    if ($bugType.val().length > 2) {
+                        let $elm = $(`#mainBugSelect${i}`)
+                        $(`#mainBugSelect${i} option`).remove()  // Clear existing options first
+                        $(`#bugTypeSelect${i} option`).each(function (v) {
+                            if (this.selected) {
+                                $elm.append($("<option></option>").attr("value", this.value).text(this.text)).attr('selected', true);
+                            }
+                        });
+                        $elm.bsMultiSelect("UpdateData")
+                        $mainBug.show()
+                    } else {
+                        $mainBug.hide()
+                    }
+
                 }
             })
 
@@ -510,6 +527,7 @@
               let numOfBugs = Number($numOfBugs.val());
               if (numOfBugs === 1) {
                   $(`#multipleBugsConf${i}`).hide();
+                  $(`#mainBugDiv${i}`).hide();
               } else {
                   $(`#multipleBugsConf${i}`).show();
               }
@@ -675,10 +693,21 @@
 
         $("#loadExperiment").click(() => {
             let experiment = $("#cachedExperimentsSelect").val()
+            console.log('Loading experiment:', experiment)
             $.get(`/load_experiment/${experiment}`, (data) => {
-                console.log(data)
+                console.log('Loading experiment data:', data)
+                console.log('Experiment name:', data.name)
+                console.log('Blocks data:', data.blocks)       
                 AllFields.values = data
+                // Just update the bug-mapped background displays after a short delay
+                setTimeout(() => {
+                    console.log('About to update displays...')
+                    updateBugMappedBackgroundDisplays()
+                }, 200)
+                
                 $('#loadExperimentModal').modal('hide');
+            }).fail(function(xhr, status, error) {
+                console.error('Failed to load experiment:', experiment, 'Error:', error)
             })
         })
 
@@ -793,6 +822,193 @@
                 $(this).prepend(container).dequeue()
             })
         }
+    })
+
+    // Global functions for bug-mapped background (accessible from onclick attributes)
+    let currentBlockIdForBugMapping = null
+    
+    window.openBugMappedBackgroundDialog = function(blockId) {
+        currentBlockIdForBugMapping = blockId
+        const bugTypes = $(`#bugTypeSelect${blockId}`).val() || []
+        
+        // Get current mappings from hidden field first, then from field system if needed
+        let currentMappings = getBugMappedBackgroundValue(blockId)
+        
+        // If hidden field is empty, try to get from field system (for loaded experiments)
+        if (Object.keys(currentMappings).length === 0) {
+            try {
+                const fieldObject = AllFields.blocks[blockId] && AllFields.blocks[blockId].bug_mapped_background
+                if (fieldObject && fieldObject.value) {
+                    currentMappings = fieldObject.value
+                    console.log(`Got bug-mapped background from field system for block ${blockId}:`, currentMappings)
+                }
+            } catch (e) {
+                console.error(`Error getting bug-mapped background from field system for block ${blockId}:`, e)
+            }
+        }
+        
+        // Build the form
+        let formHtml = ''
+        if (bugTypes.length === 0) {
+            formHtml = '<p style="color: red;">Please select bug types first.</p>'
+        } else {
+            bugTypes.forEach(bugType => {
+                const currentColor = currentMappings[bugType] || '#ffffff'
+                formHtml += `
+                    <div class="form-group row">
+                        <label class="col-sm-4 col-form-label">${bugType}:</label>
+                        <div class="col-sm-8">
+                            <input type="color" class="form-control" 
+                                   id="bugColor_${bugType}" value="${currentColor}">
+                        </div>
+                    </div>
+                `
+            })
+        }
+        
+        $('#bugMappedBackgroundForm').html(formHtml)
+        $('#bugMappedBackgroundModal').modal('show')
+    }
+    
+    function getBugMappedBackgroundValue(blockId) {
+        const hiddenField = $(`#bugMappedBackground${blockId}`)
+        if (hiddenField.length === 0) {
+            console.log(`No hidden field found for block ${blockId}`)
+            return {}
+        }
+        const value = hiddenField.val()
+        console.log(`Hidden field value for block ${blockId}:`, value)
+        try {
+            return JSON.parse(value || '{}')
+        } catch (e) {
+            console.error(`Error parsing bug-mapped background for block ${blockId}:`, e)
+            return {}
+        }
+    }
+    
+    function setBugMappedBackgroundValue(blockId, mappings) {
+        let hiddenField = $(`#bugMappedBackground${blockId}`)
+        if (hiddenField.length === 0) {
+            // Create hidden field if it doesn't exist
+            $(`#backgroundColorDiv${blockId}`).append(
+                `<input type="hidden" id="bugMappedBackground${blockId}" value="">`
+            )
+            hiddenField = $(`#bugMappedBackground${blockId}`)
+        }
+        hiddenField.val(JSON.stringify(mappings))
+        
+        // Update display text
+        const displayText = Object.keys(mappings).length > 0 ? 
+            Object.entries(mappings).map(([bug, color]) => `${bug}: ${color}`).join(', ') : 
+            'None'
+        $(`#bugMappedBackground${blockId}Value`).text(displayText)
+    }
+    
+    function updateBugMappedBackgroundDisplays() {
+        // Update display values for all blocks after loading experiment
+        console.log('Updating bug-mapped background displays...')
+        
+        // Get the number of blocks
+        const numBlocks = AllFields.values.num_blocks || 1
+        console.log('Number of blocks:', numBlocks)
+        
+        for (let i = 1; i <= numBlocks; i++) { // Use 1-based indexing like the field system
+            const displayElement = $(`#bugMappedBackground${i}Value`)
+            console.log(`Checking block ${i}, display element exists:`, displayElement.length > 0)
+            
+            if (displayElement.length > 0) {
+                console.log(`Processing block ${i}...`)
+                
+                // Get the value by creating a Block object (like the field system does)
+                let mappings = {}
+                try {
+                    const block = new Block(i)
+                    console.log(`Block ${i} object:`, block)
+                    
+                    const fieldObject = block.getFields()['bug_mapped_background']
+                    console.log(`Field object for block ${i}:`, fieldObject)
+                    
+                    if (fieldObject) {
+                        mappings = fieldObject.value || {}
+                        console.log(`Block ${i} field value:`, mappings)
+                        
+                        // Ensure the hidden field exists and has the correct value
+                        setBugMappedBackgroundValue(i, mappings)
+                    } else {
+                        console.log(`No bug_mapped_background field found for block ${i}`)
+                    }
+                } catch (e) {
+                    console.error(`Error getting bug-mapped background for block ${i}:`, e)
+                }
+                
+                const displayText = Object.keys(mappings).length > 0 ? 
+                    Object.entries(mappings).map(([bug, color]) => `${bug}: ${color}`).join(', ') : 
+                    'None'
+                    
+                displayElement.text(displayText)
+                console.log(`Block ${i} display updated to: "${displayText}"`)
+            }
+        }
+    }
+    
+    function clearAllBugMappedBackgrounds() {
+        // Clear all existing bug-mapped backgrounds from UI and hidden fields
+        console.log('Clearing all existing bug-mapped backgrounds...')
+        for (let i = 0; i < 10; i++) {
+            const hiddenField = $(`#bugMappedBackground${i}`)
+            const displayElement = $(`#bugMappedBackground${i}Value`)
+            
+            // Clear hidden field if it exists
+            if (hiddenField.length > 0) {
+                hiddenField.val('{}')
+                console.log(`Cleared hidden field for block ${i}`)
+            }
+            
+            // Reset display to "None" if it exists
+            if (displayElement.length > 0) {
+                displayElement.text('None')
+                console.log(`Reset display for block ${i}`)
+            }
+        }
+    }
+    
+    $(document).ready(function() {
+        $('#saveBugMappedBackground').click(function() {
+            const blockId = currentBlockIdForBugMapping
+            if (!blockId) return
+            
+            const bugTypes = $(`#bugTypeSelect${blockId}`).val() || []
+            const mappings = {}
+            
+            bugTypes.forEach(bugType => {
+                const color = $(`#bugColor_${bugType}`).val()
+                if (color) {
+                    mappings[bugType] = color
+                }
+            })
+            
+            setBugMappedBackgroundValue(blockId, mappings)
+            $('#bugMappedBackgroundModal').modal('hide')
+            
+            console.log('Bug-mapped background saved for block', blockId, ':', mappings)
+        })
+        
+        $('#clearBugMappedBackground').click(function() {
+            const blockId = currentBlockIdForBugMapping
+            if (!blockId) return
+            
+            // Clear the bug-mapped background settings
+            setBugMappedBackgroundValue(blockId, {})
+            $('#bugMappedBackgroundModal').modal('hide')
+            
+            console.log('Bug-mapped background cleared for block', blockId)
+        })
+        
+        $('#cancelBugMappedBackground').click(function() {
+            // Just close the bug-mapped background modal without saving
+            $('#bugMappedBackgroundModal').modal('hide')
+            console.log('Bug-mapped background dialog cancelled')
+        })
     })
 </script>
 

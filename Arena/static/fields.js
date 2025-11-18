@@ -40,6 +40,10 @@ class MultiSelectField extends Field {
       return
     }
     let that = this
+    that.obj.children('option').each(function (i) {
+      this.selected = false // Clear all existing selections
+    })
+    // Set only the new values
     values.forEach((v) => {
       that.obj.children('option').each(function (i) {
         if (this.value === v) {
@@ -49,6 +53,23 @@ class MultiSelectField extends Field {
     })
     that.obj.bsMultiSelect("UpdateData")
     that.obj.trigger('change')
+  }
+}
+class BugMappedBackgroundField extends Field {
+  get value() {
+    try {
+      const val = super.value
+      return val ? JSON.parse(val) : {}
+    } catch (e) {
+      return {}
+    }
+  }
+  set value(mappings) {
+    if (typeof mappings === 'object' && mappings !== null) {
+      super.value = JSON.stringify(mappings)
+    } else {
+      super.value = '{}'
+    }
   }
 }
 
@@ -189,7 +210,18 @@ class Block {
     let block = {}
     let fields = this.getFields()
     for (const [name, field] of Object.entries(fields)) {
-      block[name] = field.value
+      // Only include main_bug if there are multiple bug types and it's been selected
+      if (name === 'main_bug') {
+        const bugTypes = fields.bug_types.value || []
+        const mainBugValue = field.value
+        
+        // Only save main_bug if: 1. There are 2 or more bug types, AND : 2. A main bug has been explicitly selected (not empty/default)
+        if (bugTypes.length >= 2 && mainBugValue && mainBugValue !== 'dummy' && mainBugValue !== '') {
+          block[name] = mainBugValue
+        }
+      } else {
+        block[name] = field.value
+      }
       // if (name === 'reward_bugs' && !field.value) {
       //   block[name] = fields.bug_types.value
       // }
@@ -242,7 +274,9 @@ const blockFields = {
     reward_any_touch_prob: new FieldObject('rewardAnyTouchProb', NumericalField),
     bug_types: new FieldObject('bugTypeSelect', MultiSelectField),
     reward_bugs: new FieldObject('rewardBugSelect', MultiSelectField, {}),
+    main_bug: new FieldObject('mainBugSelect', Field),
     background_color: new FieldObject('backgroundColor', Field),
+    bug_mapped_background: new FieldObject('bugMappedBackground', BugMappedBackgroundField),
     accelerate_multiplier: new FieldObject('accelerateMultiplier', NumericalField),
     holes_height_scale: new FieldObject('holesHeight', NumericalField),
     circle_height_scale: new FieldObject('circleHeight', NumericalField),

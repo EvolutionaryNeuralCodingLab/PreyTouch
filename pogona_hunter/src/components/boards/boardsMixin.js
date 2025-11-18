@@ -21,6 +21,7 @@ export default {
         bugSize: 0, // if 0 config default for bug will be used
         bloodDuration: 2000,
         backgroundColor: '#e8eaf6',
+        bugMappedBackground: {},
         rewardAnyTouchProb: 0,
         accelerateMultiplier: 3, // times to increase bug speed in tongue detection
         isKillingAllByOneHit: process.env.IS_KILLING_ALL_BY_ONE_HIT, // if true, all bugs will disapear when one is hit successfully
@@ -56,7 +57,7 @@ export default {
       },
       'cmd/visual_app/init_bugs': (options) => {
         options = JSON.parse(options)
-        console.log(options)
+        console.log('Received init_bugs options:', options)
         // this.$socketClient.publish('cmd/visual_app/console', 'Trial started')
         Object.assign(this.bugsSettings, options)
         this.$store.commit('reset_score')
@@ -112,6 +113,9 @@ export default {
     })
   },
   computed: {
+    isSplitBugsView: function () {
+      return this.bugsSettings.isSplitBugsView && this.bugsSettings.numOfBugs > 1
+    },
     currentBugType: function () {
       let bug = this.$refs.bugChild[0]
       return bug.currentBugType
@@ -127,7 +131,7 @@ export default {
         this.startLogBugTrajectory()
       }
       this.initDrawing()
-      this.drawSquareForPhotoDiode()
+      // Note: drawSquareForPhotoDiode is called after initDrawing in each board's implementation
       if (this.isSplitBugsView) {
         // inflate the number of bugs to be equal to the number of bug types
        const baseType = this.bugsSettings.bugTypes[0]
@@ -386,12 +390,82 @@ export default {
       this.bugTrajectoryLog = []
       console.log('trajectory log ended')
     },
+    getBugMappedBackgroundColor(bugType) {
+      // Get background color for a specific bug type
+      if (!this.bugsSettings.bugMappedBackground || !this.bugsSettings.bugMappedBackground[bugType]) {
+        return this.bugsSettings.backgroundColor // fallback to default
+      }
+
+      return this.bugsSettings.bugMappedBackground[bugType]
+    },
+    getCurrentBackgroundColor() {
+      // For single bug trials, return the background color of the first bug
+      if (!this.bugsSettings.bugMappedBackground) {
+        return this.bugsSettings.backgroundColor
+      }
+
+      // Use bug types from settings since bug components might not be ready yet
+      if (this.bugsSettings.bugTypes && this.bugsSettings.bugTypes.length > 0) {
+        return this.getBugMappedBackgroundColor(this.bugsSettings.bugTypes[0])
+      }
+
+      return this.bugsSettings.backgroundColor
+    },
+    drawSplitBackground() {
+      // Draw split background for mirror bugs view
+      const canvas = document.getElementById('backgroundCanvas')
+      const ctx = canvas.getContext('2d')
+      const canvasWidth = canvas.width
+      const canvasHeight = canvas.height
+
+      // Clear the canvas first
+      ctx.clearRect(0, 0, canvasWidth, canvasHeight)
+
+      if (!this.bugsSettings.bugMappedBackground || !this.bugsSettings.bugTypes || this.bugsSettings.bugTypes.length < 2) {
+        // Fallback to solid background
+        ctx.fillStyle = this.getCurrentBackgroundColor()
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight)
+        return
+      }
+
+      // Get colors for each bug type
+      const leftBugType = this.bugsSettings.bugTypes[0]
+      const rightBugType = this.bugsSettings.bugTypes[1]
+
+      // Get individual colors for each bug type
+      const leftColor = this.getBugMappedBackgroundColor(leftBugType)
+      const rightColor = this.getBugMappedBackgroundColor(rightBugType)
+
+      // Draw left half
+      ctx.fillStyle = leftColor
+      ctx.fillRect(0, 0, canvasWidth / 2, canvasHeight)
+
+      // Draw right half
+      ctx.fillStyle = rightColor
+      ctx.fillRect(canvasWidth / 2, 0, canvasWidth / 2, canvasHeight)
+    },
+    drawSolidBackground() {
+      // Draw solid background for single bug or regular view
+      const canvas = document.getElementById('backgroundCanvas')
+      const ctx = canvas.getContext('2d')
+
+      const color = this.getCurrentBackgroundColor()
+      ctx.fillStyle = color
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+    },
     drawSquareForPhotoDiode: function () {
       const canvas = document.getElementById('backgroundCanvas')
       const ctx = canvas.getContext('2d')
+
+      const imageData = ctx.getImageData(0, 0, 50, 50)  // Save the current background in that area
+
+      // Draw black square
+      ctx.fillStyle = 'black'
       ctx.fillRect(0, 0, 50, 50) // Draws a 100x100 black square at (0, 0)
+
+      // Restore the original background after 100ms
       let squareTimeout = setTimeout(() => {
-        ctx.clearRect(0, 0, 50, 50)
+        ctx.putImageData(imageData, 0, 0)
         clearTimeout(squareTimeout)
       }, 100)
     }

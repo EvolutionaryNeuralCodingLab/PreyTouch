@@ -88,11 +88,21 @@ export default {
   },
   methods: {
     initDrawing() {
+      // Draw the background first
+      if (this.isSplitBugsView && this.bugsSettings.bugMappedBackground) {
+        this.drawSplitBackground()
+      } else {
+        this.drawSolidBackground()
+      }
+
+      // Flash photodiode square at trial start
+      this.drawSquareForPhotoDiode()
+
+      // Then draw the holes
       let image = new Image()
       let canvas = document.getElementById('backgroundCanvas')
       let ctx = canvas.getContext('2d')
       let [holeW, holeH] = this.bugsSettings.holeSize
-      // let that = this
       image.src = require('@/assets/hole2.png')
 
       image.onload = () => {
@@ -103,11 +113,15 @@ export default {
       }
     },
     exitHolePos: function (bugId) {
+      let exitHole = this.bugsSettings.exitHole
       if (this.isSplitBugsView) {
-        const exit = this.mirrorBugsProps[bugId]['exitHole']
-        return this.holesPositions[exit]
+        const exit = this.mirrorBugsProps[bugId]
+        if (!exit) {
+          console.error('No exit found for bugId', bugId, this.mirrorBugsProps)
+        }
+        exitHole = exit['exitHole'] || exitHole
       }
-      const exitHole = this.bugsSettings.exitHole
+
       return this.holesPositions[exitHole]
     },
     entranceHolePos: function (bugId) {
@@ -124,6 +138,21 @@ export default {
         exit_hole_pos: this.exitHolePos,
         canvas_size: [this.canvas.width, this.canvas.height]
       }
+
+      // Add bug-mapped background information
+      if (this.bugsSettings.bugMappedBackground) {
+        d['bug_mapped_background'] = this.bugsSettings.bugMappedBackground
+        d['is_split_background'] = this.isSplitBugsView
+        if (this.isSplitBugsView && this.$refs.bugChild && this.$refs.bugChild.length >= 2) {
+          d['background_colors'] = {
+            left: this.getBugMappedBackgroundColor(this.$refs.bugChild[0].currentBugType),
+            right: this.getBugMappedBackgroundColor(this.$refs.bugChild[1].currentBugType)
+          }
+        } else if (this.$refs.bugChild && this.$refs.bugChild.length > 0) {
+          d['background_color'] = this.getBugMappedBackgroundColor(this.$refs.bugChild[0].currentBugType)
+        }
+      }
+
       let bug = this.$refs.bugChild[0]
       if (bug.isMoveInCircles) {
         d['circle_radius'] = bug.r
