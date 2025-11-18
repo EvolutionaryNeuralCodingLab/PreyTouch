@@ -76,6 +76,7 @@ def index():
                            extra_time_recording=config.EXTRA_TIME_RECORDING, feeders=feeders, configurations=confs,
                            is_light_stim=config.LIGHT_STIM_SERIAL is not None, is_cam_trigger=is_cam_trigger,
                            summary_animal_ids=summary_animal_ids, is_log_file=Path(config.LOGGER_FILEPATH).exists(),
+                           tunnel_assets=list_tunnel_assets(),
                            acquire_stop={'num_frames': 'Num Frames', 'rec_time': 'Record Time [sec]'})
 
 
@@ -609,6 +610,19 @@ def list_media():
         if f.suffix.lower() in ['.png', '.jpg', '.jpeg', '.bmp', '.avi', '.mp4', '.mpg', '.mov']:
             media_files.append(f.name)
     return media_files
+
+
+def list_tunnel_assets():
+    assets_dir = Path('../pogona_hunter/src/assets/curtains')
+    if not assets_dir.exists():
+        return []
+    allowed_exts = {'.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp'}
+    assets = []
+    for f in assets_dir.rglob('*'):
+        if f.is_file() and f.suffix.lower() in allowed_exts:
+            rel_path = f.relative_to(assets_dir).as_posix()
+            assets.append(f'@/assets/curtains/{rel_path}')
+    return sorted(assets)
 
 
 @app.route('/get_audio_files')

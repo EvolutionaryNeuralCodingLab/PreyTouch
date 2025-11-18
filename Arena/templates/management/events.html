@@ -211,6 +211,18 @@
             backgroundColor: blockValues.background_color,
             exitHole: blockValues.exit_hole
         }
+        if (blockValues.tunnel_food_image) {
+            payload.tunnelFoodImage = blockValues.tunnel_food_image
+        }
+        if (blockValues.tunnel_food_rotation !== undefined && blockValues.tunnel_food_rotation !== null && blockValues.tunnel_food_rotation !== '') {
+            payload.tunnelFoodRotation = blockValues.tunnel_food_rotation
+        }
+        if (blockValues.tunnel_food_scale !== undefined && blockValues.tunnel_food_scale !== null && blockValues.tunnel_food_scale !== '') {
+            payload.tunnelFoodScale = blockValues.tunnel_food_scale
+        }
+        if (blockValues.tunnel_food_opacity !== undefined && blockValues.tunnel_food_opacity !== null && blockValues.tunnel_food_opacity !== '') {
+            payload.tunnelFoodOpacity = blockValues.tunnel_food_opacity
+        }
         if (!$("#isDefaultBugSize1").is(':checked')) {
             Object.assign(payload, {bugSize: Number($("#bugSize1").val())})
         }

@@ -1,6 +1,11 @@
 import {randomRange, getKeyWithMinFirstArrayValue} from '../../js/helpers'
 import { v4 as uuidv4 } from 'uuid'
 
+const parseConfigNumber = (value, fallback) => {
+  const parsed = parseFloat(value)
+  return Number.isNaN(parsed) ? fallback : parsed
+}
+
 export default {
   data() {
     return {
@@ -17,12 +22,17 @@ export default {
         bugTypes: process.env.BUG_TYPES || ['cockroach', 'green_beetle'],
         rewardBugs: process.env.REWARD_BUGS || 'cockroach',
         movementType: process.env.MOVEMENT_TYPE || 'circle',
+        tunnelFoodImage: process.env.TUNNEL_FOOD_IMAGE || '@/assets/curtains/Parsley.png',
+        tunnelFoodRotation: parseConfigNumber(process.env.TUNNEL_FOOD_ROTATION, 60),
+        tunnelFoodScale: parseConfigNumber(process.env.TUNNEL_FOOD_SCALE, 0.75),
+        tunnelFoodOpacity: parseConfigNumber(process.env.TUNNEL_FOOD_OPACITY, 1),
         speed: 0, // if 0 config default for bug will be used
         bugSize: 0, // if 0 config default for bug will be used
         bloodDuration: 2000,
         backgroundColor: '#e8eaf6',
         rewardAnyTouchProb: 0,
         accelerateMultiplier: 3, // times to increase bug speed in tongue detection
+        preTunnelSpeedMultiplier: 1, // multiplier for tunnel entry acceleration
         isKillingAllByOneHit: process.env.IS_KILLING_ALL_BY_ONE_HIT, // if true, all bugs will disapear when one is hit successfully
         splitRandomizeTiming: process.env.SPLIT_RANDOMIZE_TIMING // if 1, randomize timing of bugs appearance
       },
