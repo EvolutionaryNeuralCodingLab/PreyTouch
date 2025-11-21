@@ -336,12 +336,7 @@ class Block:
         # check engagement of the animal
         self.check_engagement_level()
         
-        # start cameras for experiment with their predictors and set the output dir for videos
-        pose_required = self._pose_gate_requested()
-        if pose_required:
-            self.cache.set(cc.POSE_EXPORT_ON, True, timeout=self.overall_block_duration)
-
-        self.turn_cameras('on', pose_required=pose_required)
+        self.turn_cameras('on')
         if config.CAM_TRIGGER_DELAY_AROUND_BLOCK:
             self.periphery.cam_trigger(0)  # turn off trigger
             self.logger.info('trigger is off')
