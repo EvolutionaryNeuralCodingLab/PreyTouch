@@ -561,6 +561,17 @@
                 } else {
                     $(`#accelerateMultiplierDiv${i}`).hide()
                 }
+                if ($movementType.val() === 'rect_tunnel') {
+                    $(`#tunnelFoodImageDiv${i}`).show()
+                    $(`#tunnelFoodRotationDiv${i}`).show()
+                    $(`#tunnelFoodScaleDiv${i}`).show()
+                    $(`#tunnelFoodOpacityDiv${i}`).show()
+                } else {
+                    $(`#tunnelFoodImageDiv${i}`).hide()
+                    $(`#tunnelFoodRotationDiv${i}`).hide()
+                    $(`#tunnelFoodScaleDiv${i}`).hide()
+                    $(`#tunnelFoodOpacityDiv${i}`).hide()
+                }
             }
             ).trigger('change')
 

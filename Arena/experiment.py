@@ -232,8 +232,10 @@ class Block:
     reward_any_touch_prob: float = 0.0
     agent_label: str = None
     accelerate_multiplier: float = 3.0
-    # is_gated: bool = False
-    trial_gate: Optional[Dict] = None
+    tunnel_food_image: str = ''
+    tunnel_food_rotation: float = None
+    tunnel_food_scale: float = None
+    tunnel_food_opacity: float = None
 
     media_url: str = ''
 
@@ -263,6 +265,22 @@ class Block:
         elif not self.reward_bugs:
             self.logger.debug(f'No reward bugs were given, using all bug types as reward; {self.reward_bugs}')
             self.reward_bugs = self.bug_types
+        if isinstance(self.tunnel_food_rotation, str):
+            try:
+                self.tunnel_food_rotation = float(self.tunnel_food_rotation)
+            except ValueError:
+                self.tunnel_food_rotation = None
+        if isinstance(self.tunnel_food_scale, str):
+            try:
+                self.tunnel_food_scale = float(self.tunnel_food_scale)
+            except ValueError:
+                self.tunnel_food_scale = None
+        if isinstance(self.tunnel_food_opacity, str):
+            try:
+                self.tunnel_food_opacity = float(self.tunnel_food_opacity)
+            except ValueError:
+                self.tunnel_food_opacity = None
+
         if self.is_continuous_blank:
             self.num_trials, self.iti = 1, 0
             self.trial_duration = config.MAX_DURATION_CONT_BLANK
@@ -696,7 +714,7 @@ class Block:
 
     @property
     def bug_options(self) -> dict:
-        return {
+        options = {
             'numOfBugs': self.num_of_bugs,
             'isSplitBugsView': self.is_split_bugs_view,
             'splitRandomizeTiming': self.split_randomize_timing,
@@ -720,6 +738,15 @@ class Block:
             'circleRadiusScale': self.circle_radius_scale,
             'accelerateMultiplier': self.accelerate_multiplier
         }
+        if self.tunnel_food_image:
+            options['tunnelFoodImage'] = self.tunnel_food_image
+        if self.tunnel_food_rotation is not None:
+            options['tunnelFoodRotation'] = self.tunnel_food_rotation
+        if self.tunnel_food_scale is not None:
+            options['tunnelFoodScale'] = self.tunnel_food_scale
+        if self.tunnel_food_opacity is not None:
+            options['tunnelFoodOpacity'] = self.tunnel_food_opacity
+        return options
 
     @property
     def block_summary(self):
