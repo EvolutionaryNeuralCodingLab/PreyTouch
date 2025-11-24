@@ -562,15 +562,15 @@
                     $(`#accelerateMultiplierDiv${i}`).hide()
                 }
                 if ($movementType.val() === 'rect_tunnel') {
-                    $(`#tunnelFoodImageDiv${i}`).show()
-                    $(`#tunnelFoodRotationDiv${i}`).show()
-                    $(`#tunnelFoodScaleDiv${i}`).show()
-                    $(`#tunnelFoodOpacityDiv${i}`).show()
+                    $(`#tunnelImageDiv${i}`).show()
+                    $(`#tunnelRotationDiv${i}`).show()
+                    $(`#tunnelScaleDiv${i}`).show()
+                    $(`#tunnelOpacityDiv${i}`).show()
                 } else {
-                    $(`#tunnelFoodImageDiv${i}`).hide()
-                    $(`#tunnelFoodRotationDiv${i}`).hide()
-                    $(`#tunnelFoodScaleDiv${i}`).hide()
-                    $(`#tunnelFoodOpacityDiv${i}`).hide()
+                    $(`#tunnelImageDiv${i}`).hide()
+                    $(`#tunnelRotationDiv${i}`).hide()
+                    $(`#tunnelScaleDiv${i}`).hide()
+                    $(`#tunnelOpacityDiv${i}`).hide()
                 }
             }
             ).trigger('change')

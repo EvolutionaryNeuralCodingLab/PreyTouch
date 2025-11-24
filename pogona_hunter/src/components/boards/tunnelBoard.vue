@@ -30,7 +30,7 @@ import tunnelBug from '../bugs/tunnelBug.vue'
 import {getKeyWithMinFirstArrayValue} from '../../js/helpers'
 import defaultTunnelFood from '@/assets/curtains/Parsley.png'
 
-const tunnelFoodAssetContext = require.context('@/assets', true, /\.(png|jpe?g|gif|svg|webp)$/)
+const tunnelAssetContext = require.context('@/assets', true, /\.(png|jpe?g|gif|svg|webp)$/)
 
 const isAbsoluteSrc = (value) => /^(?:https?:)?\/\//i.test(value) || value.startsWith('/') || value.startsWith('data:')
 
@@ -57,11 +57,11 @@ const resolveTunnelFoodAsset = (value) => {
   }
   const normalized = normalizeAssetPath(value)
   try {
-    if (normalized && tunnelFoodAssetContext.keys().includes(normalized)) {
-      return tunnelFoodAssetContext(normalized)
+    if (normalized && tunnelAssetContext.keys().includes(normalized)) {
+      return tunnelAssetContext(normalized)
     }
   } catch (err) {
-    console.warn(`[tunnelBoard] Unable to resolve tunnel food asset "${value}": ${err.message}`)
+    console.warn(`[tunnelBoard] Unable to resolve tunnel asset "${value}": ${err.message}`)
   }
   return null
 }
@@ -80,7 +80,7 @@ export default {
         circleHeightScale: 0.5,
         circleRadiusScale: 0.2,
         preTunnelSpeedMultiplier: 1.5,
-        tunnelFoodOpacity: 1
+        tunnelOpacity: 1
       },
       tunnelImagePos: {
         x: 0,
@@ -149,7 +149,7 @@ export default {
       // then draw the holes
       this.drawHoles()
       
-     
+      
       // // Draw the background first
       // if (this.isSplitBugsView && this.bugsSettings.bugMappedBackground) {
       //   this.drawSplitBackground()
@@ -189,17 +189,17 @@ export default {
 
         // Scale the image to fit within the canvas while maintaining aspect ratio
         const baseScale = Math.min(canvas.width / img.width, canvas.height / img.height)
-        const configuredScale = parseFloat(this.bugsSettings.tunnelFoodScale)
+        const configuredScale = parseFloat(this.bugsSettings.tunnelScale)
         const scaleMultiplier = Number.isFinite(configuredScale) && configuredScale > 0 ? configuredScale : 0.75
         const finalScale = baseScale * scaleMultiplier
         ctx.scale(finalScale, finalScale)
 
         // Rotate the tunnel reward image using configured angle (degrees)
-        const configuredRotation = parseFloat(this.bugsSettings.tunnelFoodRotation)
+        const configuredRotation = parseFloat(this.bugsSettings.tunnelRotation)
         const rotationRad = Number.isFinite(configuredRotation) ? configuredRotation * (Math.PI / 180) : Math.PI / 3
         ctx.rotate(rotationRad)
 
-        const configuredOpacity = parseFloat(this.bugsSettings.tunnelFoodOpacity)
+        const configuredOpacity = parseFloat(this.bugsSettings.tunnelOpacity)
         const imageOpacity = Number.isFinite(configuredOpacity) ? Math.min(Math.max(configuredOpacity, 0), 1) : 1
         ctx.globalAlpha = imageOpacity
         
@@ -207,7 +207,7 @@ export default {
         ctx.restore()
         this.imageLoaded = true
       }
-      const configuredImage = this.bugsSettings.tunnelFoodImage || process.env.TUNNEL_FOOD_IMAGE || null
+      const configuredImage = this.bugsSettings.tunnelimage || process.env.TUNNEL_FOOD_IMAGE || null
       const resolvedAsset = resolveTunnelFoodAsset(configuredImage) || defaultTunnelFood
       img.src = resolvedAsset
     },
@@ -273,13 +273,13 @@ export default {
       // Check if click is within the tunnel image bounds
       const localX = x - this.tunnelImagePos.x
       const localY = y - this.tunnelImagePos.y
-      if (localX < 0 || localY < 0 || localX >= this.tunnelWidth || localY >= this.tunnelHeight) {
+      if (localX < 0 || localY < 0 || localX >= this.tunnelWidth + 10 || localY >= this.tunnelHeight + 10) {
         return false
       }
 
-      if (!this.isOpaqueTunnelPixel(localX, localY)) {
-        return false
-      }
+      // if (!this.isOpaqueTunnelPixel(localX, localY)) {
+      //   return false
+      // }
 
       console.log('Persil image clicked, hiding image')
       this.hideImage()

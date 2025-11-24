@@ -1,6 +1,9 @@
 import {randomRange, getKeyWithMinFirstArrayValue} from '../../js/helpers'
 import { v4 as uuidv4 } from 'uuid'
 
+const MIN_CANVAS_WIDTH = 1900
+const MIN_CANVAS_HEIGHT = 1700
+
 const parseConfigNumber = (value, fallback) => {
   const parsed = parseFloat(value)
   return Number.isNaN(parsed) ? fallback : parsed
@@ -22,10 +25,10 @@ export default {
         bugTypes: process.env.BUG_TYPES || ['cockroach', 'green_beetle'],
         rewardBugs: process.env.REWARD_BUGS || 'cockroach',
         movementType: process.env.MOVEMENT_TYPE || 'circle',
-        tunnelFoodImage: process.env.TUNNEL_FOOD_IMAGE || '@/assets/curtains/Parsley.png',
-        tunnelFoodRotation: parseConfigNumber(process.env.TUNNEL_FOOD_ROTATION, 60),
-        tunnelFoodScale: parseConfigNumber(process.env.TUNNEL_FOOD_SCALE, 0.75),
-        tunnelFoodOpacity: parseConfigNumber(process.env.TUNNEL_FOOD_OPACITY, 1),
+        tunnelimage: process.env.TUNNEL_FOOD_IMAGE || '@/assets/curtains/Parsley.png',
+        tunnelRotation: parseConfigNumber(process.env.TUNNEL_FOOD_ROTATION, 60),
+        tunnelScale: parseConfigNumber(process.env.TUNNEL_FOOD_SCALE, 0.75),
+        tunnelOpacity: parseConfigNumber(process.env.TUNNEL_FOOD_OPACITY, 1),
         speed: 0, // if 0 config default for bug will be used
         bugSize: 0, // if 0 config default for bug will be used
         bloodDuration: 2000,
@@ -45,8 +48,8 @@ export default {
       afterRewardTimeout: 40 * 1000,
       touchesCounter: 0,
       canvasParams: {
-        width: window.innerWidth,
-        height: window.innerHeight
+        width: Math.max(window.innerWidth, MIN_CANVAS_WIDTH),
+        height: Math.max(window.innerHeight, MIN_CANVAS_HEIGHT)
       },
       bugTrajectoryLog: [],
       trialData: {},

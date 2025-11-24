@@ -232,10 +232,10 @@ class Block:
     reward_any_touch_prob: float = 0.0
     agent_label: str = None
     accelerate_multiplier: float = 3.0
-    tunnel_food_image: str = ''
-    tunnel_food_rotation: float = None
-    tunnel_food_scale: float = None
-    tunnel_food_opacity: float = None
+    tunnel__image: str = ''
+    tunnel__rotation: float = None
+    tunnel__scale: float = None
+    tunnel__opacity: float = None
 
     media_url: str = ''
 
@@ -265,21 +265,21 @@ class Block:
         elif not self.reward_bugs:
             self.logger.debug(f'No reward bugs were given, using all bug types as reward; {self.reward_bugs}')
             self.reward_bugs = self.bug_types
-        if isinstance(self.tunnel_food_rotation, str):
+        if isinstance(self.tunnel__rotation, str):
             try:
-                self.tunnel_food_rotation = float(self.tunnel_food_rotation)
+                self.tunnel__rotation = float(self.tunnel__rotation)
             except ValueError:
-                self.tunnel_food_rotation = None
-        if isinstance(self.tunnel_food_scale, str):
+                self.tunnel__rotation = None
+        if isinstance(self.tunnel__scale, str):
             try:
-                self.tunnel_food_scale = float(self.tunnel_food_scale)
+                self.tunnel__scale = float(self.tunnel__scale)
             except ValueError:
-                self.tunnel_food_scale = None
-        if isinstance(self.tunnel_food_opacity, str):
+                self.tunnel__scale = None
+        if isinstance(self.tunnel__opacity, str):
             try:
-                self.tunnel_food_opacity = float(self.tunnel_food_opacity)
+                self.tunnel__opacity = float(self.tunnel__opacity)
             except ValueError:
-                self.tunnel_food_opacity = None
+                self.tunnel__opacity = None
 
         if self.is_continuous_blank:
             self.num_trials, self.iti = 1, 0
@@ -738,14 +738,14 @@ class Block:
             'circleRadiusScale': self.circle_radius_scale,
             'accelerateMultiplier': self.accelerate_multiplier
         }
-        if self.tunnel_food_image:
-            options['tunnelFoodImage'] = self.tunnel_food_image
-        if self.tunnel_food_rotation is not None:
-            options['tunnelFoodRotation'] = self.tunnel_food_rotation
-        if self.tunnel_food_scale is not None:
-            options['tunnelFoodScale'] = self.tunnel_food_scale
-        if self.tunnel_food_opacity is not None:
-            options['tunnelFoodOpacity'] = self.tunnel_food_opacity
+        if self.tunnel__image:
+            options['tunnelimage'] = self.tunnel__image
+        if self.tunnel__rotation is not None:
+            options['tunnelRotation'] = self.tunnel__rotation
+        if self.tunnel__scale is not None:
+            options['tunnelScale'] = self.tunnel__scale
+        if self.tunnel__opacity is not None:
+            options['tunnelOpacity'] = self.tunnel__opacity
         return options
 
     @property

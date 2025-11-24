@@ -263,10 +263,10 @@
                         </div>
                     </div>
 
-                    <div class="form-group row pr-3 bugs-options{{i}}" id="tunnelFoodImageDiv{{i}}" style="display: none;">
-                        <label for="tunnelFoodImage{{i}}" class="col col-form-label">Tunnel Food Image</label>
+                    <div class="form-group row pr-3 bugs-options{{i}}" id="tunnelImageDiv{{i}}" style="display: none;">
+                        <label for="tunnelimage{{i}}" class="col col-form-label">Tunnel Image</label>
                         <div class="col-sm-5">
-                            <select class="form-control" id="tunnelFoodImage{{i}}">
+                            <select class="form-control" id="tunnelimage{{i}}">
                                 <option value="">Default (Parsley)</option>
                                 {% for asset in tunnel_assets %}
                                 <option value="{{ asset }}">{{ asset }}</option>
@@ -275,57 +275,24 @@
                         </div>
                     </div>
 
-                    <div class="form-group row pr-3 bugs-options{{i}}" id="tunnelFoodRotationDiv{{i}}" style="display: none;">
-                        <label for="tunnelFoodRotation{{i}}" class="col col-form-label">Tunnel Rotation (deg)</label>
+                    <div class="form-group row pr-3 bugs-options{{i}}" id="tunnelRotationDiv{{i}}" style="display: none;">
+                        <label for="tunnelRotation{{i}}" class="col col-form-label">Tunnel Rotation (deg)</label>
                         <div class="col-sm-5">
-                            <input type="number" class="form-control" id="tunnelFoodRotation{{i}}" value="60" step="1">
+                            <input type="number" class="form-control" id="tunnelRotation{{i}}" value="60" step="1">
                         </div>
                     </div>
 
-                    <div class="form-group row pr-3 bugs-options{{i}}" id="tunnelFoodScaleDiv{{i}}" style="display: none;">
-                        <label for="tunnelFoodScale{{i}}" class="col col-form-label">Tunnel Scale</label>
+                    <div class="form-group row pr-3 bugs-options{{i}}" id="tunnelScaleDiv{{i}}" style="display: none;">
+                        <label for="tunnelScale{{i}}" class="col col-form-label">Tunnel Scale</label>
                         <div class="col-sm-5">
-                            <input type="number" class="form-control" id="tunnelFoodScale{{i}}" value="0.75" step="0.05" min="0.1">
+                            <input type="number" class="form-control" id="tunnelScale{{i}}" value="0.75" step="0.05" min="0.1">
                         </div>
                     </div>
 
-                    <div class="form-group row pr-3 bugs-options{{i}}" id="tunnelFoodOpacityDiv{{i}}" style="display: none;">
-                        <label for="tunnelFoodOpacity{{i}}" class="col col-form-label">Tunnel Opacity (0-1)</label>
+                    <div class="form-group row pr-3 bugs-options{{i}}" id="tunnelOpacityDiv{{i}}" style="display: none;">
+                        <label for="tunnelOpacity{{i}}" class="col col-form-label">Tunnel Opacity (0-1)</label>
                         <div class="col-sm-5">
-                            <input type="number" class="form-control" id="tunnelFoodOpacity{{i}}" value="1" step="0.05" min="0" max="1">
-                        </div>
-                    </div>
-
-                    <div class="form-group row pr-3 bugs-options{{i}}" id="tunnelFoodImageDiv{{i}}" style="display: none;">
-                        <label for="tunnelFoodImage{{i}}" class="col col-form-label">Tunnel Food Image</label>
-                        <div class="col-sm-5">
-                            <select class="form-control" id="tunnelFoodImage{{i}}">
-                                <option value="">Default (Parsley)</option>
-                                {% for asset in tunnel_assets %}
-                                <option value="{{ asset }}">{{ asset }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="form-group row pr-3 bugs-options{{i}}" id="tunnelFoodRotationDiv{{i}}" style="display: none;">
-                        <label for="tunnelFoodRotation{{i}}" class="col col-form-label">Tunnel Rotation (deg)</label>
-                        <div class="col-sm-5">
-                            <input type="number" class="form-control" id="tunnelFoodRotation{{i}}" value="60" step="1">
-                        </div>
-                    </div>
-
-                    <div class="form-group row pr-3 bugs-options{{i}}" id="tunnelFoodScaleDiv{{i}}" style="display: none;">
-                        <label for="tunnelFoodScale{{i}}" class="col col-form-label">Tunnel Scale</label>
-                        <div class="col-sm-5">
-                            <input type="number" class="form-control" id="tunnelFoodScale{{i}}" value="0.75" step="0.05" min="0.1">
-                        </div>
-                    </div>
-
-                    <div class="form-group row pr-3 bugs-options{{i}}" id="tunnelFoodOpacityDiv{{i}}" style="display: none;">
-                        <label for="tunnelFoodOpacity{{i}}" class="col col-form-label">Tunnel Opacity (0-1)</label>
-                        <div class="col-sm-5">
-                            <input type="number" class="form-control" id="tunnelFoodOpacity{{i}}" value="1" step="0.05" min="0" max="1">
+                            <input type="number" class="form-control" id="tunnelOpacity{{i}}" value="1" step="0.05" min="0" max="1">
                         </div>
                     </div>
 
