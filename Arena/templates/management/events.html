@@ -213,17 +213,17 @@
             exitHole: blockValues.exit_hole,
             bugMappedBackground: blockValues.bug_mapped_background,
         }
-        if (blockValues.tunnel__image) {
-            payload.tunnelimage = blockValues.tunnel__image
+        if (blockValues.tunnel_image) {
+            payload.tunnelImage = blockValues.tunnel_image
         }
-        if (blockValues.tunnel__rotation !== undefined && blockValues.tunnel__rotation !== null && blockValues.tunnel__rotation !== '') {
-            payload.tunnelRotation = blockValues.tunnel__rotation
+        if (blockValues.tunnel_rotation !== undefined && blockValues.tunnel_rotation !== null && blockValues.tunnel_rotation !== '') {
+            payload.tunnelRotation = blockValues.tunnel_rotation
         }
-        if (blockValues.tunnel__scale !== undefined && blockValues.tunnel__scale !== null && blockValues.tunnel__scale !== '') {
-            payload.tunnelScale = blockValues.tunnel__scale
+        if (blockValues.tunnel_scale !== undefined && blockValues.tunnel_scale !== null && blockValues.tunnel_scale !== '') {
+            payload.tunnelScale = blockValues.tunnel_scale
         }
-        if (blockValues.tunnel__opacity !== undefined && blockValues.tunnel__opacity !== null && blockValues.tunnel__opacity !== '') {
-            payload.tunnelOpacity = blockValues.tunnel__opacity
+        if (blockValues.tunnel_opacity !== undefined && blockValues.tunnel_opacity !== null && blockValues.tunnel_opacity !== '') {
+            payload.tunnelOpacity = blockValues.tunnel_opacity
         }
         if (!$("#isDefaultBugSize1").is(':checked')) {
             Object.assign(payload, {bugSize: Number($("#bugSize1").val())})

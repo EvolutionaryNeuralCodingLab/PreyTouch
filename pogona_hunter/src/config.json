@@ -168,12 +168,14 @@
     "jump_up": "jump up",
     "accelerate": "accelerate",
     "rect_tunnel": "rect tunnel",
+    "pt_tunnel": "pb tunnel",
     "circle_accelerate": "circle accelerate",
     "circle_flip": "circle flip"
   },
   "boards": {
     "holes": ["random", "random_speeds", "circle", "low_horizontal", "low_horizontal_noise", "jump_up", "accelerate", "random_low_horizontal", "static", "circle_accelerate", "circle_flip"],
-    "tunnel": ["rect_tunnel"]
+    "tunnel": ["rect_tunnel"],
+    "pb_tunnel": ["pt_tunnel"]
   },
   "targetDrifts": {
     "leftBottom": {

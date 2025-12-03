@@ -561,7 +561,7 @@
                 } else {
                     $(`#accelerateMultiplierDiv${i}`).hide()
                 }
-                if ($movementType.val() === 'rect_tunnel') {
+                if (['pt_tunnel'].indexOf($movementType.val()) !== -1) {
                     $(`#tunnelImageDiv${i}`).show()
                     $(`#tunnelRotationDiv${i}`).show()
                     $(`#tunnelScaleDiv${i}`).show()

@@ -1,14 +1,6 @@
 import {randomRange, getKeyWithMinFirstArrayValue} from '../../js/helpers'
 import { v4 as uuidv4 } from 'uuid'
 
-const MIN_CANVAS_WIDTH = 1900
-const MIN_CANVAS_HEIGHT = 1700
-
-const parseConfigNumber = (value, fallback) => {
-  const parsed = parseFloat(value)
-  return Number.isNaN(parsed) ? fallback : parsed
-}
-
 export default {
   data() {
     return {
@@ -25,10 +17,6 @@ export default {
         bugTypes: process.env.BUG_TYPES || ['cockroach', 'green_beetle'],
         rewardBugs: process.env.REWARD_BUGS || 'cockroach',
         movementType: process.env.MOVEMENT_TYPE || 'circle',
-        tunnelimage: process.env.TUNNEL_FOOD_IMAGE || '@/assets/curtains/Parsley.png',
-        tunnelRotation: parseConfigNumber(process.env.TUNNEL_FOOD_ROTATION, 60),
-        tunnelScale: parseConfigNumber(process.env.TUNNEL_FOOD_SCALE, 0.75),
-        tunnelOpacity: parseConfigNumber(process.env.TUNNEL_FOOD_OPACITY, 1),
         speed: 0, // if 0 config default for bug will be used
         bugSize: 0, // if 0 config default for bug will be used
         bloodDuration: 2000,
@@ -48,8 +36,8 @@ export default {
       afterRewardTimeout: 40 * 1000,
       touchesCounter: 0,
       canvasParams: {
-        width: Math.max(window.innerWidth, MIN_CANVAS_WIDTH),
-        height: Math.max(window.innerHeight, MIN_CANVAS_HEIGHT)
+        width: window.innerWidth,
+        height: window.innerHeight
       },
       bugTrajectoryLog: [],
       trialData: {},
@@ -191,6 +179,9 @@ export default {
         this.animationHandler = requestAnimationFrame(this.animate)
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
         this.$refs.bugChild.forEach(bug => bug.move(this.$refs.bugChild))
+        if (typeof this.onBoardAnimationFrame === 'function') {
+          this.onBoardAnimationFrame()
+        }
       } catch (e) {
         console.log(e)
         cancelAnimationFrame(this.animationHandler)
@@ -323,6 +314,12 @@ export default {
         end_time: endTime,
         bug_trajectory: this.bugTrajectoryLog,
         app_events: this.eventsLog
+      }
+      if (typeof this.collectBoardMetrics === 'function') {
+        const boardMetrics = this.collectBoardMetrics()
+        if (boardMetrics && typeof boardMetrics === 'object') {
+          Object.assign(payload, boardMetrics)
+        }
       }
       this.trialData = Object.assign(this.trialData, payload)
       this.$socketClient.set('IS_VISUAL_APP_ON', 0)
@@ -470,7 +467,7 @@ export default {
       const canvas = document.getElementById('backgroundCanvas')
       const ctx = canvas.getContext('2d')
 
-      const imageData = ctx.getImageData(0, 0, 50, 50)  // Save the current background in that area
+      const imageData = ctx.getImageData(0, 0, 50, 50) // Save the current background in that area
 
       // Draw black square
       ctx.fillStyle = 'black'
