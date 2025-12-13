@@ -132,7 +132,8 @@ export default {
         this.startLogBugTrajectory()
       }
       this.initDrawing()
-      // Note: drawSquareForPhotoDiode is called after initDrawing in each board's implementation
+      this.drawSquareForPhotoDiode()
+
       if (this.isSplitBugsView) {
         // inflate the number of bugs to be equal to the number of bug types
        const baseType = this.bugsSettings.bugTypes[0]
@@ -454,12 +455,12 @@ export default {
       ctx.fillStyle = rightColor
       ctx.fillRect(canvasWidth / 2, 0, canvasWidth / 2, canvasHeight)
     },
-    drawSolidBackground() {
+    drawSolidBackground(currentBugType) {
       // Draw solid background for single bug or regular view
       const canvas = document.getElementById('backgroundCanvas')
       const ctx = canvas.getContext('2d')
 
-      const color = this.getCurrentBackgroundColor()
+      const color = this.getBugMappedBackgroundColor(currentBugType)
       ctx.fillStyle = color
       ctx.fillRect(0, 0, canvas.width, canvas.height)
     },

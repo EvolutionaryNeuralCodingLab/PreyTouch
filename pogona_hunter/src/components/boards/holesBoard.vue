@@ -92,12 +92,11 @@ export default {
       if (this.isSplitBugsView && this.bugsSettings.bugMappedBackground) {
         this.drawSplitBackground()
       } else {
-        this.drawSolidBackground()
+        // send current bug type 
+        const currentBugType = this.$refs.bugChild[0].currentBugType
+        this.drawSolidBackground(currentBugType)
       }
-
-      // Flash photodiode square at trial start
-      this.drawSquareForPhotoDiode()
-
+      
       // Then draw the holes
       let image = new Image()
       let canvas = document.getElementById('backgroundCanvas')
