@@ -446,6 +446,22 @@ def capture():
     return Response('ok')
 
 
+@app.route('/timelapse_frame/<cam_name>', methods=['GET'])
+def timelapse_frame(cam_name):
+    if arena_mgr is None:
+        return Response('Arena manager is not running', status=503)
+    if cam_name not in arena_mgr.units:
+        return Response(f'Camera {cam_name} not found', status=404)
+    try:
+        img = arena_mgr.get_frame(cam_name)
+    except KeyError:
+        return Response(f'Camera {cam_name} has no shared frame available', status=404)
+    success, buffer = cv2.imencode('.jpg', img)
+    if not success:
+        return Response('Failed to encode frame', status=500)
+    return Response(buffer.tobytes(), mimetype='image/jpeg')
+
+
 @app.route('/run_calibration/<mode>', methods=['POST'])
 def run_calibration(mode):
     assert mode in ['undistort', 'realworld'], f'mode must be "undistort" or "realworld", received: {mode}'

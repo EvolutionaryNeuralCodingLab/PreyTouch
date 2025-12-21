@@ -186,6 +186,8 @@ LIGHTS_SUNSET = env('LIGHTS_SUNSET', '19:00', group='Scheduler', desc='Time to t
 DWH_COMMIT_TIME = env('DWH_COMMIT_TIME', '07:00', group='Scheduler', desc='Time of the day to run the commit to data warehouse', validator='hour_validator')
 STRIKE_ANALYSIS_TIME = env('STRIKE_ANALYSIS_TIME', '06:30', group='Scheduler', desc='Time of the day to run the strike analysis', validator='hour_validator')
 DAILY_SUMMARY_TIME = env('DAILY_SUMMARY_TIME', '20:00', group='Scheduler', desc='Time of the day to send the daily summary in telegram', validator='hour_validator')
+TIMELAPSE_DAILY_PUSH_TIME = env('TIMELAPSE_DAILY_PUSH_TIME', '09:00', group='Scheduler', desc='Time of the day to send the previous day timelapse video via telegram', validator='hour_validator')
+TIMELAPSE_DAILY_PUSH_ENABLE = env.bool('TIMELAPSE_DAILY_PUSH_ENABLE', True, group='Scheduler', desc='Enable daily telegram push of previous day timelapse videos')
 
 # Experiments
 CAM_TRIGGER_DELAY_AROUND_BLOCK = env.int('CAM_TRIGGER_DELAY_AROUND_BLOCK', 8, group='Experiments', desc='The trigger delay in seconds before and after a block in an experiment. If 0, no delay is used')
@@ -197,6 +199,7 @@ TIME_BETWEEN_BLOCKS = env.int('TIME_BETWEEN_BLOCKS', 300, group='Experiments', d
 EXPERIMENTS_TIMEOUT = env.int('EXPERIMENTS_TIMEOUT', 60 * 60, group='Experiments', desc='Timeout in seconds used by the cache for maximum experiment time')
 REWARD_TIMEOUT = env.int('REWARD_TIMEOUT', 10, group='Experiments', desc='Time in seconds to wait between rewards')
 MAX_DAILY_REWARD = env.int('MAX_DAILY_REWARD', 40, group='Experiments', desc='Max number of rewards per day')
+ALWAYS_REWARD_SKIP_EVERY_N = env.int('ALWAYS_REWARD_SKIP_EVERY_N', 0, group='Experiments', desc='Skip every Nth success in always-reward mode; set 0 to disable')
 MAX_DURATION_CONT_BLANK = env.int('MAX_DURATION_CONT_BLANK', 48*3600, group='Experiments', desc='Max duration in seconds of a blank continuous experiment')
 CHECK_ENGAGEMENT_HOURS = env.int('CHECK_ENGAGEMENT_SPAN', 0, group='Experiments', desc='Hours before to check engagement or whether there were any strikes. If there are no strikes in this time span, give reward. Setting 0 will disable this check.')
 CACHED_EXPERIMENTS_DIR = env('CACHED_EXPERIMENTS_DIR', 'cached_experiments', group='Experiments', desc='Folder name in the main Arena folder to store saved experiments')
@@ -251,5 +254,38 @@ PSYCHO_PYTHON_INTERPRETER = env('PSYCHO_PYTHON_INTERPRETER', None, group='Psycho
 # Lights Stimulation
 LIGHT_STIM_SERIAL = env('LIGHT_STIM_SERIAL', None, group='LightSTIM', desc='Serial number of the lightSTIM arduino')
 LIGHT_STIM_BAUD = env('LIGHT_STIM_BAUD', 115200, group='LightSTIM', desc='lightSTIM arduino baud rate')
+
+# Timelapse
+TIMELAPSE_ENABLE = env.bool('TIMELAPSE_ENABLE', True, group='Timelapse', desc='Enable the timelapse capture pipeline')
+TIMELAPSE_CAMERA_NAMES = env.list('TIMELAPSE_CAMERA_NAMES', ['top', 'back'], group='Timelapse', desc='List of camera names for timelapse captures')
+TIMELAPSE_BASE_DIR = env('TIMELAPSE_BASE_DIR', f'{OUTPUT_DIR}/timelapse', group='Timelapse', desc='Base directory for timelapse artifacts', is_map=False)
+TIMELAPSE_CAPTURES_DIR = env('TIMELAPSE_CAPTURES_DIR', '', group='Timelapse', desc='Override for directory that stores raw timelapse frames', is_map=False)
+TIMELAPSE_HOURLY_DIR = env('TIMELAPSE_HOURLY_DIR', '', group='Timelapse', desc='Override for directory that stores hourly clips', is_map=False)
+TIMELAPSE_DAILY_DIR = env('TIMELAPSE_DAILY_DIR', '', group='Timelapse', desc='Override for directory that stores daily clips', is_map=False)
+TIMELAPSE_FRAME_INTERVAL_SECONDS = env.int('TIMELAPSE_FRAME_INTERVAL_SECONDS', 60, group='Timelapse', desc='Seconds between frame captures')
+TIMELAPSE_HOURLY_FRAMERATE = env.int('TIMELAPSE_HOURLY_FRAMERATE', 24, group='Timelapse', desc='Frames per second for hourly clips')
+TIMELAPSE_DAILY_FRAMERATE = env.int('TIMELAPSE_DAILY_FRAMERATE', 24, group='Timelapse', desc='Frames per second for daily clips')
+TIMELAPSE_DELETE_IMAGES_AFTER_HOURLY = env.bool('TIMELAPSE_DELETE_IMAGES_AFTER_HOURLY', False, group='Timelapse', desc='Delete hourly frame images after video is built')
+TIMELAPSE_DELETE_HOURLIES_AFTER_DAILY = env.bool('TIMELAPSE_DELETE_HOURLIES_AFTER_DAILY', True, group='Timelapse', desc='Delete hourly clips after daily video is built')
+TIMELAPSE_ARENA_URL = env('TIMELAPSE_ARENA_URL', f'http://{MANAGEMENT_HOST}:{MANAGEMENT_PORT}', group='Timelapse', desc='Base URL for fetching frames from Arena API', is_map=False)
+TIMELAPSE_ARENA_TIMEOUT = env.float('TIMELAPSE_ARENA_TIMEOUT', 10.0, group='Timelapse', desc='Timeout (seconds) for Arena frame requests')
+TIMELAPSE_OVERLAY_TIMESTAMP = env.bool('TIMELAPSE_OVERLAY_TIMESTAMP', True, group='Timelapse', desc='Draw timestamp text on captured frames')
+
+TIMELAPSE_SETTINGS = {
+    'enable': TIMELAPSE_ENABLE,
+    'camera_names': TIMELAPSE_CAMERA_NAMES,
+    'base_dir': TIMELAPSE_BASE_DIR,
+    'captures_dir': TIMELAPSE_CAPTURES_DIR or None,
+    'hourly_dir': TIMELAPSE_HOURLY_DIR or None,
+    'daily_dir': TIMELAPSE_DAILY_DIR or None,
+    'frame_interval_seconds': TIMELAPSE_FRAME_INTERVAL_SECONDS,
+    'hourly_framerate': TIMELAPSE_HOURLY_FRAMERATE,
+    'daily_framerate': TIMELAPSE_DAILY_FRAMERATE,
+    'delete_images_after_hourly': TIMELAPSE_DELETE_IMAGES_AFTER_HOURLY,
+    'delete_hourlies_after_daily': TIMELAPSE_DELETE_HOURLIES_AFTER_DAILY,
+    'arena_url': TIMELAPSE_ARENA_URL,
+    'arena_timeout': TIMELAPSE_ARENA_TIMEOUT,
+    'overlay_timestamp': TIMELAPSE_OVERLAY_TIMESTAMP,
+}
 
 cameras = load_configuration('cameras')

@@ -349,6 +349,26 @@ def send_telegram_message(message: str):
     return response
 
 
+def send_telegram_video(video_path: str, caption: str = ''):
+    """Send a video clip to Telegram, if publishing is configured."""
+    if not config.TELEGRAM_TOKEN:
+        return
+    path = Path(video_path)
+    if not path.exists():
+        return
+    data = {
+        'chat_id': config.TELEGRAM_CHAT_ID,
+        'caption': f'({config.ARENA_NAME}): {caption}' if caption else f'({config.ARENA_NAME})',
+        'disable_notification': True
+    }
+    with path.open('rb') as fh:
+        files = {'video': fh}
+        response = requests.post(f'https://api.telegram.org/bot{config.TELEGRAM_TOKEN}/sendVideo',
+                                 data=data,
+                                 files=files,
+                                 timeout=120)
+    return response
+
 def format_strikes_df(strike_df):
     def highlight(s):
         if s.is_climbing:

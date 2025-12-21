@@ -1,8 +1,11 @@
 import re
 import time
 import json
+import subprocess
+import tempfile
 from functools import wraps
 from datetime import datetime, timedelta
+from pathlib import Path
 import threading
 import multiprocessing
 from loggers import get_logger
@@ -28,7 +31,8 @@ TIME_TABLE = {
     'lights_sunset': config.LIGHTS_SUNSET,
     'dwh_commit_time': config.DWH_COMMIT_TIME,
     'strike_analysis_time': config.STRIKE_ANALYSIS_TIME,
-    'daily_summary': config.DAILY_SUMMARY_TIME
+    'daily_summary': config.DAILY_SUMMARY_TIME,
+    'daily_timelapse_push': config.TIMELAPSE_DAILY_PUSH_TIME
 }
 ALWAYS_ON_CAMERAS_RESTART_DURATION = 30 * 60  # seconds
 cache = RedisCache()
@@ -60,6 +64,7 @@ class Scheduler(threading.Thread):
         self.compress_threads = {}
         self.current_animal_id = None
         self.dwh_commit_tries = 0
+        self.last_daily_timelapse_sent = None
         self.start_lights()
 
     def run(self):
@@ -80,6 +85,7 @@ class Scheduler(threading.Thread):
                 self.analyze_strikes()
                 self.dwh_commit()
                 self.daily_summary()
+                self.daily_timelapse_push()
 
             if not t1 or time.time() - t1 >= 60 * 5:  # every 5 minutes
                 t1 = time.time()
@@ -253,8 +259,186 @@ class Scheduler(threading.Thread):
     def daily_summary(self):
         if self.is_in_range('daily_summary') and not self.is_test_animal():
             struct = self.arena_mgr.orm.today_summary()
-            msg = json.dumps(struct, indent=4)
-            utils.send_telegram_message(f'Daily Summary:\n{msg}')
+            msg_lines = [f'Daily Summary:\n{json.dumps(struct, indent=4)}']
+            skipped_rewards = self.arena_mgr.orm.get_skipped_rewards_for_day()
+            if skipped_rewards:
+                msg_lines.append(f'Skipped rewards today: {skipped_rewards}')
+            utils.send_telegram_message('\n'.join(msg_lines))
+            self.send_timelapse_summary_clip()
+
+    @schedule_method
+    def daily_timelapse_push(self):
+        if not config.TIMELAPSE_DAILY_PUSH_ENABLE or not self.is_in_range('daily_timelapse_push') or \
+                self.is_test_animal():
+            return
+        settings = getattr(config, 'TIMELAPSE_SETTINGS', None)
+        if not settings or not settings.get('enable'):
+            return
+        today = datetime.now().date()
+        target_date = today - timedelta(days=1)
+        if self.last_daily_timelapse_sent == target_date:
+            return
+        if target_date >= today:
+            return
+        if self._send_full_day_timelapse(target_date, settings):
+            self.last_daily_timelapse_sent = target_date
+
+    def send_timelapse_summary_clip(self):
+        settings = getattr(config, 'TIMELAPSE_SETTINGS', None)
+        if not settings or not settings.get('enable'):
+            return
+        camera_names = self._get_timelapse_camera_names(settings)
+        if not camera_names:
+            return
+
+        today = datetime.now().date()
+        date_key = today.strftime('%Y%m%d')
+        start_time = datetime.strptime(config.CAMERAS_ON_TIME, '%H:%M').time()
+        summary_time = datetime.strptime(config.DAILY_SUMMARY_TIME, '%H:%M').time()
+        cameras_off_time = datetime.strptime(config.CAMERAS_OFF_TIME, '%H:%M').time()
+        start_dt = datetime.combine(today, start_time)
+        summary_dt = datetime.combine(today, summary_time)
+        cameras_off_dt = datetime.combine(today, cameras_off_time)
+        end_dt = max(summary_dt, cameras_off_dt)
+        if end_dt <= start_dt:
+            self.logger.warning('Skipping timelapse summary - summary time %s is not after start time %s',
+                                config.DAILY_SUMMARY_TIME, config.CAMERAS_ON_TIME)
+            return
+        start_hour = start_time.hour
+        end_hour = min(end_dt.hour + 1, 24)
+        if start_hour >= end_hour:
+            self.logger.warning('Skipping timelapse summary - invalid hours range %s-%s', start_hour, end_hour)
+            return
+
+        base_dir = Path(settings['base_dir'])
+        hourly_dir = Path(settings.get('hourly_dir') or (base_dir / 'hourly'))
+        captures_dir = Path(settings.get('captures_dir') or (base_dir / 'captures'))
+        daily_dir = Path(settings.get('daily_dir') or (base_dir / 'daily'))
+        hourly_framerate = int(settings.get('hourly_framerate', 24))
+        start_label = config.CAMERAS_ON_TIME.replace(':', '')
+        coverage_end_label = end_dt.strftime('%H:%M')
+        end_label = coverage_end_label.replace(':', '')
+
+        for camera in camera_names:
+            hourly_files = []
+            for hour in range(start_hour, end_hour):
+                clip_path = self._ensure_hourly_clip(date_key, hour, camera, captures_dir, hourly_dir,
+                                                     hourly_framerate)
+                if clip_path:
+                    hourly_files.append(clip_path)
+            if not hourly_files:
+                self.logger.info('Timelapse summary: no hourly clips available for camera %s', camera)
+                continue
+
+            output_path = daily_dir / camera / f'{date_key}_summary_{start_label}-{end_label}.mp4'
+            if self._stitch_hourly_clips(hourly_files, output_path):
+                caption = f'Timelapse ({camera}) {date_key} {config.CAMERAS_ON_TIME}-{coverage_end_label}'
+                utils.send_telegram_video(str(output_path), caption=caption)
+
+    def _send_full_day_timelapse(self, target_date, settings):
+        camera_names = self._get_timelapse_camera_names(settings)
+        if not camera_names:
+            return False
+        base_dir = Path(settings['base_dir'])
+        hourly_dir = Path(settings.get('hourly_dir') or (base_dir / 'hourly'))
+        daily_dir = Path(settings.get('daily_dir') or (base_dir / 'daily'))
+        date_key = target_date.strftime('%Y%m%d')
+        success = False
+        for camera in camera_names:
+            clip_path = daily_dir / camera / f'{date_key}_timelapse.mp4'
+            if not clip_path.exists():
+                hourly_files = sorted((hourly_dir / camera).glob(f'{date_key}_*.mp4'))
+                hourly_files = [f for f in hourly_files if f.is_file()]
+                if not hourly_files:
+                    self.logger.info('Timelapse daily push: no hourly clips for camera %s on %s', camera, date_key)
+                    continue
+                if not self._stitch_hourly_clips(hourly_files, clip_path):
+                    continue
+            caption = f'Timelapse ({camera}) {date_key} full day'
+            utils.send_telegram_video(str(clip_path), caption=caption)
+            success = True
+        return success
+
+    @staticmethod
+    def _get_timelapse_camera_names(settings):
+        names = settings.get('x') or []
+        if isinstance(names, str):
+            names = [names]
+        fallback = settings.get('camera_name')
+        if not names and fallback:
+            names = [fallback]
+        cleaned = [name.strip() for name in names if name and name.strip()]
+        # preserve order, drop duplicates
+        seen = set()
+        unique = []
+        for name in cleaned:
+            if name not in seen:
+                seen.add(name)
+                unique.append(name)
+        return unique
+
+    def _ensure_hourly_clip(self, date_key, hour, camera, captures_dir, hourly_dir, framerate):
+        hour_label = f'{hour:02d}'
+        hourly_path = hourly_dir / camera / f'{date_key}_{hour_label}.mp4'
+        if hourly_path.exists():
+            return hourly_path
+
+        frames_dir = captures_dir / camera / date_key / hour_label
+        if not frames_dir.exists():
+            return None
+        images = sorted(frames_dir.glob('*.jpg'))
+        if not images:
+            return None
+        hourly_path.parent.mkdir(parents=True, exist_ok=True)
+        pattern = str(frames_dir / '*.jpg')
+        cmd = [
+            'ffmpeg', '-y',
+            '-framerate', str(framerate),
+            '-pattern_type', 'glob',
+            '-i', pattern,
+            '-c:v', 'libx264',
+            '-pix_fmt', 'yuv420p',
+            str(hourly_path)
+        ]
+        try:
+            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except subprocess.CalledProcessError as exc:
+            self.logger.error('Failed building hourly timelapse for %s %s %s: %s',
+                              camera, date_key, hour_label, exc)
+            if exc.stderr:
+                self.logger.debug('ffmpeg stderr: %s', exc.stderr.decode(errors='ignore'))
+            return None
+        return hourly_path
+
+    def _stitch_hourly_clips(self, hourly_files, output_path):
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile('w', delete=False) as concat_file:
+            for clip in hourly_files:
+                concat_file.write(f"file '{self._escape_ffmpeg_path(clip)}'\n")
+            concat_name = concat_file.name
+
+        cmd = [
+            'ffmpeg', '-y',
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', concat_name,
+            '-c', 'copy',
+            str(output_path)
+        ]
+        try:
+            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except subprocess.CalledProcessError as exc:
+            self.logger.error('Failed stitching timelapse summary for %s: %s', output_path, exc)
+            if exc.stderr:
+                self.logger.debug('ffmpeg stderr: %s', exc.stderr.decode(errors='ignore'))
+            return False
+        finally:
+            Path(concat_name).unlink(missing_ok=True)
+        return True
+
+    @staticmethod
+    def _escape_ffmpeg_path(path):
+        return str(path).replace("'", r"'\''")
 
     @schedule_method
     def compress_videos(self):
