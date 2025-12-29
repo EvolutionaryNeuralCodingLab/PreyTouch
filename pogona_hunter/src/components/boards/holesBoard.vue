@@ -91,10 +91,12 @@ export default {
       // Draw the background first
       if (this.isSplitBugsView && this.bugsSettings.bugMappedBackground) {
         this.drawSplitBackground()
-      } else {
+      } else if (this.$refs.bugChild && this.$refs.bugChild.length > 0) {
         // send current bug type 
         const currentBugType = this.$refs.bugChild[0].currentBugType
         this.drawSolidBackground(currentBugType)
+      } else {
+        this.drawSolidBackground(this.bugsSettings.bugTypes[0] || null)
       }
       
       // Then draw the holes

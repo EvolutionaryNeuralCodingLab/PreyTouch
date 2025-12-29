@@ -202,6 +202,7 @@ MAX_DAILY_REWARD = env.int('MAX_DAILY_REWARD', 40, group='Experiments', desc='Ma
 ALWAYS_REWARD_SKIP_EVERY_N = env.int('ALWAYS_REWARD_SKIP_EVERY_N', 0, group='Experiments', desc='Skip every Nth success in always-reward mode; set 0 to disable')
 MAX_DURATION_CONT_BLANK = env.int('MAX_DURATION_CONT_BLANK', 48*3600, group='Experiments', desc='Max duration in seconds of a blank continuous experiment')
 CHECK_ENGAGEMENT_HOURS = env.int('CHECK_ENGAGEMENT_SPAN', 0, group='Experiments', desc='Hours before to check engagement or whether there were any strikes. If there are no strikes in this time span, give reward. Setting 0 will disable this check.')
+HIT_RADIUS_SCALE = env.float('HIT_RADIUS_SCALE', 2/3, group='Experiments', desc='Hit radius scale relative to bug size; 2/3 (1/1.5) equals default')
 CACHED_EXPERIMENTS_DIR = env('CACHED_EXPERIMENTS_DIR', 'cached_experiments', group='Experiments', desc='Folder name in the main Arena folder to store saved experiments')
 TRIAL_IMAGE_CAMERA = env('TRIAL_IMAGE_CAMERA', None, group='Experiments', desc='Camera used for trial images generation')
 experiment_types = {

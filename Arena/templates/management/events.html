@@ -225,7 +225,8 @@
         if (blockValues.tunnel_opacity !== undefined && blockValues.tunnel_opacity !== null && blockValues.tunnel_opacity !== '') {
             payload.tunnelOpacity = blockValues.tunnel_opacity
         }
-        if (!$("#isDefaultBugSize1").is(':checked')) {
+        payload.isDefaultBugSize = $("#isDefaultBugSize1").is(':checked')
+        if (!payload.isDefaultBugSize) {
             Object.assign(payload, {bugSize: Number($("#bugSize1").val())})
         }
         $.ajax({

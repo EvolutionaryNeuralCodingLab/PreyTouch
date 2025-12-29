@@ -26,7 +26,8 @@
                 "notes": "created by agent",
                 "bug_speed": 5,
                 "movement_type": null,
-                "is_default_bug_size": true
+                "is_default_bug_size": true,
+                "hit_radius_scale": 0.8
             }
         ]
     },

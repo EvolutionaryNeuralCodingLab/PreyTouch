@@ -1,5 +1,16 @@
 {
   "bugTypes": {
+    "dummy": {
+      "text": "Dummy Bug",
+      "numImagesPerBug": 1,
+      "speed": 3,
+      "radiusRange": {
+        "min": 140,
+        "max": 160
+      },
+      "stepsPerImage": 10
+    },
+    
     "cockroach": {
       "text": "Cockroach",
       "numImagesPerBug": 3,
@@ -42,6 +53,36 @@
     },
     "worm": {
       "text": "Worm",
+      "numImagesPerBug": 5,
+      "speed": 1,
+      "radiusRange": {
+        "min": 220,
+        "max": 230
+      },
+      "stepsPerImage": 10
+    },
+    "10cm_worm": {
+      "text": "Tiny Worm",
+      "numImagesPerBug": 5,
+      "speed": 1,
+      "radiusRange": {
+        "min": 220,
+        "max": 230
+      },
+      "stepsPerImage": 10
+    },
+    "60cm_worm": {
+      "text": "Standard Worm",
+      "numImagesPerBug": 5,
+      "speed": 1,
+      "radiusRange": {
+        "min": 220,
+        "max": 230
+      },
+      "stepsPerImage": 10
+    },
+    "120cm_worm": {
+      "text": "Huge Worm",
       "numImagesPerBug": 5,
       "speed": 1,
       "radiusRange": {

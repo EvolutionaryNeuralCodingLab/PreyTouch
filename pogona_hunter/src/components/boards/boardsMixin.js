@@ -18,11 +18,12 @@ export default {
         rewardBugs: process.env.REWARD_BUGS || 'cockroach',
         movementType: process.env.MOVEMENT_TYPE || 'circle',
         speed: 0, // if 0 config default for bug will be used
-        bugSize: 0, // if 0 config default for bug will be used
+        bugSize: 0, // if 0 will be handled in bug component (native size or config default)
         bloodDuration: 2000,
         backgroundColor: '#e8eaf6',
         bugMappedBackground: {},
         rewardAnyTouchProb: 0,
+        hitRadiusScale: 2 / 3,
         accelerateMultiplier: 3, // times to increase bug speed in tongue detection
         preTunnelSpeedMultiplier: 1, // multiplier for tunnel entry acceleration
         isKillingAllByOneHit: process.env.IS_KILLING_ALL_BY_ONE_HIT, // if true, all bugs will disapear when one is hit successfully

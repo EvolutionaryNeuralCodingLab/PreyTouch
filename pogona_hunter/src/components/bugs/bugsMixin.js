@@ -1,5 +1,7 @@
 import {distance, randBM, randomRange, shuffle} from '../../js/helpers'
 
+const DEFAULT_HIT_RADIUS_SCALE = 2 / 3
+
 export default {
   data() {
     return {
@@ -145,12 +147,36 @@ export default {
     },
     drawBug() {
       try {
-        let bugImage = this.isDead ? this.getDeadImage() : this.$refs.bugImg
-        this.ctx.setTransform(1, 0, 0, 1, this.x, this.y)
-        this.ctx.rotate(this.getAngleRadians())
-        // drawImage(image, dx, dy, dWidth, dHeight)
-        this.ctx.drawImage(bugImage, -this.currentBugSize / 2, -this.currentBugSize / 2, this.currentBugSize, this.currentBugSize)
-        this.ctx.setTransform(1, 0, 0, 1, 0, 0)
+        const ctx = this.ctx
+        if (!ctx) {
+          return
+        }
+        const bugImage = this.isDead ? this.getDeadImage() : this.$refs.bugImg
+        if (!bugImage || bugImage.complete === false) {
+          return
+        }
+
+        const useNativeSize = !this.bugsSettings.isDefaultBugSize && this.bugsSettings.bugSize === 0
+        const imgW = bugImage.naturalWidth || bugImage.width || bugImage.videoWidth || 0
+        const imgH = bugImage.naturalHeight || bugImage.height || bugImage.videoHeight || 0
+
+        const drawW = useNativeSize ? imgW : this.currentBugSize
+        const drawH = useNativeSize ? imgH : this.currentBugSize
+        if (drawW === 0 || drawH === 0) {
+          return
+        }
+        if (useNativeSize) {
+          const radius = Math.max(drawW, drawH)
+          if (this.currentBugSize !== radius) {
+            this.currentBugSize = radius
+          }
+        }
+
+        ctx.save()
+        ctx.translate(this.x, this.y)
+        ctx.rotate(this.getAngleRadians())
+        ctx.drawImage(bugImage, -drawW / 2, -drawH / 2, drawW, drawH)
+        ctx.restore()
       } catch (e) {
         console.error(e)
       }
@@ -172,7 +198,25 @@ export default {
       return distance(x, y, this.x, this.y)
     },
     isHit(x, y) {
-      return distance(x, y, this.x, this.y) <= this.currentBugSize / 1.5
+      const configuredScale = this.bugsSettings ? Number(this.bugsSettings.hitRadiusScale) : NaN
+      const hitRadiusScale = Number.isFinite(configuredScale) ? configuredScale : DEFAULT_HIT_RADIUS_SCALE
+      const defaultSize = this.getDefaultBugSize()
+      const baselineSize = defaultSize || this.currentBugSize
+      return distance(x, y, this.x, this.y) <= baselineSize * hitRadiusScale
+    },
+    getDefaultBugSize() {
+      if (!this.bugTypeOptions || !this.currentBugType) {
+        return null
+      }
+      const options = this.bugTypeOptions[this.currentBugType]
+      if (!options || !options.radiusRange) {
+        return null
+      }
+      const {min, max} = options.radiusRange
+      if (!Number.isFinite(min) || !Number.isFinite(max)) {
+        return null
+      }
+      return (min + max) / 2
     },
     rotate(dx, dy, angle) {
       return {
@@ -234,8 +278,12 @@ export default {
       this.currentBugType = nextBugOptions[nextIndex]
     },
     getRadiusSize() {
-      if (this.bugsSettings.bugSize) {
-        return this.bugsSettings.bugSize
+      const size = this.bugsSettings.bugSize
+      if (size === 0 && this.bugsSettings.isDefaultBugSize === false) {
+        return 0 // mark for native sizing
+      }
+      if (size) {
+        return size
       }
       let currentBugOptions = this.bugTypeOptions[this.currentBugType]
       return randomRange(currentBugOptions.radiusRange.min, currentBugOptions.radiusRange.max)

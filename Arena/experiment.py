@@ -222,6 +222,7 @@ class Block:
     holes_height_scale: float = 0.1
     circle_height_scale: float = 0.5
     circle_radius_scale: float = 0.2
+    hit_radius_scale: float = config.HIT_RADIUS_SCALE
     time_between_bugs: int = None
     is_default_bug_size: bool = True
     exit_hole: str = None
@@ -250,6 +251,8 @@ class Block:
     def __post_init__(self):
         self.logger = get_logger(f'{self.experiment_name}-Block {self.block_id}')
         self.exp_validation = ExperimentValidation(logger=self.logger, cache=self.cache, orm=self.orm)
+        if self.is_default_bug_size:
+            self.bug_size = None
         if isinstance(self.bug_speed, list):
             bug_speed_choices = ','.join([str(s) for s in self.bug_speed])
             # self.bug_speed = random.choice(self.bug_speed)
@@ -729,6 +732,7 @@ class Block:
             'movementType': self.movement_type,
             'isLogTrajectory': True,
             'bugSize': self.bug_size,
+            'isDefaultBugSize': self.is_default_bug_size,
             'backgroundColor': self.background_color,
             'bugMappedBackground': self.bug_mapped_background,
             'exitHole': random.choice(['left', 'right']) if self.exit_hole == 'random' else self.exit_hole,
@@ -736,6 +740,7 @@ class Block:
             'holesHeightScale': self.holes_height_scale,
             'circleHeightScale': self.circle_height_scale,
             'circleRadiusScale': self.circle_radius_scale,
+            'hitRadiusScale': self.hit_radius_scale,
             'accelerateMultiplier': self.accelerate_multiplier
         }
         if self.tunnel_image:
@@ -1012,7 +1017,8 @@ def start_trial():
         'rewardAnyTouchProb': 0,
         'circleRadiusScale': 0.2,
         'circleHeightScale': 0.5,
-        'holesHeightScale': 0.1
+        'holesHeightScale': 0.1,
+        'hitRadiusScale': config.HIT_RADIUS_SCALE
     }
     cache_.publish_command('init_bugs', json.dumps(options))
 
