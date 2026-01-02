@@ -180,6 +180,25 @@ class Scheduler(threading.Thread):
         if self.is_in_range('strike_analysis_time') and config.IS_RUN_NIGHTLY_POSE_ESTIMATION:
             StrikeScanner().scan()
 
+    def _load_attempts(self, cache_column):
+        entries = cache.get(cache_column) or []
+        attempts = {}
+        for entry in entries:
+            if not entry:
+                continue
+            token, sep, count_str = entry.partition('=')
+            if not sep:
+                continue
+            try:
+                attempts[token] = int(count_str)
+            except ValueError:
+                continue
+        return attempts
+
+    def _save_attempts(self, cache_column, attempts):
+        payload = [f'{token}={count}' for token, count in attempts.items()]
+        cache.set(cache_column, payload)
+
     @staticmethod
     def is_in_range(label):
         now = datetime.now()
@@ -274,6 +293,12 @@ class Scheduler(threading.Thread):
         if summary_sent and video_sent:
             return
         if not summary_sent:
+            attempts = self._load_attempts(cc.DAILY_SUMMARY_ATTEMPTS)
+            attempt_count = attempts.get(today_key, 0)
+            if attempt_count >= 3:
+                return
+            attempts[today_key] = attempt_count + 1
+            self._save_attempts(cc.DAILY_SUMMARY_ATTEMPTS, attempts)
             struct = self.arena_mgr.orm.today_summary()
             msg_lines = [f'Daily Summary:\n{json.dumps(struct, indent=4)}']
             skipped_rewards = self.arena_mgr.orm.get_skipped_rewards_for_day()
@@ -283,6 +308,8 @@ class Scheduler(threading.Thread):
             if resp is not None and resp.ok:
                 self.last_daily_summary_sent = today_key
                 cache.set(cc.DAILY_SUMMARY_SENT_DATE, today_key)
+                attempts.pop(today_key, None)
+                self._save_attempts(cc.DAILY_SUMMARY_ATTEMPTS, attempts)
                 self.logger.info('Daily summary sent for %s', today_key)
             else:
                 self.logger.warning('Daily summary failed for %s', today_key)
@@ -335,6 +362,8 @@ class Scheduler(threading.Thread):
         today = datetime.now().date()
         date_key = today.strftime('%Y%m%d')
         sent_cameras = cache.get(cc.DAILY_TIMELAPSE_SUMMARY_SENT_CAMERAS) or []
+        sent_cameras_set = set(sent_cameras)
+        attempts = self._load_attempts(cc.DAILY_TIMELAPSE_SUMMARY_ATTEMPTS)
         start_time = datetime.strptime(config.CAMERAS_ON_TIME, '%H:%M').time()
         summary_time = datetime.strptime(config.DAILY_SUMMARY_TIME, '%H:%M').time()
         cameras_off_time = datetime.strptime(config.CAMERAS_OFF_TIME, '%H:%M').time()
@@ -365,8 +394,12 @@ class Scheduler(threading.Thread):
         sent_any = False
         for camera in camera_names:
             token = f'{date_key}:{camera}'
-            if token in sent_cameras:
+            if token in sent_cameras_set:
                 sent_any = True
+                continue
+            attempt_count = attempts.get(token, 0)
+            if attempt_count >= 3:
+                all_sent = False
                 continue
             hourly_files = []
             for hour in range(start_hour, end_hour):
@@ -382,11 +415,15 @@ class Scheduler(threading.Thread):
             output_path = daily_dir / camera / f'{date_key}_summary_{start_label}-{end_label}.mp4'
             if self._stitch_hourly_clips(hourly_files, output_path):
                 caption = f'Timelapse ({camera}) {date_key} {config.CAMERAS_ON_TIME}-{coverage_end_label}'
+                attempts[token] = attempt_count + 1
+                self._save_attempts(cc.DAILY_TIMELAPSE_SUMMARY_ATTEMPTS, attempts)
                 resp = utils.send_telegram_video(str(output_path), caption=caption)
                 if resp is not None and resp.ok:
                     sent_any = True
-                    sent_cameras.append(token)
-                    cache.set(cc.DAILY_TIMELAPSE_SUMMARY_SENT_CAMERAS, sent_cameras)
+                    sent_cameras_set.add(token)
+                    cache.set(cc.DAILY_TIMELAPSE_SUMMARY_SENT_CAMERAS, list(sent_cameras_set))
+                    attempts.pop(token, None)
+                    self._save_attempts(cc.DAILY_TIMELAPSE_SUMMARY_ATTEMPTS, attempts)
                 else:
                     all_sent = False
                     self.logger.warning('Timelapse summary telegram send failed for camera %s on %s',
@@ -405,12 +442,18 @@ class Scheduler(threading.Thread):
         daily_dir = Path(settings.get('daily_dir') or (base_dir / 'daily'))
         date_key = target_date.strftime('%Y%m%d')
         sent_cameras = cache.get(cc.DAILY_TIMELAPSE_SENT_CAMERAS) or []
+        sent_cameras_set = set(sent_cameras)
+        attempts = self._load_attempts(cc.DAILY_TIMELAPSE_ATTEMPTS)
         all_sent = True
         sent_any = False
         for camera in camera_names:
             token = f'{date_key}:{camera}'
-            if token in sent_cameras:
+            if token in sent_cameras_set:
                 sent_any = True
+                continue
+            attempt_count = attempts.get(token, 0)
+            if attempt_count >= 3:
+                all_sent = False
                 continue
             clip_path = daily_dir / camera / f'{date_key}_timelapse.mp4'
             if not clip_path.exists():
@@ -424,11 +467,15 @@ class Scheduler(threading.Thread):
                     all_sent = False
                     continue
             caption = f'Timelapse ({camera}) {date_key} full day'
+            attempts[token] = attempt_count + 1
+            self._save_attempts(cc.DAILY_TIMELAPSE_ATTEMPTS, attempts)
             resp = utils.send_telegram_video(str(clip_path), caption=caption)
             if resp is not None and resp.ok:
                 sent_any = True
-                sent_cameras.append(token)
-                cache.set(cc.DAILY_TIMELAPSE_SENT_CAMERAS, sent_cameras)
+                sent_cameras_set.add(token)
+                cache.set(cc.DAILY_TIMELAPSE_SENT_CAMERAS, list(sent_cameras_set))
+                attempts.pop(token, None)
+                self._save_attempts(cc.DAILY_TIMELAPSE_ATTEMPTS, attempts)
             else:
                 all_sent = False
                 self.logger.warning('Timelapse daily push telegram send failed for camera %s on %s',
