@@ -334,6 +334,7 @@ class Scheduler(threading.Thread):
 
         today = datetime.now().date()
         date_key = today.strftime('%Y%m%d')
+        sent_cameras = cache.get(cc.DAILY_TIMELAPSE_SUMMARY_SENT_CAMERAS) or []
         start_time = datetime.strptime(config.CAMERAS_ON_TIME, '%H:%M').time()
         summary_time = datetime.strptime(config.DAILY_SUMMARY_TIME, '%H:%M').time()
         cameras_off_time = datetime.strptime(config.CAMERAS_OFF_TIME, '%H:%M').time()
@@ -363,6 +364,10 @@ class Scheduler(threading.Thread):
         all_sent = True
         sent_any = False
         for camera in camera_names:
+            token = f'{date_key}:{camera}'
+            if token in sent_cameras:
+                sent_any = True
+                continue
             hourly_files = []
             for hour in range(start_hour, end_hour):
                 clip_path = self._ensure_hourly_clip(date_key, hour, camera, captures_dir, hourly_dir,
@@ -380,6 +385,8 @@ class Scheduler(threading.Thread):
                 resp = utils.send_telegram_video(str(output_path), caption=caption)
                 if resp is not None and resp.ok:
                     sent_any = True
+                    sent_cameras.append(token)
+                    cache.set(cc.DAILY_TIMELAPSE_SUMMARY_SENT_CAMERAS, sent_cameras)
                 else:
                     all_sent = False
                     self.logger.warning('Timelapse summary telegram send failed for camera %s on %s',
@@ -397,9 +404,14 @@ class Scheduler(threading.Thread):
         hourly_dir = Path(settings.get('hourly_dir') or (base_dir / 'hourly'))
         daily_dir = Path(settings.get('daily_dir') or (base_dir / 'daily'))
         date_key = target_date.strftime('%Y%m%d')
+        sent_cameras = cache.get(cc.DAILY_TIMELAPSE_SENT_CAMERAS) or []
         all_sent = True
         sent_any = False
         for camera in camera_names:
+            token = f'{date_key}:{camera}'
+            if token in sent_cameras:
+                sent_any = True
+                continue
             clip_path = daily_dir / camera / f'{date_key}_timelapse.mp4'
             if not clip_path.exists():
                 hourly_files = sorted((hourly_dir / camera).glob(f'{date_key}_*.mp4'))
@@ -415,6 +427,8 @@ class Scheduler(threading.Thread):
             resp = utils.send_telegram_video(str(clip_path), caption=caption)
             if resp is not None and resp.ok:
                 sent_any = True
+                sent_cameras.append(token)
+                cache.set(cc.DAILY_TIMELAPSE_SENT_CAMERAS, sent_cameras)
             else:
                 all_sent = False
                 self.logger.warning('Timelapse daily push telegram send failed for camera %s on %s',
