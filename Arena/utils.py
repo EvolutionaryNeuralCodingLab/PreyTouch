@@ -7,6 +7,7 @@ import serial
 import time
 import psutil
 import threading
+import logging
 from io import BytesIO
 from PIL import Image
 from pathlib import Path
@@ -18,6 +19,9 @@ from datetime import datetime
 from subprocess import Popen, PIPE
 from filterpy.kalman import KalmanFilter
 import config
+
+
+telegram_logger = logging.getLogger('Telegram')
 
 
 def run_command(cmd, is_debug=True):
@@ -343,10 +347,17 @@ def send_telegram_message(message: str):
                  'parse_mode': 'HTML',
                  'disable_notification': True}
     data = json.dumps(data_dict)
-    response = requests.post(f'https://api.telegram.org/bot{config.TELEGRAM_TOKEN}/sendMessage',
-                             data=data,
-                             headers=headers)
-    return response
+    try:
+        response = requests.post(f'https://api.telegram.org/bot{config.TELEGRAM_TOKEN}/sendMessage',
+                                 data=data,
+                                 headers=headers,
+                                 timeout=30)
+        if response.status_code != 200:
+            telegram_logger.warning('Telegram sendMessage failed (%s): %s', response.status_code, response.text)
+        return response
+    except Exception as exc:
+        telegram_logger.error('Telegram sendMessage exception: %s', exc)
+        return None
 
 
 def send_telegram_video(video_path: str, caption: str = ''):
@@ -361,13 +372,19 @@ def send_telegram_video(video_path: str, caption: str = ''):
         'caption': f'({config.ARENA_NAME}): {caption}' if caption else f'({config.ARENA_NAME})',
         'disable_notification': True
     }
-    with path.open('rb') as fh:
-        files = {'video': fh}
-        response = requests.post(f'https://api.telegram.org/bot{config.TELEGRAM_TOKEN}/sendVideo',
-                                 data=data,
-                                 files=files,
-                                 timeout=120)
-    return response
+    try:
+        with path.open('rb') as fh:
+            files = {'video': fh}
+            response = requests.post(f'https://api.telegram.org/bot{config.TELEGRAM_TOKEN}/sendVideo',
+                                     data=data,
+                                     files=files,
+                                     timeout=120)
+        if response.status_code != 200:
+            telegram_logger.warning('Telegram sendVideo failed (%s): %s', response.status_code, response.text)
+        return response
+    except Exception as exc:
+        telegram_logger.error('Telegram sendVideo exception: %s', exc)
+        return None
 
 def format_strikes_df(strike_df):
     def highlight(s):

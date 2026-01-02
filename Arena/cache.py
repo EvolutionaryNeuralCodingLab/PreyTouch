@@ -39,6 +39,9 @@ class CacheColumns:
     TEMPERATURE = Column('TEMPERATURE', str, 60)
     HOLD_AGENT = Column('HOLD_AGENT', bool, 'static')
     IS_ANIMAL_ENGAGED = Column('IS_ANIMAL_ENGAGED', bool, 1)
+    DAILY_SUMMARY_SENT_DATE = Column('DAILY_SUMMARY_SENT_DATE', str, 'static')
+    DAILY_TIMELAPSE_SENT_DATE = Column('DAILY_TIMELAPSE_SENT_DATE', str, 'static')
+    DAILY_TIMELAPSE_SUMMARY_SENT_DATE = Column('DAILY_TIMELAPSE_SUMMARY_SENT_DATE', str, 'static')
 
 
 class RedisCache:

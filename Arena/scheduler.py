@@ -64,7 +64,9 @@ class Scheduler(threading.Thread):
         self.compress_threads = {}
         self.current_animal_id = None
         self.dwh_commit_tries = 0
-        self.last_daily_timelapse_sent = None
+        self.last_daily_summary_sent = cache.get(cc.DAILY_SUMMARY_SENT_DATE)
+        self.last_timelapse_summary_sent = cache.get(cc.DAILY_TIMELAPSE_SUMMARY_SENT_DATE)
+        self.last_daily_timelapse_sent = cache.get(cc.DAILY_TIMELAPSE_SENT_DATE)
         self.start_lights()
 
     def run(self):
@@ -257,39 +259,78 @@ class Scheduler(threading.Thread):
 
     @schedule_method
     def daily_summary(self):
-        if self.is_in_range('daily_summary') and not self.is_test_animal():
+        if self.is_test_animal():
+            return
+        now = datetime.now()
+        summary_time = datetime.strptime(config.DAILY_SUMMARY_TIME, '%H:%M').time()
+        summary_dt = datetime.combine(now.date(), summary_time)
+        if now < summary_dt:
+            return
+        today_key = now.strftime('%Y%m%d')
+        cached_summary = cache.get(cc.DAILY_SUMMARY_SENT_DATE)
+        cached_video = cache.get(cc.DAILY_TIMELAPSE_SUMMARY_SENT_DATE)
+        summary_sent = (self.last_daily_summary_sent == today_key) or (cached_summary == today_key)
+        video_sent = (self.last_timelapse_summary_sent == today_key) or (cached_video == today_key)
+        if summary_sent and video_sent:
+            return
+        if not summary_sent:
             struct = self.arena_mgr.orm.today_summary()
             msg_lines = [f'Daily Summary:\n{json.dumps(struct, indent=4)}']
             skipped_rewards = self.arena_mgr.orm.get_skipped_rewards_for_day()
             if skipped_rewards:
                 msg_lines.append(f'Skipped rewards today: {skipped_rewards}')
-            utils.send_telegram_message('\n'.join(msg_lines))
-            self.send_timelapse_summary_clip()
+            resp = utils.send_telegram_message('\n'.join(msg_lines))
+            if resp is not None and resp.ok:
+                self.last_daily_summary_sent = today_key
+                cache.set(cc.DAILY_SUMMARY_SENT_DATE, today_key)
+                self.logger.info('Daily summary sent for %s', today_key)
+            else:
+                self.logger.warning('Daily summary failed for %s', today_key)
+        if not video_sent:
+            if self.send_timelapse_summary_clip():
+                self.last_timelapse_summary_sent = today_key
+                cache.set(cc.DAILY_TIMELAPSE_SUMMARY_SENT_DATE, today_key)
+                self.logger.info('Timelapse summary sent for %s', today_key)
+            else:
+                self.logger.warning('Timelapse summary failed or missing clips for %s', today_key)
 
     @schedule_method
     def daily_timelapse_push(self):
-        if not config.TIMELAPSE_DAILY_PUSH_ENABLE or not self.is_in_range('daily_timelapse_push') or \
-                self.is_test_animal():
+        if not config.TIMELAPSE_DAILY_PUSH_ENABLE or self.is_test_animal():
             return
         settings = getattr(config, 'TIMELAPSE_SETTINGS', None)
         if not settings or not settings.get('enable'):
             return
-        today = datetime.now().date()
+        now = datetime.now()
+        push_time = datetime.strptime(config.TIMELAPSE_DAILY_PUSH_TIME, '%H:%M').time()
+        push_dt = datetime.combine(now.date(), push_time)
+        if now < push_dt:
+            return
+        today = now.date()
         target_date = today - timedelta(days=1)
-        if self.last_daily_timelapse_sent == target_date:
+        target_key = target_date.strftime('%Y%m%d')
+        if self.last_daily_timelapse_sent == target_key:
             return
         if target_date >= today:
             return
+        cached_sent = cache.get(cc.DAILY_TIMELAPSE_SENT_DATE)
+        if cached_sent == target_key:
+            self.last_daily_timelapse_sent = target_key
+            return
         if self._send_full_day_timelapse(target_date, settings):
-            self.last_daily_timelapse_sent = target_date
+            self.last_daily_timelapse_sent = target_key
+            cache.set(cc.DAILY_TIMELAPSE_SENT_DATE, target_key)
+            self.logger.info('Timelapse daily push sent for %s', target_key)
+        else:
+            self.logger.warning('Timelapse daily push failed or missing clips for %s', target_key)
 
     def send_timelapse_summary_clip(self):
         settings = getattr(config, 'TIMELAPSE_SETTINGS', None)
         if not settings or not settings.get('enable'):
-            return
+            return False
         camera_names = self._get_timelapse_camera_names(settings)
         if not camera_names:
-            return
+            return False
 
         today = datetime.now().date()
         date_key = today.strftime('%Y%m%d')
@@ -319,6 +360,8 @@ class Scheduler(threading.Thread):
         coverage_end_label = end_dt.strftime('%H:%M')
         end_label = coverage_end_label.replace(':', '')
 
+        all_sent = True
+        sent_any = False
         for camera in camera_names:
             hourly_files = []
             for hour in range(start_hour, end_hour):
@@ -328,12 +371,23 @@ class Scheduler(threading.Thread):
                     hourly_files.append(clip_path)
             if not hourly_files:
                 self.logger.info('Timelapse summary: no hourly clips available for camera %s', camera)
+                all_sent = False
                 continue
 
             output_path = daily_dir / camera / f'{date_key}_summary_{start_label}-{end_label}.mp4'
             if self._stitch_hourly_clips(hourly_files, output_path):
                 caption = f'Timelapse ({camera}) {date_key} {config.CAMERAS_ON_TIME}-{coverage_end_label}'
-                utils.send_telegram_video(str(output_path), caption=caption)
+                resp = utils.send_telegram_video(str(output_path), caption=caption)
+                if resp is not None and resp.ok:
+                    sent_any = True
+                else:
+                    all_sent = False
+                    self.logger.warning('Timelapse summary telegram send failed for camera %s on %s',
+                                        camera, date_key)
+            else:
+                all_sent = False
+
+        return all_sent and sent_any
 
     def _send_full_day_timelapse(self, target_date, settings):
         camera_names = self._get_timelapse_camera_names(settings)
@@ -343,7 +397,8 @@ class Scheduler(threading.Thread):
         hourly_dir = Path(settings.get('hourly_dir') or (base_dir / 'hourly'))
         daily_dir = Path(settings.get('daily_dir') or (base_dir / 'daily'))
         date_key = target_date.strftime('%Y%m%d')
-        success = False
+        all_sent = True
+        sent_any = False
         for camera in camera_names:
             clip_path = daily_dir / camera / f'{date_key}_timelapse.mp4'
             if not clip_path.exists():
@@ -351,17 +406,24 @@ class Scheduler(threading.Thread):
                 hourly_files = [f for f in hourly_files if f.is_file()]
                 if not hourly_files:
                     self.logger.info('Timelapse daily push: no hourly clips for camera %s on %s', camera, date_key)
+                    all_sent = False
                     continue
                 if not self._stitch_hourly_clips(hourly_files, clip_path):
+                    all_sent = False
                     continue
             caption = f'Timelapse ({camera}) {date_key} full day'
-            utils.send_telegram_video(str(clip_path), caption=caption)
-            success = True
-        return success
+            resp = utils.send_telegram_video(str(clip_path), caption=caption)
+            if resp is not None and resp.ok:
+                sent_any = True
+            else:
+                all_sent = False
+                self.logger.warning('Timelapse daily push telegram send failed for camera %s on %s',
+                                    camera, date_key)
+        return all_sent and sent_any
 
     @staticmethod
     def _get_timelapse_camera_names(settings):
-        names = settings.get('x') or []
+        names = settings.get('camera_names') or []
         if isinstance(names, str):
             names = [names]
         fallback = settings.get('camera_name')
