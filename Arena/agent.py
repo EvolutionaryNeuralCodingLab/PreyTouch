@@ -1,6 +1,7 @@
 import time
 import yaml
 import json
+import copy
 from datetime import datetime, timedelta
 from pathlib import Path
 import re
@@ -30,11 +31,15 @@ class Agent:
             self.trials = agent_config['trials']
             self.default_struct = agent_config['default_struct']
             self.times = agent_config['times']
+            self.history_scope = agent_config.get('history_scope', 'all')
+            self.schedule_mode = agent_config.get('schedule_mode', 'next_available')
         else:
             self.trials = {}
 
     def update(self, animal_id=None):
         if not self.trials:
+            return
+        if self.cache.get_current_experiment():
             return
         self.animal_id = animal_id or self.cache.get(cc.CURRENT_ANIMAL_ID)
         if self.animal_id == 'test':
@@ -63,10 +68,10 @@ class Agent:
             # if there are scheduled agent trials, do nothing
             return
 
-        possible_times = self.get_possible_times()
-        if not possible_times:
+        schedule_time = self.get_next_schedule_time()
+        if not schedule_time:
             return
-        self.orm.commit_schedule(possible_times[0], self.cached_experiment_name)
+        self.orm.commit_schedule(schedule_time, self.cached_experiment_name)
 
     def get_next_trial_name(self):
         for trial_name in self.trials:
@@ -86,15 +91,46 @@ class Agent:
     def get_possible_times(self):
         now = datetime.now()
         start_hour, start_minute = self.times['start_time'].split(':')
-        dt = now.replace(hour=int(start_hour), minute=int(start_minute), second=0)
+        dt = now.replace(hour=int(start_hour), minute=int(start_minute), second=0, microsecond=0)
         end_hour, end_minute = self.times['end_time'].split(':')
-        end_dt = now.replace(hour=int(end_hour), minute=int(end_minute), second=0)
+        end_dt = now.replace(hour=int(end_hour), minute=int(end_minute), second=0, microsecond=0)
         possible_times = []
         while dt <= end_dt:
             if dt >= now:
                 possible_times.append(dt)
             dt += timedelta(minutes=self.times['time_between_experiments'])
         return possible_times
+
+    def get_next_schedule_time(self):
+        if self.schedule_mode == 'trial_order':
+            return self.get_trial_order_time(self.next_trial_name)
+        possible_times = self.get_possible_times()
+        return possible_times[0] if possible_times else None
+
+    def get_trial_order_time(self, trial_name):
+        if not trial_name or trial_name not in self.trials:
+            return None
+        now = datetime.now()
+        start_hour, start_minute = self.times['start_time'].split(':')
+        start_dt = now.replace(hour=int(start_hour), minute=int(start_minute), second=0, microsecond=0)
+        end_hour, end_minute = self.times['end_time'].split(':')
+        end_dt = now.replace(hour=int(end_hour), minute=int(end_minute), second=0, microsecond=0)
+        try:
+            idx = list(self.trials.keys()).index(trial_name)
+        except ValueError:
+            return None
+        slot_dt = start_dt + timedelta(minutes=self.times['time_between_experiments']) * idx
+        if slot_dt > end_dt:
+            self.logger.warning(f'No available slot for {trial_name}; slot {slot_dt} beyond end_time {end_dt}')
+            return None
+        if slot_dt <= now:
+            if now > end_dt:
+                return None
+            schedule_dt = now + timedelta(seconds=5)
+            if schedule_dt > end_dt:
+                return None
+            return schedule_dt
+        return slot_dt
 
     def init_history(self):
         self.history = {}
@@ -115,7 +151,12 @@ class Agent:
         #     movements.setdefault(trial_dict['movement_type'], []).append(trial_name)
 
         with self.orm.session() as s:
-            exps = s.query(Experiment).filter_by(animal_id=self.animal_id).all()
+            exp_query = s.query(Experiment).filter_by(animal_id=self.animal_id)
+            if self.history_scope == 'today':
+                day_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                day_end = day_start + timedelta(days=1)
+                exp_query = exp_query.filter(Experiment.start_time >= day_start, Experiment.start_time < day_end)
+            exps = exp_query.all()
             for exp in exps:
                 for blk in exp.blocks:
                     if blk.agent_label in agent_trial_names:
@@ -178,7 +219,7 @@ class Agent:
                 elif v == 'per_ordered':
                     block_dict_[k] = per_left[0]
 
-        json_struct = self.default_struct.copy()
+        json_struct = copy.deepcopy(self.default_struct)
         json_struct['blocks'][0].update(block_dict_)
         exp_name = self.save_cached_experiment(json_struct)
         return exp_name
