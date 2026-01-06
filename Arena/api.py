@@ -9,6 +9,7 @@ import psutil
 import logging
 import pytest
 import importlib
+import importlib.util
 import tempfile
 from pathlib import Path
 from PIL import Image
@@ -19,7 +20,6 @@ from io import BytesIO
 import torch.multiprocessing as mp
 from flask import Flask, render_template, Response, request, send_from_directory, jsonify, send_file
 import sentry_sdk
-import config
 import utils
 from cache import RedisCache, CacheColumns as cc
 import utils
@@ -36,6 +36,34 @@ from analysis.strikes.loader import Loader
 from analysis.strikes.strikes import StrikeAnalyzer
 import matplotlib
 matplotlib.use('Agg')
+
+
+def _load_config_module():
+    """Load the arena config module even if a different `config` is on sys.path."""
+    try:
+        import config as cfg
+        if hasattr(cfg, 'env'):
+            return cfg
+    except Exception:
+        pass
+
+    cfg_path = Path(__file__).resolve().parent / 'config.py'
+    spec = importlib.util.spec_from_file_location('config', cfg_path)
+    cfg = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cfg)
+    sys.modules['config'] = cfg
+    return cfg
+
+
+config = _load_config_module()
+
+
+def _get_config_with_env():
+    cfg = config
+    if not hasattr(cfg, 'env'):
+        cfg = _load_config_module()
+        globals()['config'] = cfg
+    return cfg
 app = Flask('ArenaAPI')
 # prevent sort of keys by the tojson jinja function
 app.jinja_env.policies['json.dumps_kwargs']['sort_keys'] = False
@@ -399,7 +427,10 @@ def update_trigger_fps():
 def update_arena_config():
     data = request.json
     try:
-        config.env.update_from_api(data['key'], data['value'])
+        cfg = _get_config_with_env()
+        cfg.env.update_from_api(data['key'], data['value'])
+        global config_envs
+        config_envs = cfg.env.get_all_from_cache()
     except Exception as exc:
         error_msg = f'Error in update_arena_config; {exc}'
         arena_mgr.logger.error(error_msg)
