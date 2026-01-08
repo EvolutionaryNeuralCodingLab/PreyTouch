@@ -200,6 +200,15 @@ class Scheduler(threading.Thread):
         cache.set(cache_column, payload)
 
     @staticmethod
+    def _is_after_final_retry_time(now):
+        summary_time = datetime.strptime(config.DAILY_SUMMARY_TIME, '%H:%M').time()
+        cameras_off_time = datetime.strptime(config.CAMERAS_OFF_TIME, '%H:%M').time()
+        summary_dt = datetime.combine(now.date(), summary_time)
+        cameras_off_dt = datetime.combine(now.date(), cameras_off_time)
+        final_dt = max(summary_dt, cameras_off_dt)
+        return now >= final_dt
+
+    @staticmethod
     def is_in_range(label):
         now = datetime.now()
         if isinstance(label, str):
@@ -295,7 +304,8 @@ class Scheduler(threading.Thread):
         if not summary_sent:
             attempts = self._load_attempts(cc.DAILY_SUMMARY_ATTEMPTS)
             attempt_count = attempts.get(today_key, 0)
-            if attempt_count >= 3:
+            max_attempts = 4 if self._is_after_final_retry_time(now) else 3
+            if attempt_count >= max_attempts:
                 return
             attempts[today_key] = attempt_count + 1
             self._save_attempts(cc.DAILY_SUMMARY_ATTEMPTS, attempts)
@@ -364,6 +374,7 @@ class Scheduler(threading.Thread):
         sent_cameras = cache.get(cc.DAILY_TIMELAPSE_SUMMARY_SENT_CAMERAS) or []
         sent_cameras_set = set(sent_cameras)
         attempts = self._load_attempts(cc.DAILY_TIMELAPSE_SUMMARY_ATTEMPTS)
+        max_attempts = 4 if self._is_after_final_retry_time(datetime.now()) else 3
         start_time = datetime.strptime(config.CAMERAS_ON_TIME, '%H:%M').time()
         summary_time = datetime.strptime(config.DAILY_SUMMARY_TIME, '%H:%M').time()
         cameras_off_time = datetime.strptime(config.CAMERAS_OFF_TIME, '%H:%M').time()
@@ -398,7 +409,7 @@ class Scheduler(threading.Thread):
                 sent_any = True
                 continue
             attempt_count = attempts.get(token, 0)
-            if attempt_count >= 3:
+            if attempt_count >= max_attempts:
                 all_sent = False
                 continue
             hourly_files = []
@@ -444,6 +455,7 @@ class Scheduler(threading.Thread):
         sent_cameras = cache.get(cc.DAILY_TIMELAPSE_SENT_CAMERAS) or []
         sent_cameras_set = set(sent_cameras)
         attempts = self._load_attempts(cc.DAILY_TIMELAPSE_ATTEMPTS)
+        max_attempts = 4 if self._is_after_final_retry_time(datetime.now()) else 3
         all_sent = True
         sent_any = False
         for camera in camera_names:
@@ -452,7 +464,7 @@ class Scheduler(threading.Thread):
                 sent_any = True
                 continue
             attempt_count = attempts.get(token, 0)
-            if attempt_count >= 3:
+            if attempt_count >= max_attempts:
                 all_sent = False
                 continue
             clip_path = daily_dir / camera / f'{date_key}_timelapse.mp4'
