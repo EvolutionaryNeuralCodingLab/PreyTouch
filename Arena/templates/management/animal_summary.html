@@ -29,6 +29,8 @@
 
                     <button id="updateAnimalSummary" type="button" class="btn btn-sm btn-outline-primary"
                             style="margin-left: 1em">Update</button>
+                    <button id="refreshAnimalSummary" type="button" class="btn btn-sm btn-outline-secondary"
+                            style="margin-left: 0.5em">Reload</button>
                 </div>
 
                 <pre id="animalSummaryText" class="mt-2"></pre>
@@ -44,6 +46,64 @@
 
 <script>
     let animalIdsSummaryData = JSON.parse('{{ summary_animal_ids|tojson|safe }}')
+    const defaultArenaName = {{ arena_name|tojson|safe }}
+
+    function selectHasValue($select, value) {
+        if (!value) {
+            return false
+        }
+        return $select.find("option").filter(function () {
+            return $(this).val() === value
+        }).length > 0
+    }
+
+    function refreshAnimalSummaryData() {
+        const prevArena = $("#arenaForSummarySelect").val()
+        const prevAnimal = $("#animalIdsForSummarySelect").val()
+        const prevDay = $("#dateForSummarySelect").val()
+
+        return $.getJSON('/summary_animal_ids').done((data) => {
+            animalIdsSummaryData = data || {}
+            const $arenaSelect = $("#arenaForSummarySelect")
+            $arenaSelect.empty()
+            $.each(Object.keys(animalIdsSummaryData), (i, arena) => {
+                $arenaSelect.append($("<option></option>").attr("value", arena).text(arena))
+            })
+
+            let nextArena = prevArena
+            if (!selectHasValue($arenaSelect, nextArena)) {
+                if (defaultArenaName && selectHasValue($arenaSelect, defaultArenaName)) {
+                    nextArena = defaultArenaName
+                } else {
+                    nextArena = $arenaSelect.find("option:first").val()
+                }
+            }
+
+            if (!nextArena) {
+                $("#animalIdsForSummarySelect option").remove()
+                $("#dateForSummarySelect option").remove()
+                return
+            }
+
+            $arenaSelect.val(nextArena).trigger('change')
+
+            const nextDate = $("#dateForSummarySelect").find("option:first").val()
+            $("#dateForSummarySelect").val(nextDate)
+
+            if (selectHasValue($("#animalIdsForSummarySelect"), prevAnimal)) {
+                $("#animalIdsForSummarySelect").val(prevAnimal).trigger('change')
+                if (selectHasValue($("#dateForSummarySelect"), nextDate)) {
+                    $("#dateForSummarySelect").val(nextDate)
+                }
+            }
+        }).fail((data) => {
+            console.log(data.responseText || 'Failed to refresh animal summary list')
+        })
+    }
+
+    $("#refreshAnimalSummary").click(() => {
+        refreshAnimalSummaryData()
+    })
 
     $("#arenaForSummarySelect").change(() => {
         let selectedArena = $("#arenaForSummarySelect").val()

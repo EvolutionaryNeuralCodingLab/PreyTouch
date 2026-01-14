@@ -17,6 +17,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import config
+from cache import RedisCache, CacheColumns as cc
 
 import requests
 try:
@@ -24,6 +25,7 @@ try:
 except ImportError:  # Pillow optional; overlay disabled if missing
     Image = ImageDraw = ImageFont = None
 _OVERLAY_TIMESTAMP_WARNING_EMITTED = False
+_HEARTBEAT_WARNING_EMITTED = False
 
 
 ENV_OVERRIDES = {
@@ -292,12 +294,23 @@ def _handle_capture_loop(_: argparse.Namespace, cfg: TimelapseConfig, logger: lo
                 cfg.frame_interval_seconds)
     next_capture = time.monotonic()
     last_frame_hash: Dict[str, str] = {}
+    last_success = time.time()
+    cache_client = None
+    if getattr(config, 'TIMELAPSE_CAPTURE_WATCHDOG_ENABLE', False):
+        try:
+            cache_client = RedisCache()
+        except Exception as exc:
+            logger.warning('Timelapse heartbeat disabled (Redis unavailable): %s', exc)
+            cache_client = None
     try:
         while True:
+            any_success = False
             for camera in cfg.camera_names:
                 start = time.time()
                 try:
                     frame_bytes = _fetch_frame_from_arena(cfg, camera)
+                    any_success = True
+                    last_success = start
                     digest = hashlib.sha1(frame_bytes).hexdigest()
                     if digest == last_frame_hash.get(camera):
                         logger.warning('Skipping stale frame for %s (no changes detected)', camera)
@@ -306,6 +319,14 @@ def _handle_capture_loop(_: argparse.Namespace, cfg: TimelapseConfig, logger: lo
                     last_frame_hash[camera] = digest
                 except Exception as exc:
                     logger.error('Failed to capture frame from %s: %s', camera, exc)
+            if any_success and cache_client:
+                _set_heartbeat(cache_client, logger)
+            else:
+                stale_seconds = getattr(config, 'TIMELAPSE_CAPTURE_STALE_SECONDS', 300)
+                if time.time() - last_success > stale_seconds:
+                    logger.error('No successful timelapse captures for %s seconds; exiting for restart',
+                                 stale_seconds)
+                    return 2
             next_capture += cfg.frame_interval_seconds
             sleep_for = next_capture - time.monotonic()
             if sleep_for > 0:
@@ -315,6 +336,16 @@ def _handle_capture_loop(_: argparse.Namespace, cfg: TimelapseConfig, logger: lo
     except KeyboardInterrupt:
         logger.info('Capture loop interrupted by user')
         return 0
+
+
+def _set_heartbeat(cache_client: RedisCache, logger: logging.Logger) -> None:
+    global _HEARTBEAT_WARNING_EMITTED
+    try:
+        cache_client.set(cc.TIMELAPSE_CAPTURE_HEARTBEAT, time.time())
+    except Exception as exc:
+        if not _HEARTBEAT_WARNING_EMITTED:
+            logger.warning('Failed to update timelapse heartbeat: %s', exc)
+            _HEARTBEAT_WARNING_EMITTED = True
 
 
 def _build_hourly_clip(date: str, hour: str, cfg: TimelapseConfig, logger: logging.Logger, camera: str) -> int:
