@@ -129,6 +129,8 @@ export default {
         this.$refs.bugChild = []
         cancelAnimationFrame(this.animationHandler)
       }
+      this.bugsProps = []
+      this.eventsLog = []
       if (isLogTrajectory) {
         this.startLogBugTrajectory()
       }

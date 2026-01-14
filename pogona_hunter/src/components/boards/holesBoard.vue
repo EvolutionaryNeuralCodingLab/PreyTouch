@@ -117,18 +117,24 @@ export default {
       let exitHole = this.bugsSettings.exitHole
       if (this.isSplitBugsView) {
         const exit = this.mirrorBugsProps[bugId]
-        if (!exit) {
+        if (!exit || !exit['exitHole']) {
           console.error('No exit found for bugId', bugId, this.mirrorBugsProps)
+          return this.holesPositions[exitHole]
         }
-        exitHole = exit['exitHole'] || exitHole
+        exitHole = exit['exitHole']
       }
 
       return this.holesPositions[exitHole]
     },
     entranceHolePos: function (bugId) {
       if (this.isSplitBugsView) {
-        const entrance = this.mirrorBugsProps[bugId]['entranceHole']
-        return this.holesPositions[entrance]
+        const entry = this.mirrorBugsProps[bugId]
+        if (!entry || !entry['entranceHole']) {
+          console.error('No entrance found for bugId', bugId, this.mirrorBugsProps)
+          const fallback = this.bugsSettings.exitHole === 'left' ? 'right' : 'left'
+          return this.holesPositions[fallback]
+        }
+        return this.holesPositions[entry['entranceHole']]
       }
       let entranceHole = this.bugsSettings.exitHole === 'left' ? 'right' : 'left'
       return this.holesPositions[entranceHole]
@@ -154,7 +160,10 @@ export default {
         }
       }
 
-      let bug = this.$refs.bugChild[0]
+      let bug = this.$refs.bugChild && this.$refs.bugChild[0]
+      if (!bug) {
+        return d
+      }
       if (bug.isMoveInCircles) {
         d['circle_radius'] = bug.r
         d['circle_position'] = bug.r0
