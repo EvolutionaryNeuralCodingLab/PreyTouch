@@ -38,20 +38,29 @@ class Agent:
 
     def update(self, animal_id=None):
         if not self.trials:
-            return
-        if self.cache.get_current_experiment():
+            self.set_last_error('Agent trials config is empty')
             return
         self.animal_id = animal_id or self.cache.get(cc.CURRENT_ANIMAL_ID)
-        if self.animal_id == 'test':
+        if not self.animal_id:
+            self.set_last_error('No current animal ID set')
             return
+        if self.animal_id == 'test':
+            self.set_last_error('Agent disabled for test animal')
+            return
+        if self.cache.get_current_experiment():
+            if not self.clear_stale_experiment_cache():
+                self.set_last_error('Experiment already running')
+                return
         self.init_history()
         self.load_history()
         if self.cache.get(cc.HOLD_AGENT):  # stop here if agent is on hold
+            self.set_last_error('Agent is on hold')
             return
         self.next_trial_name = self.get_next_trial_name()
         if not self.next_trial_name:
             # all experiments are over
             party_emoji = u'\U0001F389'
+            self.set_last_error('All agent trials are complete')
             self.publish(f'Animal {self.animal_id} has finished all its experiments {party_emoji}')
             return
         self.create_cached_experiment()
@@ -60,18 +69,22 @@ class Agent:
         else:
             error_msg = f'Unable to schedule an experiment using agent since the following checks failed: ' \
                         f'{",".join(self.exp_validation.failed_checks)}'
+            self.set_last_error(error_msg)
             self.publish(error_msg)
 
     def schedule_next_block(self):
         next_schedules = self.get_upcoming_agent_schedules()
         if next_schedules:
             # if there are scheduled agent trials, do nothing
+            self.clear_last_error()
             return
 
         schedule_time = self.get_next_schedule_time()
         if not schedule_time:
+            self.set_last_error('No available schedule time')
             return
         self.orm.commit_schedule(schedule_time, self.cached_experiment_name)
+        self.clear_last_error()
 
     def get_next_trial_name(self):
         for trial_name in self.trials:
@@ -197,6 +210,39 @@ class Agent:
             self.logger.error(msg)
             utils.send_telegram_message(f'Agent Message:\n{msg}')
             self.cache.set(cc.LAST_TIME_AGENT_MESSAGE, time.time())
+
+    def set_last_error(self, msg):
+        if msg:
+            stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            self.cache.set(cc.LAST_AGENT_ERROR, f'{stamp} - {msg}')
+        else:
+            self.clear_last_error()
+
+    def clear_last_error(self):
+        self.cache.delete(cc.LAST_AGENT_ERROR)
+
+    def clear_stale_experiment_cache(self):
+        if config.DISABLE_DB:
+            return False
+        animal_id = self.animal_id or self.cache.get(cc.CURRENT_ANIMAL_ID)
+        if not animal_id:
+            return False
+        try:
+            with self.orm.session() as s:
+                running_exp = s.query(Experiment).filter_by(animal_id=animal_id,
+                                                           arena=config.ARENA_NAME,
+                                                           end_time=None).first()
+            if running_exp:
+                return False
+            for col in [cc.EXPERIMENT_NAME, cc.EXPERIMENT_PATH, cc.EXPERIMENT_BLOCK_ID, cc.EXPERIMENT_BLOCK_PATH,
+                        cc.IS_ALWAYS_REWARD, cc.IS_EXPERIMENT_CONTROL_CAMERAS, cc.IS_REWARD_TIMEOUT,
+                        cc.IS_VISUAL_APP_ON, cc.CURRENT_BLOCK_DB_INDEX]:
+                self.cache.delete(col)
+            self.logger.warning('Cleared stale experiment cache to unblock agent scheduling')
+            return True
+        except Exception as exc:
+            self.logger.warning(f'Unable to verify stale experiment cache; {exc}')
+            return False
 
     def get_animal_history(self):
         txt = f'Animal ID: {self.animal_id}\n'

@@ -360,7 +360,7 @@ def send_telegram_message(message: str):
         return None
 
 
-def send_telegram_video(video_path: str, caption: str = ''):
+def send_telegram_video(video_path: str, caption: str = '', timeout: int = 120):
     """Send a video clip to Telegram, if publishing is configured."""
     if not config.TELEGRAM_TOKEN:
         return
@@ -378,7 +378,7 @@ def send_telegram_video(video_path: str, caption: str = ''):
             response = requests.post(f'https://api.telegram.org/bot{config.TELEGRAM_TOKEN}/sendVideo',
                                      data=data,
                                      files=files,
-                                     timeout=120)
+                                     timeout=timeout)
         if response.status_code != 200:
             telegram_logger.warning('Telegram sendVideo failed (%s): %s', response.status_code, response.text)
         return response

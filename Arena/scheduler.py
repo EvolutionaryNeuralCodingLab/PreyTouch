@@ -3,6 +3,7 @@ import time
 import json
 import subprocess
 import tempfile
+import shutil
 from functools import wraps
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -67,6 +68,9 @@ class Scheduler(threading.Thread):
         self.last_daily_summary_sent = cache.get(cc.DAILY_SUMMARY_SENT_DATE)
         self.last_timelapse_summary_sent = cache.get(cc.DAILY_TIMELAPSE_SUMMARY_SENT_DATE)
         self.last_daily_timelapse_sent = cache.get(cc.DAILY_TIMELAPSE_SENT_DATE)
+        self.timelapse_watchdog_started_at = time.time()
+        self.last_timelapse_capture_restart = 0
+        self._timelapse_restart_inflight = False
         self.start_lights()
 
     def run(self):
@@ -82,6 +86,7 @@ class Scheduler(threading.Thread):
                 self.check_camera_status()
                 self.set_tracking_cameras()
                 self.check_scheduled_experiments()
+                self.timelapse_capture_watchdog()
                 self.periphery.send_toggles_healthcheck()
                 self.arena_mgr.update_upcoming_schedules()
                 self.analyze_strikes()
@@ -133,26 +138,29 @@ class Scheduler(threading.Thread):
                 schedule_date = datetime.strptime(m.group('date'), config.SCHEDULER_DATE_FORMAT)
                 if (schedule_date - datetime.now()).total_seconds() <= 0:
                     exp_name = m.group('name')
-                    # lights stimulation (in case the name starts with "LightSTIM:")
-                    if exp_name.startswith('LightSTIM:'):
-                        stim_cmd = exp_name.replace('LightSTIM:', '')
-                        LightSTIM().run_stim_command(stim_cmd)
-                    # schedule of periphery switches (in case the name starts with "SWITCH:")
-                    elif exp_name.startswith('SWITCH:'):
-                        switch_name, switch_state = exp_name.replace('SWITCH:', '').split(',')
-                        self.periphery.switch(switch_name, int(switch_state == 'on'))
-                    # schedule of agent activation
-                    elif exp_name.startswith('AGENT:'):
-                        agent_state = exp_name.replace('AGENT:', '')
-                        cache.set(cc.HOLD_AGENT, agent_state == 'off')
-                    elif exp_name.startswith('FEEDER:'):
-                        self.periphery.feed()
-                    elif exp_name.startswith('SOUND:'):
-                        wav_name = exp_name.replace('SOUND:', '')
-                        wav_file = f'{config.STATIC_FILES_DIR}/{wav_name}'
-                        self.periphery.play_wav_file(wav_file)
-                    else:  # otherwise, start the cached experiment
-                        self.arena_mgr.start_cached_experiment(m.group('name'))
+                    try:
+                        # lights stimulation (in case the name starts with "LightSTIM:")
+                        if exp_name.startswith('LightSTIM:'):
+                            stim_cmd = exp_name.replace('LightSTIM:', '')
+                            LightSTIM().run_stim_command(stim_cmd)
+                        # schedule of periphery switches (in case the name starts with "SWITCH:")
+                        elif exp_name.startswith('SWITCH:'):
+                            switch_name, switch_state = exp_name.replace('SWITCH:', '').split(',')
+                            self.periphery.switch(switch_name, int(switch_state == 'on'))
+                        # schedule of agent activation
+                        elif exp_name.startswith('AGENT:'):
+                            agent_state = exp_name.replace('AGENT:', '')
+                            cache.set(cc.HOLD_AGENT, agent_state == 'off')
+                        elif exp_name.startswith('FEEDER:'):
+                            self.periphery.feed()
+                        elif exp_name.startswith('SOUND:'):
+                            wav_name = exp_name.replace('SOUND:', '')
+                            wav_file = f'{config.STATIC_FILES_DIR}/{wav_name}'
+                            self.periphery.play_wav_file(wav_file)
+                        else:  # otherwise, start the cached experiment
+                            self.arena_mgr.start_cached_experiment(m.group('name'))
+                    finally:
+                        self.arena_mgr.orm.delete_schedule(schedule_id)
 
     @schedule_method
     def dwh_commit(self):
@@ -174,6 +182,25 @@ class Scheduler(threading.Thread):
         if config.IS_AGENT_ENABLED and self.is_in_range('cameras_on') and not self.is_test_animal() and \
                 not cache.get(cc.HOLD_AGENT):
             self.agent.update()
+            if self._is_in_agent_window() and not self.agent.get_upcoming_agent_schedules() \
+                and cache.get(cc.LAST_AGENT_ERROR) is None:
+                msg = 'Agent is active but no upcoming schedules were found.'
+                self.agent.publish(msg)
+
+    def _is_in_agent_window(self):
+        try:
+            start_time = self.agent.times['start_time']
+            end_time = self.agent.times['end_time']
+            start_hour, start_minute = start_time.split(':')
+            end_hour, end_minute = end_time.split(':')
+        except Exception:
+            return True
+        now = datetime.now()
+        start_dt = now.replace(hour=int(start_hour), minute=int(start_minute), second=0, microsecond=0)
+        end_dt = now.replace(hour=int(end_hour), minute=int(end_minute), second=0, microsecond=0)
+        if start_dt <= end_dt:
+            return start_dt <= now <= end_dt
+        return now >= start_dt or now <= end_dt
 
     @schedule_method
     def analyze_strikes(self):
@@ -374,7 +401,7 @@ class Scheduler(threading.Thread):
         sent_cameras = cache.get(cc.DAILY_TIMELAPSE_SUMMARY_SENT_CAMERAS) or []
         sent_cameras_set = set(sent_cameras)
         attempts = self._load_attempts(cc.DAILY_TIMELAPSE_SUMMARY_ATTEMPTS)
-        max_attempts = 4 if self._is_after_final_retry_time(datetime.now()) else 3
+        max_attempts = config.TIMELAPSE_MAX_SEND_ATTEMPTS
         start_time = datetime.strptime(config.CAMERAS_ON_TIME, '%H:%M').time()
         summary_time = datetime.strptime(config.DAILY_SUMMARY_TIME, '%H:%M').time()
         cameras_off_time = datetime.strptime(config.CAMERAS_OFF_TIME, '%H:%M').time()
@@ -412,6 +439,8 @@ class Scheduler(threading.Thread):
             if attempt_count >= max_attempts:
                 all_sent = False
                 continue
+            attempts[token] = attempt_count + 1
+            self._save_attempts(cc.DAILY_TIMELAPSE_SUMMARY_ATTEMPTS, attempts)
             hourly_files = []
             for hour in range(start_hour, end_hour):
                 clip_path = self._ensure_hourly_clip(date_key, hour, camera, captures_dir, hourly_dir,
@@ -426,9 +455,9 @@ class Scheduler(threading.Thread):
             output_path = daily_dir / camera / f'{date_key}_summary_{start_label}-{end_label}.mp4'
             if self._stitch_hourly_clips(hourly_files, output_path):
                 caption = f'Timelapse ({camera}) {date_key} {config.CAMERAS_ON_TIME}-{coverage_end_label}'
-                attempts[token] = attempt_count + 1
-                self._save_attempts(cc.DAILY_TIMELAPSE_SUMMARY_ATTEMPTS, attempts)
-                resp = utils.send_telegram_video(str(output_path), caption=caption)
+                resp = utils.send_telegram_video(str(output_path),
+                                                 caption=caption,
+                                                 timeout=config.TIMELAPSE_SEND_TIMEOUT)
                 if resp is not None and resp.ok:
                     sent_any = True
                     sent_cameras_set.add(token)
@@ -444,6 +473,54 @@ class Scheduler(threading.Thread):
 
         return all_sent and sent_any
 
+    @schedule_method
+    def timelapse_capture_watchdog(self):
+        if not config.TIMELAPSE_CAPTURE_WATCHDOG_ENABLE or not config.TIMELAPSE_ENABLE:
+            return
+        now = time.time()
+        hb = cache.get(cc.TIMELAPSE_CAPTURE_HEARTBEAT)
+        try:
+            hb = float(hb) if hb else None
+        except (TypeError, ValueError):
+            hb = None
+
+        stale_seconds = config.TIMELAPSE_CAPTURE_STALE_SECONDS
+        if hb is None:
+            if now - self.timelapse_watchdog_started_at < stale_seconds:
+                return
+            if now - self.last_timelapse_capture_restart < config.TIMELAPSE_CAPTURE_WATCHDOG_COOLDOWN:
+                return
+            self._restart_timelapse_capture('no heartbeat')
+            return
+
+        if now - hb < stale_seconds:
+            return
+        if now - self.last_timelapse_capture_restart < config.TIMELAPSE_CAPTURE_WATCHDOG_COOLDOWN:
+            return
+        self._restart_timelapse_capture(f'stale heartbeat ({now - hb:.0f}s)')
+
+    def _restart_timelapse_capture(self, reason):
+        if self._timelapse_restart_inflight:
+            return
+        self._timelapse_restart_inflight = True
+
+        def _run():
+            try:
+                supervisorctl = shutil.which('supervisorctl')
+                if not supervisorctl:
+                    self.logger.error('Timelapse watchdog: supervisorctl not found; cannot restart capture loop')
+                    return
+                cmd = [supervisorctl, 'restart', config.TIMELAPSE_CAPTURE_SUPERVISOR_NAME]
+                subprocess.run(cmd, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20)
+                self.logger.warning('Timelapse watchdog restarted capture loop (%s)', reason)
+            except Exception as exc:
+                self.logger.error('Timelapse watchdog restart failed: %s', exc)
+            finally:
+                self.last_timelapse_capture_restart = time.time()
+                self._timelapse_restart_inflight = False
+
+        threading.Thread(target=_run, daemon=True).start()
+
     def _send_full_day_timelapse(self, target_date, settings):
         camera_names = self._get_timelapse_camera_names(settings)
         if not camera_names:
@@ -455,7 +532,7 @@ class Scheduler(threading.Thread):
         sent_cameras = cache.get(cc.DAILY_TIMELAPSE_SENT_CAMERAS) or []
         sent_cameras_set = set(sent_cameras)
         attempts = self._load_attempts(cc.DAILY_TIMELAPSE_ATTEMPTS)
-        max_attempts = 4 if self._is_after_final_retry_time(datetime.now()) else 3
+        max_attempts = config.TIMELAPSE_MAX_SEND_ATTEMPTS
         all_sent = True
         sent_any = False
         for camera in camera_names:
@@ -467,6 +544,8 @@ class Scheduler(threading.Thread):
             if attempt_count >= max_attempts:
                 all_sent = False
                 continue
+            attempts[token] = attempt_count + 1
+            self._save_attempts(cc.DAILY_TIMELAPSE_ATTEMPTS, attempts)
             clip_path = daily_dir / camera / f'{date_key}_timelapse.mp4'
             if not clip_path.exists():
                 hourly_files = sorted((hourly_dir / camera).glob(f'{date_key}_*.mp4'))
@@ -479,9 +558,9 @@ class Scheduler(threading.Thread):
                     all_sent = False
                     continue
             caption = f'Timelapse ({camera}) {date_key} full day'
-            attempts[token] = attempt_count + 1
-            self._save_attempts(cc.DAILY_TIMELAPSE_ATTEMPTS, attempts)
-            resp = utils.send_telegram_video(str(clip_path), caption=caption)
+            resp = utils.send_telegram_video(str(clip_path),
+                                             caption=caption,
+                                             timeout=config.TIMELAPSE_SEND_TIMEOUT)
             if resp is not None and resp.ok:
                 sent_any = True
                 sent_cameras_set.add(token)
@@ -536,7 +615,12 @@ class Scheduler(threading.Thread):
             str(hourly_path)
         ]
         try:
-            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                           timeout=config.TIMELAPSE_FFMPEG_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            self.logger.error('Timed out building hourly timelapse for %s %s %s',
+                              camera, date_key, hour_label)
+            return None
         except subprocess.CalledProcessError as exc:
             self.logger.error('Failed building hourly timelapse for %s %s %s: %s',
                               camera, date_key, hour_label, exc)
@@ -561,7 +645,11 @@ class Scheduler(threading.Thread):
             str(output_path)
         ]
         try:
-            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                           timeout=config.TIMELAPSE_FFMPEG_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            self.logger.error('Timed out stitching timelapse summary for %s', output_path)
+            return False
         except subprocess.CalledProcessError as exc:
             self.logger.error('Failed stitching timelapse summary for %s: %s', output_path, exc)
             if exc.stderr:

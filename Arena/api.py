@@ -108,6 +108,13 @@ def index():
                            acquire_stop={'num_frames': 'Num Frames', 'rec_time': 'Record Time [sec]'})
 
 
+@app.route('/summary_animal_ids', methods=['GET'])
+def summary_animal_ids():
+    if config.DISABLE_DB or arena_mgr is None:
+        return jsonify({})
+    return jsonify(arena_mgr.orm.get_animal_ids_for_summary())
+
+
 @app.route('/check', methods=['GET'])
 def check():
     # periphery_mgr.publish_cam_trigger_state()
@@ -121,6 +128,7 @@ def check():
     res['display_state'] = utils.check_app_screen_state() if not config.DISABLE_APP_SCREEN else None
     if config.IS_AGENT_ENABLED:
         res['agent_active'] = not cache.get(cc.HOLD_AGENT)
+        res['last_agent_error'] = cache.get(cc.LAST_AGENT_ERROR)
 
     if config.IS_ANALYSIS_ONLY:
         res.update({'reward_left': 0, 'schedules': {}, 'feeder_delay': 0})

@@ -173,6 +173,7 @@ SCHEDULER_DATE_FORMAT = env('SCHEDULER_DATE_FORMAT', "%d/%m/%Y %H:%M", group='Sc
 MAX_COMPRESSION_THREADS = env.int('MAX_COMPRESSION_THREADS', 2, group='Scheduler', desc='Number of threads to be used for video compression')
 IS_COMPRESSION_DISABLED = env.bool('IS_COMPRESSION_DISABLED', False, group='Scheduler', desc='Disable the scheduled compressions of videos')
 SCHEDULE_EXPERIMENTS_END_TIME = env('SCHEDULE_EXPERIMENTS_END_TIME', '19:00', group='Scheduler', desc='last hour of a day to schedule experiments')
+SCHEDULE_LOOKBACK_MINUTES = env.int('SCHEDULE_LOOKBACK_MINUTES', 10, group='Scheduler', desc='Minutes to look back for missed schedules after restarts')
 IS_AGENT_ENABLED = env.bool('IS_AGENT_ENABLED', 0, group='Scheduler', desc='Enable the agent to schedule experiments automatically')
 AGENT_MIN_DURATION_BETWEEN_PUBLISH = env.int('AGENT_MIN_DURATION_BETWEEN_PUBLISH', 2 * 60 * 60, group='Scheduler', desc='Minimum duration in seconds between publish meassages by the agent')
 CAMERAS_ON_TIME = env('CAMERAS_ON_TIME', '07:00', group='Scheduler', desc='Time to start cameras by the scheduler', validator='hour_validator')
@@ -271,6 +272,17 @@ TIMELAPSE_DELETE_HOURLIES_AFTER_DAILY = env.bool('TIMELAPSE_DELETE_HOURLIES_AFTE
 TIMELAPSE_ARENA_URL = env('TIMELAPSE_ARENA_URL', f'http://{MANAGEMENT_HOST}:{MANAGEMENT_PORT}', group='Timelapse', desc='Base URL for fetching frames from Arena API', is_map=False)
 TIMELAPSE_ARENA_TIMEOUT = env.float('TIMELAPSE_ARENA_TIMEOUT', 10.0, group='Timelapse', desc='Timeout (seconds) for Arena frame requests')
 TIMELAPSE_OVERLAY_TIMESTAMP = env.bool('TIMELAPSE_OVERLAY_TIMESTAMP', True, group='Timelapse', desc='Draw timestamp text on captured frames')
+TIMELAPSE_SEND_TIMEOUT = env.int('TIMELAPSE_SEND_TIMEOUT', 30, group='Timelapse', desc='Timeout (seconds) for timelapse telegram sends')
+TIMELAPSE_FFMPEG_TIMEOUT = env.int('TIMELAPSE_FFMPEG_TIMEOUT', 120, group='Timelapse', desc='Timeout (seconds) for timelapse ffmpeg steps')
+TIMELAPSE_MAX_SEND_ATTEMPTS = env.int('TIMELAPSE_MAX_SEND_ATTEMPTS', 1, group='Timelapse', desc='Max timelapse send attempts per camera per day')
+TIMELAPSE_CAPTURE_WATCHDOG_ENABLE = env.bool('TIMELAPSE_CAPTURE_WATCHDOG_ENABLE', True, group='Timelapse',
+                                             desc='Restart timelapse capture loop if heartbeat stalls')
+TIMELAPSE_CAPTURE_STALE_SECONDS = env.int('TIMELAPSE_CAPTURE_STALE_SECONDS', 300, group='Timelapse',
+                                          desc='Seconds without timelapse heartbeat before restart')
+TIMELAPSE_CAPTURE_WATCHDOG_COOLDOWN = env.int('TIMELAPSE_CAPTURE_WATCHDOG_COOLDOWN', 600, group='Timelapse',
+                                              desc='Minimum seconds between timelapse capture restarts')
+TIMELAPSE_CAPTURE_SUPERVISOR_NAME = env('TIMELAPSE_CAPTURE_SUPERVISOR_NAME', 'prey_touch_captures', group='Timelapse',
+                                        desc='Supervisor program name for timelapse capture loop')
 
 TIMELAPSE_SETTINGS = {
     'enable': TIMELAPSE_ENABLE,
