@@ -194,17 +194,24 @@ class ExperimentLogger(Subscriber):
 
 
 class TouchLogger(ExperimentLogger):
+    SUCCESS_COUNTER_TTL = 2 * 24 * 60 * 60  # keep counters for two days
+    REWARD_DECISION_TIMEOUT = 2  # seconds to wait for reward decision before DB commit
+
     def __init__(self, *args, **kwargs):
         super(TouchLogger, self).__init__(*args, **kwargs)
         self.periphery = PeripheryIntegrator()
         self.touches_queue = queue.Queue()
+        self._reward_events = {}
+        self._reward_events_lock = threading.Lock()
         self.start_touches_receiver_thread()
 
     def payload_action(self, payload):
         try:
+            payload['reward_skipped'] = False
+            self._register_reward_event(payload)
             self.touches_queue.put_nowait(payload)
         except queue.Full:
-            pass
+            self._signal_reward_decided(payload)
         except Exception as exc:
             self.logger.error(f'Error in image sink; {exc}')
 
@@ -221,12 +228,16 @@ class TouchLogger(ExperimentLogger):
 
                     dt = (ts - last_touch_ts).total_seconds() if last_touch_ts else 0
                     if last_touch_ts and ts and dt < 0.2:
+                        self._signal_reward_decided(payload)
                         continue
 
                     last_touch_ts = ts
                     self.logger.info(f'Received touch event; timestamp={ts}; '
                                      f'time passed from last reward: {dt:.1f} seconds')
-                    self.handle_hit(payload)
+                    try:
+                        self.handle_hit(payload)
+                    finally:
+                        self._signal_reward_decided(payload)
                 except queue.Empty:
                     pass
             self.logger.debug('touches receiver thread is closed')
@@ -235,14 +246,75 @@ class TouchLogger(ExperimentLogger):
         t.start()
 
     def handle_hit(self, payload):
-        if self.cache.get(cc.IS_ALWAYS_REWARD) and payload.get('is_reward_bug') and \
-                (payload.get('is_hit') or payload.get('is_reward_any_touch')):
-            self.periphery.feed()
-            return True
+        if not (self.cache.get(cc.IS_ALWAYS_REWARD) and payload.get('is_reward_bug') and
+                (payload.get('is_hit') or payload.get('is_reward_any_touch'))):
+            return False
+
+        success_count = self._increment_daily_success_counter()
+        skip_every = config.ALWAYS_REWARD_SKIP_EVERY_N
+        if skip_every > 0 and success_count % skip_every == 0:
+            self._log_skipped_reward(payload, success_count)
+            return False
+
+        self.periphery.feed()
+        return True
+
+    def _increment_daily_success_counter(self):
+        key = self._get_success_counter_key()
+        count = self.cache._redis.incr(key)
+        if count == 1:
+            self.cache._redis.expire(key, self.SUCCESS_COUNTER_TTL)
+        return count
+
+    def _get_success_counter_key(self):
+        animal_id = self.cache.get(cc.CURRENT_ANIMAL_ID) or 'unknown'
+        day_string = datetime.now().strftime('%Y%m%d')
+        return f'touch_success_counter:{animal_id}:{day_string}'
+
+    def _log_skipped_reward(self, payload, success_count):
+        block_id = payload.get('block_id') or self.cache.get(cc.CURRENT_BLOCK_DB_INDEX)
+        trial_id = payload.get('trial_id')
+        bug_type = payload.get('bug_type')
+        touch_time = payload.get('time')
+        self.logger.info(
+            'Skipping reward for success #%s of the day (trial_id=%s, block_id=%s, bug_type=%s, time=%s)',
+            success_count,
+            trial_id,
+            block_id,
+            bug_type,
+            touch_time
+        )
+        payload['reward_skipped'] = True
 
     @run_in_thread
     def commit_to_db(self, payload):
+        self._wait_for_reward_decision(payload)
         self.orm.commit_strike(payload)
+
+    def _register_reward_event(self, payload):
+        key = id(payload)
+        with self._reward_events_lock:
+            if key not in self._reward_events:
+                self._reward_events[key] = threading.Event()
+
+    def _get_reward_event(self, payload):
+        key = id(payload)
+        with self._reward_events_lock:
+            return self._reward_events.get(key)
+
+    def _signal_reward_decided(self, payload):
+        event = self._get_reward_event(payload)
+        if event:
+            event.set()
+
+    def _wait_for_reward_decision(self, payload):
+        event = self._get_reward_event(payload)
+        if not event:
+            return
+        event.wait(timeout=self.REWARD_DECISION_TIMEOUT)
+        key = id(payload)
+        with self._reward_events_lock:
+            self._reward_events.pop(key, None)
 
 
 class TrialDataLogger(ExperimentLogger):

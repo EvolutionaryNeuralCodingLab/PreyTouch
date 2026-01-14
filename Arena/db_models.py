@@ -172,6 +172,7 @@ class Strike(Base):
     is_hit = Column(Boolean)
     is_reward_bug = Column(Boolean)
     is_climbing = Column(Boolean)
+    reward_skipped = Column(Boolean, default=False)
     x = Column(Float)
     y = Column(Float)
     bug_x = Column(Float)
@@ -385,6 +386,7 @@ class ORM:
         kwargs['arena'] = config.ARENA_NAME
         kwargs['block_id'] = strike_dict.get('block_id') or self.cache.get(cc.CURRENT_BLOCK_DB_INDEX)
         kwargs['trial_id'] = strike_dict.get('trial_id')
+        kwargs['reward_skipped'] = bool(strike_dict.get('reward_skipped'))
 
         with self.session() as s:
             strike = Strike(**kwargs)
@@ -500,7 +502,10 @@ class ORM:
     def get_upcoming_schedules(self):
         with self.session() as s:
             animal_id = self.cache.get(cc.CURRENT_ANIMAL_ID)
-            schedules = s.query(Schedule).filter(Schedule.date >= datetime.now(),
+            now = datetime.now()
+            lookback_minutes = max(config.SCHEDULE_LOOKBACK_MINUTES, 0)
+            start_time = now - timedelta(minutes=lookback_minutes)
+            schedules = s.query(Schedule).filter(Schedule.date >= start_time,
                                                  Schedule.animal_id == animal_id,
                                                  Schedule.arena == config.ARENA_NAME).order_by(Schedule.date)
         return schedules
@@ -561,6 +566,19 @@ class ORM:
                 rewards = rewards.filter_by(animal_id=animal_id)
         return {'manual': rewards.filter_by(is_manual=True).count(),
                 'auto': rewards.filter_by(is_manual=False).count()}
+
+    def get_skipped_rewards_for_day(self, day_string=None) -> int:
+        """
+        Returns number of strikes for the arena that were marked as reward_skipped on given day.
+        """
+        day = self._parse_day_string(day_string)
+        with self.session() as s:
+            count = s.query(func.count(Strike.id)).filter(
+                and_(cast(Strike.time, Date) == day,
+                     Strike.arena == config.ARENA_NAME,
+                     Strike.reward_skipped.is_(True))
+            ).scalar()
+        return count or 0
 
     def get_strikes_for_day(self, day_string=None, animal_id=None) -> pd.DataFrame:
         day = self._parse_day_string(day_string)
@@ -653,13 +671,16 @@ class ORM:
             for exp in exps:
                 summary.setdefault(exp.animal_id, {'total_trials': 0, 'total_strikes': 0, 'blocks': {}})
                 for blk in exp.blocks:
-                    block_dict = summary[exp.animal_id]['blocks'].setdefault(blk.movement_type, {'hits': 0, 'misses': 0})
+                    block_dict = summary[exp.animal_id]['blocks'].setdefault(
+                        blk.movement_type, {'hits': 0, 'misses': 0, 'correct_hits': 0})
                     for tr in blk.trials:
                         summary[exp.animal_id]['total_trials'] += 1
                     for strk in blk.strikes:
                         summary[exp.animal_id]['total_strikes'] += 1
                         if strk.is_hit:
                             block_dict['hits'] += 1
+                            if strk.is_reward_bug:
+                                block_dict['correct_hits'] += 1
                         else:
                             block_dict['misses'] += 1
         for animal_id, d in summary.items():
