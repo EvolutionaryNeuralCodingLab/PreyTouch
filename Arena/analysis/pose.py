@@ -715,7 +715,7 @@ class SpatialAnalyzer:
     }
 
     def __init__(self, animal_ids=None, day=None, start_date=None, cam_name='front', bodypart='mid_ears', split_by=None,
-                 orm=None, is_use_db=False, cache_dir=None, arena_name=None, excluded_animals=None, **block_kwargs):
+                 orm=None, is_use_db=False, cache_dir=None, arena_name=None, excluded_animals=None, max_y_arena=20, **block_kwargs):
         if animal_ids and not isinstance(animal_ids, list):
             animal_ids = [animal_ids]
         self.animal_ids = animal_ids
@@ -732,18 +732,21 @@ class SpatialAnalyzer:
         self.cache_dir = cache_dir
         self.orm = orm if orm is not None else ORM()
         self.dlc = DLCArenaPose('front', is_use_db=is_use_db, orm=self.orm)
-        self.coords = {
-            'arena': np.array([(-3, -2), (68, 78)]),
-            'arena_close': np.array([(-3, -2), (68, 15)]),
-            'screen': np.array([(5, -3), (60, -1)])
-        }
         self.max_x_arena = 70
-        self.max_y_arena = 20
+        self.max_y_arena = max_y_arena
+        self.coords = {
+            'arena': np.array([(0, 0), (self.max_x_arena, self.max_y_arena)]),
+            'screen': np.array([(10, 0), (60, 1)])
+        }
         self.pose_dict = self.get_pose()
-        # fix for msi-regev
+        # fix for arenas
         for k, pf in self.pose_dict.items():
+            # align msi-regev arean to reptilearn
             idx = pf.animal_id.isin(['PV80', 'PV42'])
             pf.loc[idx, 'x'] = pf.loc[idx, 'x'] * (self.max_x_arena/50)
+            # move x-y coordinates in reptilearn arenas to start from 0
+            pf['x'] = pf['x'] + 3
+            # pf['y'] = pf['y'] + 2
 
     def get_pose(self) -> dict:
         """
@@ -863,11 +866,6 @@ class SpatialAnalyzer:
             s.append(f"{c}={val}")
         return ','.join(s)
 
-    def drop_out_of_arena_coords(self, df):
-        xmin, xmax = self.coords['arena'][:, 0].flatten().tolist()
-        idx = df[(df.y < xmin) | (df.y > xmax)].index
-        return df.drop(idx)
-
     def get_out_of_experiment_pose(self):
         groups_pose = {}
         for group_name, vids in self.get_videos_to_load().items():
@@ -907,11 +905,14 @@ class SpatialAnalyzer:
                 continue
             cbar_ax = None
             if i == len(pose_dict) - 1 and len(pose_dict) > 1:
-                # cbar_ax = axes_[i].inset_axes([1.05, 0.1, 0.03, 0.8])
-                cbar_ax = axes_[i].inset_axes([0.2, -0.3, 0.6, 0.05])
-            df_ = pose_df.query(f'0 <= x <= {self.max_x_arena} and y<{self.max_y_arena}')
+                cbar_ax = inset_axes(
+                    axes_[i], width="3%", height="70%", loc="lower left",
+                    bbox_to_anchor=(1.1, 0., 3, 1),  # x_offset, y_offset, width, height in ax coords
+                    bbox_transform=axes_[i].transAxes, borderpad=0
+                )
+            df_ = pose_df.query(f'0<=x<={self.max_x_arena} and 0<=y<={self.max_y_arena}')
             self.plot_hist2d(df_, axes_[i], single_animal, cbar_ax=cbar_ax)
-            self.plot_arena(axes_[i], is_close_to_screen_only=True)
+            self.plot_arena(axes_[i])
             if len(self.split_by) == 1 and self.split_by[0] == 'exit_hole':
                 group_name = r'Left $\rightarrow$ Right' if 'right' in group_name else r'Left $\leftarrow$ Right'
             if is_title:
@@ -923,11 +924,9 @@ class SpatialAnalyzer:
     def plot_hist2d(self, df, ax, single_animal, cbar_ax=None):
         df_ = df.query(f'animal_id == "{single_animal}"')
         sns.histplot(data=df_, x='x', y='y', ax=ax,
-                     bins=(np.arange(0, self.max_x_arena, 2), np.arange(0, self.max_y_arena, 1)), cmap='Greens', stat='probability',
-                     cbar=cbar_ax is not None, cbar_kws=dict(shrink=.75, label='Probability', orientation='horizontal', ticks=[0, 0.04]),
+                     bins=(np.arange(0, self.max_x_arena+2, 2), np.arange(0, self.max_y_arena+1, 1)), cmap='Greens', stat='probability',
+                     cbar=cbar_ax is not None, cbar_kws=dict(shrink=.75, label='', orientation='vertical', ticks=[0, 0.04]),
                      cbar_ax=cbar_ax)
-        # ax.set_yticks([0, 5, 10])
-        # ax.set_xticks([0, 20, 40, 60])
         ax.set_yticks([])
         ax.set_xticks([])
         ax.set_ylabel(None)
@@ -937,19 +936,20 @@ class SpatialAnalyzer:
         scalebar = AnchoredSizeBar(ax.transData, 10, '10cm', 'lower right', pad=1, color='black', frameon=False,
                                    size_vertical=0.7, fontproperties=fontprops)
         ax.add_artist(scalebar)
-
+        # upper 1D histogram for x values
         hist_x_ax = ax.inset_axes([0, 1, 1, 0.3])
         sns.histplot(data=df_, x='x', ax=hist_x_ax, bins=30)
         hist_x_ax.axis('off')
 
-    def plot_arena(self, ax, is_close_to_screen_only=False):
-        for name, c in self.coords.items():
-            rect = patches.Rectangle(c[0, :], *(c[1, :] - c[0, :]).tolist(), linewidth=1, edgecolor='k',
-                                     facecolor='k' if name == 'screen' else 'none')
-            ax.add_patch(rect)
-        # ax.invert_xaxis()
-        ax.set_xlim(self.coords['arena' if not is_close_to_screen_only else 'arena_close'][:, 0])
-        ax.set_ylim(self.coords['arena' if not is_close_to_screen_only else 'arena_close'][:, 1])
+    def plot_arena(self, ax):
+        # plot screen
+        c = self.coords['screen']
+        rect = patches.Rectangle(c[0, :], *(c[1, :] - c[0, :]).tolist(), linewidth=1, edgecolor='k',
+                                 facecolor='k')
+        ax.add_patch(rect)
+        # set arena bounds
+        ax.set_xlim(self.coords['arena'][:, 0])
+        ax.set_ylim(self.coords['arena'][:, 1])
         ax.invert_yaxis()
 
     def plot_spatial_x_kde(self, axes=None, cols=4, animal_colors=None, pose_dict=None):
@@ -959,7 +959,7 @@ class SpatialAnalyzer:
         axes_ = self.get_axes(cols, len(pose_dict), axes=axes)
         for i, (group_name, pose_df) in enumerate(pose_dict.items()):
             df = pose_df.query(f'0 <= x <= {self.max_x_arena} and y<20')
-            sns.violinplot(data=df, x='x', y='animal_id', hue='animal_id', ax=axes_[i], palette=animal_colors, order=list(animal_colors.keys()))
+            sns.violinplot(data=df, x='x', y='animal_id', hue='animal_id', ax=axes_[i], palette=animal_colors, order=list(animal_colors.keys()), linewidth=1)
             axes_[i].set_xlim([0, self.max_x_arena])
             axes_[i].axvline(self.max_x_arena/2, linestyle='--', color='k')
             axes_[i].set_yticks([])
@@ -975,19 +975,24 @@ class SpatialAnalyzer:
             if not trajs:
                 continue
 
-            x_values = {}
+            # x_values = {}
+            traj_df = []
             for (block_id, frame_id, animal_id), traj in trajs.items():
-                x_values.setdefault(animal_id, []).append(traj.x.values[-1])
+                traj_df.append({'animal_id': animal_id, 'x': traj.x.values[-1]})
+                # x_values.setdefault(animal_id, []).append(traj.x.values[-1])
+            traj_df = pd.DataFrame(traj_df)
 
             inner_ax = axes_[i]
-            for animal_id, x_ in x_values.items():
-                color_kwargs = {'color': animal_colors[animal_id] if animal_colors else None}
-                sns.kdeplot(x=x_, ax=inner_ax, label=animal_id, **color_kwargs) # clip=[0, 40], bw_adjust=.4,
+            sns.boxplot(data=traj_df, x='x', y='animal_id', hue='animal_id', ax=inner_ax, palette=animal_colors, order=list(animal_colors.keys()))
+            # for animal_id, x_ in x_values.items():
+                # color_kwargs = {'color': animal_colors[animal_id] if animal_colors else None}
+                # sns.kdeplot(x=x_, ax=inner_ax, label=animal_id, **color_kwargs) # clip=[0, 40], bw_adjust=.4,
             inner_ax.axvline(self.max_x_arena/2, linestyle='--', color='k')
             inner_ax.set_xticks([0, 20, 40, 60])
             inner_ax.set_xlim([0, self.max_x_arena])
-            inner_ax.set_ylabel('Probability')
-            inner_ax.set_ylim([0, 0.12])
+            inner_ax.set_yticks([])
+            # inner_ax.set_ylabel('Probability')
+            # inner_ax.set_ylim([0, 0.12])
             # inner_ax.legend()
 
         if axes is None:
@@ -1057,7 +1062,7 @@ class SpatialAnalyzer:
 
         """
         trajs = {}
-        dist_df = pose[['time', 'x', 'y', 'prob', 'block_id', 'animal_id'
+        dist_df = pose[['time', 'x', 'y', 'prob', 'block_id', 'animal_id', 'bug_x'
                         ]].reset_index().copy().rename(columns={'index': 'frame_id'})
         dist_df = dist_df.drop(index=dist_df[(dist_df.prob < 0.5) | (dist_df.x.isna())].index, errors='ignore')
         if len(dist_df) < window_length:
@@ -1091,7 +1096,7 @@ class SpatialAnalyzer:
                 crosses.append(cross_id)
                 frame_id = xf.loc[lower_lim, 'frame_id']
                 animal_id = gf.animal_id.unique()[0]
-                trajs[(block_id, frame_id, animal_id)] = xf.loc[lower_lim:upper_lim, ['x', 'y']].copy()
+                trajs[(block_id, frame_id, animal_id)] = xf.loc[lower_lim:upper_lim, ['x', 'y', 'bug_x', 'time']].copy()
                 if is_plot:
                     axes[i].plot(xf.y.loc[lower_lim:upper_lim])
             if is_plot:
