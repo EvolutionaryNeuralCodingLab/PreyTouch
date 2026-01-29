@@ -41,9 +41,42 @@ TriggerInterface::TriggerInterface(JsonVariant conf)
   }
 
   pin = conf["pin"].as<int>();
-  
   pinMode(pin, OUTPUT);
-  digitalWrite(pin, pin_state);
+
+  // extra pins
+  extra_pins_count = 0;
+  if (conf.containsKey("extra_pins")) {
+    if (conf["extra_pins"].is<int>()) {
+      int p = conf["extra_pins"].as<int>();
+      if (p != pin && extra_pins_count < MAX_EXTRA_PINS) {
+        extra_pins[extra_pins_count++] = (uint8_t)p;
+      }
+    } else if (conf["extra_pins"].is<JsonArray>()) {
+      JsonArray arr = conf["extra_pins"].as<JsonArray>();
+      for (JsonVariant v : arr) {
+        if (!v.is<int>()) {
+          send_error("extra_pins: All entries must be integers");
+          return;
+        }
+        int p = v.as<int>();
+        if (p == pin) continue;                      // skip duplicate of main pin
+        if (extra_pins_count >= MAX_EXTRA_PINS) {
+          send_error("extra_pins: too many pins (max 8)");
+          return;
+        }
+        extra_pins[extra_pins_count++] = (uint8_t)p;
+      }
+    } else {
+      send_error("extra_pins: Expecting an integer or an array of integers");
+      return;
+    }
+    // Configure and set initial state for extra pins
+    for (uint8_t i = 0; i < extra_pins_count; ++i) {
+      pinMode(extra_pins[i], OUTPUT);
+    }
+  }
+  // Set initial level on main + extras
+  write_all_pins(pin_state);
   
   // setup trigger delays
   int pulse_len = conf["pulse_len"].as<int>();
@@ -80,7 +113,7 @@ void TriggerInterface::loop() {
       if (dt >= low_dur) {
         pin_state = HIGH;
         prev_trans_time = t;
-        digitalWrite(pin, pin_state);
+        write_all_pins(pin_state);
 
         if (serial_trigger) {
           char msg[40];
@@ -95,7 +128,7 @@ void TriggerInterface::loop() {
       if (dt >= high_dur) {
         pin_state = LOW;
         prev_trans_time = t;
-        digitalWrite(pin, pin_state);
+        write_all_pins(pin_state);
 
         if (serial_trigger) {
           char msg[40];
@@ -117,5 +150,12 @@ void TriggerInterface::value_changed() {
     // stop
     send_debug("Stopping");
     count = 0;
+  }
+}
+
+void TriggerInterface::write_all_pins(uint8_t state) {
+  digitalWrite(pin, state);
+  for (uint8_t i = 0; i < extra_pins_count; ++i) {
+    digitalWrite(extra_pins[i], state);
   }
 }

@@ -377,12 +377,12 @@ class PeripheryHealthCheck(Subscriber):
                     if not self.last_action_time or time.time() - self.last_action_time > self.max_action_delay:
                         self.logger.warning('Running restart for arena periphery process')
                         send_telegram_message('Restarting arena periphery process')
-                        next(run_command('supervisorctl restart reptilearn_arena'))
+                        docker_dir = Path(config.OUTPUT_DIR).parent / 'docker'
+                        next(run_command(f'cd {docker_dir} && docker-compose restart periphery'))
                         self.last_action_time = time.time()
                         time.sleep(4)
 
                     self.last_publish_error_time = time.time()
-
         except:
             self.logger.exception(f'Error in subscriber {self.name}')
 

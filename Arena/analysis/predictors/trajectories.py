@@ -28,11 +28,10 @@ from sklearn.metrics import (explained_variance_score, roc_auc_score, balanced_a
                              average_precision_score, roc_curve, precision_recall_fscore_support, accuracy_score)
 from sklearn.decomposition import PCA
 from captum.attr import IntegratedGradients, LayerConductance, NeuronConductance, DeepLift, DeepLiftShap, GradientShap, InputXGradient, FeatureAblation
-
 from pathlib import Path
 from analysis.trainer import ClassificationTrainer
 
-TRAJ_DIR = '/media/sil2/Data/regev/datasets/trajs'
+TRAJ_DIR = '/Users/regev/PhD/internal_models_paper/cache/trajs'
 TRAJ_DATASET = f'{TRAJ_DIR}/trajs_before_120_after_60s_strike.pkl'
 
 
@@ -75,7 +74,7 @@ class LSTMWithAttention(nn.Module):
             return out
 
 
-class LSTMModel(nn.Module):
+class LSTMModel_old(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim, num_layers, dropout_prob):
         super(LSTMModel, self).__init__()
         self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True, bidirectional=True, dropout=dropout_prob)
@@ -89,9 +88,35 @@ class LSTMModel(nn.Module):
         return out
 
 
+class LSTMModel(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim, num_layers, dropout_prob):
+        super().__init__()
+        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers,
+                            batch_first=True, bidirectional=True,
+                            dropout=dropout_prob if num_layers > 1 else 0.0)
+        self.fc = nn.Sequential(
+            nn.LayerNorm(hidden_dim*2),
+            nn.Linear(hidden_dim*2, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(p=dropout_prob),
+            nn.Linear(hidden_dim, output_dim),
+        )
+
+    def forward(self, x, lengths=None):
+        # x: (B, T, D)
+        if lengths is not None:
+            packed = nn.utils.rnn.pack_padded_sequence(x, lengths.cpu(), batch_first=True, enforce_sorted=False)
+            _, (h_n, _) = self.lstm(packed)
+        else:
+            _, (h_n, _) = self.lstm(x)
+        # h_n: (num_layers*2, B, H)
+        h_last = torch.cat((h_n[-2], h_n[-1]), dim=1)  # (B, 2H)
+        return self.fc(h_last)
+
+
 class LizardTrajDataSet(Dataset):
     def __init__(self, strk_df, trajs, ids, variables, targets_values, is_standardize=True, target_name='block_speed',
-                 is_resample=True, sub_section=None, is_shuffled_target=False, is_debug=True):
+                 is_resample=True, sub_section=None, is_shuffled_target=False, is_debug=True, seed=42):
         self.samples = ids
         self.variables = variables
         self.targets = targets_values
@@ -110,7 +135,8 @@ class LizardTrajDataSet(Dataset):
         if is_shuffled_target:
             if self.is_debug:
                 print(f'Notice! Shuffling randomly the target values')
-            self.y = pd.Series(index=self.y.index, data=np.random.choice(self.y.unique(), len(self.y)))
+            rng = np.random.default_rng(seed=seed)
+            self.y = pd.Series(index=self.y.index, data=rng.permutation(self.y.values), name=self.y.name)
 
         if is_resample:
             self.resample_trajs()
@@ -149,7 +175,7 @@ class LizardTrajDataSet(Dataset):
             closest_idx = (group['total_sec'] - self.sub_section[0]).abs().idxmin()
             # Get the position of the closest index in the group
             closest_position = group.index.get_loc(closest_idx)
-            # Get the indexes to sample: from the closest position to closest position + n
+            # Get the indexes to sample: from the closest position to the closest position + n
             sample_indexes = group.iloc[closest_position:closest_position + self.sub_section[1] + 1].index
             return group.loc[sample_indexes]
 
@@ -196,6 +222,7 @@ class TrajClassifier(ClassificationTrainer):
     sub_section: tuple = None  # (start_sec {float}, length of samples after start_sec {int})
     target_name: str = 'block_speed'
     is_shuffled_target: bool = False  # shuffle the target randomly. Used to find baseline for attention.
+    is_one_strike_per_trial: bool = False  # keep only one strike per trial
     targets: List = field(default_factory=lambda: [2, 4, 6, 8])
     feature_names: List = field(default_factory=lambda: ['x', 'y', 'speed'])
     is_attention: bool = False  # use the LSTMWithAttention model
@@ -234,11 +261,13 @@ class TrajClassifier(ClassificationTrainer):
             sdf = sdf.query('animal_id==@self.animal_id')
         if self.is_hit:
             sdf = sdf.query('is_hit')
+        if self.is_one_strike_per_trial:
+            sdf = sdf.query('n_detected_strikes_peaks==1')
         strikes_ids = sdf.index.values.tolist()
 
         dataset = LizardTrajDataSet(strk_df, trajs, strikes_ids, self.feature_names, self.targets,
                                     target_name=self.target_name, sub_section=self.sub_section, is_debug=self.is_debug,
-                                    is_resample=self.is_resample, is_shuffled_target=self.is_shuffled_target)
+                                    is_resample=self.is_resample, is_shuffled_target=self.is_shuffled_target, seed=self.seed)
         if is_print_size:
             self.print(f'Traj classes count: {pd.Series(dataset.y).value_counts().sort_index().set_axis(self.targets).to_dict()}')
 
@@ -704,17 +733,22 @@ def animals_comparison():
 
 
 def hyperparameters_comparison(animal_id='PV91', movement_type='random_low_horizontal', is_resample=False,
-                               sub_section=(-1, 60), feature_names=('x', 'y', 'speed'), **kwargs):
+                               sub_section=(-1, 60), feature_names=('x', 'y', 'speed'), hyps=None, **kwargs):
     from sklearn.model_selection import ParameterGrid
 
+    default_params = dict(dropout_prob=[0.2, 0.4, 0.6], lstm_layers=[1, 2, 3, 4], lstm_hidden_dim=[8, 16, 32])
+    assert hyps is None or isinstance(hyps, dict)
+    if hyps:
+        default_params.update(hyps)
     res_df = []
-    grid = ParameterGrid(dict(dropout_prob=[0.2, 0.4, 0.6], lstm_layers=[1, 2, 3, 4], lstm_hidden_dim=[64, 128]))
+    grid = ParameterGrid(default_params)
     for i, params in tqdm(enumerate(grid), desc='hyperparameter tuning', total=len(grid)):
         if params['lstm_layers'] == 1:
-            if params['dropout_prob'] != 0.4:
-                continue
-            else:
+            # in case of single layer, we set dropout to 0 and run only once
+            if params['dropout_prob'] == default_params['dropout_prob'][0]:
                 params['dropout_prob'] = 0
+            else:
+                continue
         tj = TrajClassifier(save_model_dir=TRAJ_DIR, is_shuffle_dataset=False, sub_section=sub_section, feature_names=feature_names,
                             is_debug=False, is_resample=is_resample, animal_id=animal_id, movement_type=movement_type, **kwargs, **params)
         tj.train(is_plot=False)
@@ -749,7 +783,7 @@ def hyperparameters_comparison(animal_id='PV91', movement_type='random_low_horiz
     print(f'\nbest overall model path: {best_model_path}')
     print('\n' + '#' * 50 + '\n')
 
-    return res_df.query(f'metric=="overall_accuracy"').sort_values(by='value', ascending=False).iloc[0][[
+    return res_df.query(f'metric=="accuracy"').sort_values(by='value', ascending=False).iloc[0][[
         'dropout_prob', 'lstm_hidden_dim', 'lstm_layers']].to_dict()
 
 

@@ -45,6 +45,7 @@
                     <option value="switch">Switch</option>
                     <option value="agent">Agent</option>
                     <option value="feeder">Feeder</option>
+                    <option value="sound">Sound</option>
                 </select>
             </div>
         </div>
@@ -81,6 +82,13 @@
                 </select>
             </div>
         </div>
+        <div class="row" id="soundSelectScheduleSection">
+            <div class="col-sm-7">
+                <label for="soundSelectSchedule" class="col-form-label">Audio Files</label>
+                <select id="soundSelectSchedule" class="form-control">
+                </select>
+            </div>
+        </div>
     </div>
 
     <div class="row mt-3">
@@ -108,18 +116,41 @@
             $("#cachedExperimentsSelectScheduleSection").show()
             $("#switchSelectScheduleSection").hide()
             $("#agentSelectScheduleSection").hide()
+            $("#soundSelectScheduleSection").hide()
         } else if (scheduleType === "switch") {
             $("#cachedExperimentsSelectScheduleSection").hide()
             $("#switchSelectScheduleSection").show()
+            $("#soundSelectScheduleSection").hide()
             $("#agentSelectScheduleSection").hide()
         } else if (scheduleType === "agent") {
             $("#cachedExperimentsSelectScheduleSection").hide()
             $("#switchSelectScheduleSection").hide()
+            $("#soundSelectScheduleSection").hide()
             $("#agentSelectScheduleSection").show()
         } else if (scheduleType === "feeder") {
             $("#cachedExperimentsSelectScheduleSection").hide()
             $("#switchSelectScheduleSection").hide()
             $("#agentSelectScheduleSection").hide()
+            $("#soundSelectScheduleSection").hide()
+        } else if (scheduleType === "sound") {
+            $("#cachedExperimentsSelectScheduleSection").hide()
+            $("#switchSelectScheduleSection").hide()
+            $("#agentSelectScheduleSection").hide()
+            $.get('/get_audio_files', (data) => {
+                const $select = $("#soundSelectSchedule")
+                $select.empty()
+                if (Array.isArray(data) && data.length > 0) {
+                    $.each(data, function(index, file) {
+                        $select.append($("<option>", {
+                            value: file,
+                            text: file
+                        }))
+                    })
+                } else {
+                    $select.append($("<option>", {value: "", text: "No audio files found"}))
+                }
+                $("#soundSelectScheduleSection").show()
+            })
         }
     }).trigger('change')
 
@@ -132,6 +163,8 @@
             experimentName = `AGENT:${$("#agentStateSelectSchedule").val()}`
         } else if (scheduleType === 'feeder') {
             experimentName = 'FEEDER:'
+        } else if (scheduleType === 'sound') {
+            experimentName = `SOUND:${$("#soundSelectSchedule").val()}`
         }
         $.post('/commit_schedule', {
                 start_date: $("#datetimepicker1").data().date,

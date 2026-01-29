@@ -25,7 +25,7 @@ import config
 import utils
 from loggers import get_logger
 from cache import RedisCache, CacheColumns as cc
-from utils import mkdir, to_integer, turn_display_on, turn_display_off, run_command, get_hdmi_xinput_id, get_psycho_files
+from utils import mkdir, to_integer, turn_display_on, turn_display_off, run_command, get_hdmi_xinput_id, get_psycho_files, run_in_thread
 from subscribers import Subscriber, start_experiment_subscribers
 from periphery_integration import PeripheryIntegrator
 from db_models import ORM, Experiment as Experiment_Model, Strike
@@ -233,6 +233,8 @@ class Block:
 
     blank_rec_type: str = 'trials'  # options: 'trials', 'continuous'
     trial_images = []
+    special_trials_log = {}
+    last_ir_toggle_time = None
 
     def __post_init__(self):
         self.logger = get_logger(f'{self.experiment_name}-Block {self.block_id}')
@@ -297,12 +299,13 @@ class Block:
     def run_block(self):
         """Run block flow"""
         self.init_block()
-        self.wait(self.extra_time_recording, label='Extra Time Rec')
+        self.wait(self.extra_time_recording, None, label='Extra Time Rec')
         # if self.is_split_bugs_view, take self.ratio and change the order of self.bug_types in each trial by creating
         # an array the size of the trial that combinatorially put 1 and -1, where 1 indicates the current bugs order and -1 indicates the opposite order
         if self.is_split_bugs_view:
             self.create_bugs_order()
 
+        special_trials = self.init_special_trials()
         for trial_id in range(1, self.num_trials + 1):
             if self.block_type == 'bugs':
                 if not self.exp_validation.is_reward_left():
@@ -312,14 +315,16 @@ class Block:
                     utils.send_telegram_message(f'Max daily rewards of {config.MAX_DAILY_REWARD} reached; stopping experiment')
                     raise EndExperimentException(f'Max daily rewards of {config.MAX_DAILY_REWARD} reached; stopping experiment')
             self.start_trial(trial_id)
-            self.wait(self.trial_duration, check_visual_app_on=True, label=f'Trial {trial_id}',
-                      take_img_after=self.trial_duration/2)
+            self.wait(self.trial_duration, trial_id, check_visual_app_on=True, label=f'Trial {trial_id}',
+                      take_img_after=self.trial_duration/2, special_trials=special_trials)
             self.end_trial()
             self.save_trial_images(trial_id)
-            self.wait(self.iti, label='ITI')
+            self.wait(self.iti, trial_id, label='ITI')
 
-        self.wait(self.extra_time_recording, label='Extra Time Rec')
+        self.wait(self.extra_time_recording, None, label='Extra Time Rec')
         self.end_block()
+        if special_trials:
+            self.summary_special_trials()
 
     def init_block(self):
         mkdir(self.block_path)
@@ -329,11 +334,11 @@ class Block:
         # check engagement of the animal
         self.check_engagement_level()
         # start cameras for experiment with their predictors and set the output dir for videos
+        self.turn_cameras('on')
         if config.CAM_TRIGGER_DELAY_AROUND_BLOCK:
             self.periphery.cam_trigger(0)  # turn off trigger
             self.logger.info('trigger is off')
         t0 = time.time()
-        self.turn_cameras('on')
         # screencast
         if config.IS_RECORD_SCREEN_IN_EXPERIMENT:
             threading.Thread(target=self.record_screen).start()
@@ -350,19 +355,18 @@ class Block:
 
         if config.IR_TOGGLE_DELAY_AROUND_BLOCK:
             time.sleep(1)
-            self.periphery.switch(config.IR_LIGHT_NAME, 1)
-            time.sleep(config.IR_TOGGLE_DELAY_AROUND_BLOCK)
-            self.periphery.switch(config.IR_LIGHT_NAME, 0)
+            self.toggle_led_ir()
 
     def end_block(self):
         if self.block_type == 'psycho' and self.psycho_proc_pid:
-            os.killpg(os.getpgid(self.psycho_proc_pid), signal.SIGTERM)
+            try:
+                os.killpg(os.getpgid(self.psycho_proc_pid), signal.SIGTERM)
+            except Exception as exc:
+                self.logger.warning(f'Unable to kill psycho process: {self.psycho_proc_pid}; {exc}')
             self.psycho_proc_pid = 0
 
         if config.IR_TOGGLE_DELAY_AROUND_BLOCK:
-            self.periphery.switch(config.IR_LIGHT_NAME, 1)
-            time.sleep(config.IR_TOGGLE_DELAY_AROUND_BLOCK)
-            self.periphery.switch(config.IR_LIGHT_NAME, 0)
+            self.toggle_led_ir()
             time.sleep(1)
 
         t0 = time.time()
@@ -454,7 +458,7 @@ class Block:
 
         if self.block_type == 'psycho':
             self.run_psycho()
-            self.cache.set(cc.IS_VISUAL_APP_ON, True)
+            self.cache.set(cc.IS_VISUAL_APP_ON, True, timeout=int(self.trial_duration)+10)
 
         if self.block_type in ['bugs', 'media']:
             if self.is_media_block:
@@ -469,7 +473,7 @@ class Block:
             options['trialID'] = trial_id
             options['trialDBId'] = trial_db_id
             self.cache.publish_command(command, json.dumps(options))
-            self.cache.set(cc.IS_VISUAL_APP_ON, True)
+            self.cache.set(cc.IS_VISUAL_APP_ON, True, timeout=int(self.trial_duration)+10)
             time.sleep(1)  # wait for data to be sent
         self.take_trial_image()
 
@@ -503,7 +507,7 @@ class Block:
             with open(f'{self.block_path}/notes.txt', 'w') as f:
                 f.write(self.notes)
 
-    def wait(self, duration, check_visual_app_on=False, label='', take_img_after=None):
+    def wait(self, duration, trial_id, check_visual_app_on=False, label='', take_img_after=None, special_trials=None):
         """Sleep while checking for experiment end"""
         if label:
             label = f'({label}): '
@@ -517,11 +521,65 @@ class Block:
             if check_visual_app_on and not self.is_blank_block and not self.cache.get(cc.IS_VISUAL_APP_ON):
                 self.logger.debug('Trial ended')
                 return
+            self.check_special_trials(trial_id, special_trials)
+            # toggle IR if IR_TOGGLE_EVERY has reached
+            if check_visual_app_on and config.IR_TOGGLE_DELAY_AROUND_BLOCK and \
+                (time.time() - self.last_ir_toggle_time) > config.IR_TOGGLE_EVERY:
+                self.toggle_led_ir()
             # If take_img_after is set, and we have not taken 2 images yet, take one now.
             # This is used for taking a middle trial image during the wait loop
             if take_img_after and len(self.trial_images) < 2 and time.time() - t0 > take_img_after:
                 self.take_trial_image()
             time.sleep(0.1)
+
+    def init_special_trials(self):
+        special_trials = {}
+        if self.is_circle_flip:
+            assert self.num_trials > 9, 'Num trials must be > 9 in circle_flip trials'
+            special_trials['initial_flip_trial'] = random.choice([4, 5, 6])
+        return special_trials
+
+    def check_special_trials(self, trial_id, special_trials):
+        if not special_trials or trial_id is None:
+            return
+
+        if self.is_circle_flip:
+            t = time.time()
+            trial_dict = self.special_trials_log.setdefault(trial_id,
+                                                            {'engaged_recs': 0, 'total_recs': 0, 'is_flip': False,
+                                                             'first_engaged_t': None, 'grace_count': 0})
+            is_engaged = self.cache.get(cc.IS_ANIMAL_ENGAGED) or 0
+            trial_dict['engaged_recs'] += int(is_engaged)
+            trial_dict['total_recs'] += 1
+            # check the engagement duration with a grace count of 5
+            if not is_engaged:
+                if trial_dict['grace_count'] < 60:
+                    trial_dict['grace_count'] += 1
+                else:
+                    trial_dict['first_engaged_t'] = None
+            else:
+                trial_dict['grace_count'] = 0
+                if not trial_dict['first_engaged_t']:
+                    trial_dict['first_engaged_t'] = t
+            engage_duration = t - trial_dict['first_engaged_t'] if trial_dict['first_engaged_t'] else 0
+            # check flips history
+            n_flips = sum([d['is_flip'] for _, d in self.special_trials_log.items()])
+            is_flipped_this_trial = trial_dict['is_flip']
+            # send flip command
+            if trial_id >= special_trials.get('initial_flip_trial'):
+                if (not n_flips and engage_duration >= 5) or \
+                        (not is_flipped_this_trial and n_flips <= 3 and engage_duration >= 20):
+                    self.cache.publish_command('flip_circle_direction')
+                    self.logger.info(f'Flip circle, trial {trial_id}')
+                    trial_dict['is_flip'] = True
+
+    def summary_special_trials(self):
+        if self.is_circle_flip:
+            text = 'Summary of circle_flip block:\n'
+            for trial_id, d in self.special_trials_log.items():
+                extra = ' (flip)' if d['is_flip'] else ''
+                text += f'trial {trial_id}{extra} - engagement:{d["engaged_recs"]/d["total_recs"]:.0%}\n'
+            self.logger.info(text)
 
     def take_trial_image(self):
         if not config.TRIAL_IMAGE_CAMERA:
@@ -550,6 +608,16 @@ class Block:
             res = s.query(Strike).filter(Strike.time > datetime.now() - timedelta(hours=config.CHECK_ENGAGEMENT_HOURS)).all()
         if not res:
             self.periphery.feed(is_manual=True)
+
+    @run_in_thread
+    def toggle_led_ir(self):
+        self.last_ir_toggle_time = time.time()
+        ir_state = self.periphery.check_toggle(config.IR_LIGHT_NAME)
+        start_state = int(not ir_state)
+        self.logger.info(f'Start IR toggle initial_state: {start_state}, then wait for {config.IR_TOGGLE_DELAY_AROUND_BLOCK} seconds and set state to {int(not start_state)}')
+        self.periphery.switch(config.IR_LIGHT_NAME, start_state)
+        time.sleep(config.IR_TOGGLE_DELAY_AROUND_BLOCK)
+        self.periphery.switch(config.IR_LIGHT_NAME, int(not start_state))
 
     def run_psycho(self):
         psycho_files = get_psycho_files()
@@ -651,6 +719,10 @@ class Block:
     @property
     def is_random_low_horizontal(self):
         return self.movement_type == 'random_low_horizontal'
+
+    @property
+    def is_circle_flip(self):
+        return self.movement_type == 'circle_flip'
 
     @property
     def is_always_reward(self):

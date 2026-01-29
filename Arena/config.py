@@ -86,7 +86,8 @@ commands_topics = {
     'hide_media': 'cmd/visual_app/hide_media',
     'reload_app': 'cmd/visual_app/reload_app',
     'app_healthcheck': 'cmd/visual_app/healthcheck',
-    'strike_predicted': 'cmd/visual_app/strike_predicted'
+    'strike_predicted': 'cmd/visual_app/strike_predicted',
+    'flip_circle_direction': 'cmd/visual_app/flip_circle_direction'
 }
 subscription_topics = {
     'arena_operations': 'cmd/arena/*',
@@ -136,6 +137,7 @@ ARRAY_QUEUE_SIZE_MB = env.int('ARRAY_QUEUE_SIZE_MB', 5 * 20, group='Cameras', de
 COUNT_TIMESTAMPS_FOR_FPS_CALC = env.int('COUNT_TIMESTAMPS_FOR_FPS_CALC', 200, group='Cameras', desc='how many timestamps to gather for calculating FPS')
 WRITING_VIDEO_QUEUE_MAXSIZE = env.int('WRITING_VIDEO_QUEUE_MAXSIZE', 100, group='Cameras', desc='Max frames in the writing video queue')
 shm_buffer_dtype = 'uint8'
+PREDICTORS_WAIT_FRAME_TIMEOUT = env.int('PREDICTORS_WAIT_FRAME_TIMEOUT', 2, group='Cameras', desc='Timeout for waiting frames for a predictor')
 
 # Periphery
 DISABLE_PERIPHERY = env.bool('DISABLE_PERIPHERY', False, group='Periphery', desc='Disable all periphery integration')
@@ -187,6 +189,7 @@ DAILY_SUMMARY_TIME = env('DAILY_SUMMARY_TIME', '20:00', group='Scheduler', desc=
 # Experiments
 CAM_TRIGGER_DELAY_AROUND_BLOCK = env.int('CAM_TRIGGER_DELAY_AROUND_BLOCK', 8, group='Experiments', desc='The trigger delay in seconds before and after a block in an experiment. If 0, no delay is used')
 IR_TOGGLE_DELAY_AROUND_BLOCK = env.int('IR_TOGGLE_DELAY_AROUND_BLOCK', 1, group='Experiments', desc='The IR toggle delay in seconds before and after a block in an experiment. If 0, no delay is used')
+IR_TOGGLE_EVERY = env.int('IR_TOGGLE_EVERY', 10*60, group='Experiments', desc='The time in seconds between IR toggles during an experiment')
 IS_RECORD_SCREEN_IN_EXPERIMENT = env.bool('IS_RECORD_SCREEN_IN_EXPERIMENT', False, group='Experiments', desc='Whether to record the screen in the experiment. Notice it has high CPU usage!')
 EXTRA_TIME_RECORDING = env.int('EXTRA_TIME_RECORDING', 30, group='Experiments', desc='Extra time in seconds before and after the experiment in which no trials are on and only the cameras record')
 TIME_BETWEEN_BLOCKS = env.int('TIME_BETWEEN_BLOCKS', 300, group='Experiments', desc='Time in seconds between blocks in an experiment')

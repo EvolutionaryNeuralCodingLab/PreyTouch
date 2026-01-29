@@ -55,7 +55,7 @@ export default {
       return this.bugsSettings.exitHole === 'left'
     },
     isMoveInCircles: function () {
-      return this.bugsSettings.movementType === 'circle' || this.bugsSettings.movementType === 'circle_accelerate'
+      return ['circle', 'circle_accelerate', 'circle_flip'].indexOf(this.bugsSettings.movementType) !== -1
     },
     isHalfCircleMovement: function () {
       return this.bugsSettings.movementType === 'half_circle'
@@ -192,6 +192,7 @@ export default {
       switch (this.bugsSettings.movementType) {
         case 'circle':
         case 'circle_accelerate':
+        case 'circle_flip':
           this.theta = this.circleTheta
           this.r = this.circleR
           this.r0 = this.circleR0
@@ -224,6 +225,9 @@ export default {
       }
     },
     circularMove() {
+      if (this.theta > 2 * Math.PI) {
+        this.theta = 0
+      }
       this.theta += Math.abs(this.vTheta) * Math.sqrt(2) / this.r
       this.x = this.r0[0] + (this.r * Math.cos(this.theta)) * (this.isCounterClockWise ? -1 : 1)
       this.y = this.r0[1] + this.r * Math.sin(this.theta)
@@ -331,6 +335,13 @@ export default {
         console.log(this.vx, this.dx, this.currentSpeed)
         clearTimeout(t)
       }, 300)
+    },
+    flipCircle() {
+      if (this.bugsSettings.movementType === 'circle_flip') {
+        let currentExit = this.bugsSettings.exitHole
+        this.bugsSettings.exitHole = currentExit === 'right' ? 'left' : 'right'
+        this.theta = Math.PI - this.theta
+      }
     }
   }
 }

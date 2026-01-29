@@ -115,6 +115,7 @@ class Loader:
 
         errors = {}
         for vid in cam_vids:
+            self.set_video_path(vid)  # save video path
             frames_times = self.load_frames_times(vid)
             if frames_times.empty:
                 errors[Path(vid.path).stem] = 'frame times not found'
@@ -148,7 +149,6 @@ class Loader:
                 self.relevant_video_frames = [max(self.strike_frame_id - self.n_frames_back, frames_times.index[0]),
                                               min(self.strike_frame_id + self.n_frames_forward, frames_times.index[-1])]
 
-            self.set_video_path(vid)  # save video path
             frames_df = frames_times
             try:
                 frames_df = self.load_pose(vid)
@@ -191,7 +191,7 @@ class Loader:
 
     def load_frames_times(self, vid):
         try:
-            frames_times = self.dlc_pose.load_frames_times(vid.id, vid.path)
+            frames_times = self.dlc_pose.load_frames_times(vid.id, self.video_path)
         except Exception as exc:
             raise MissingStrikeData(f'load frames times failed; {exc}')
         if not frames_times.empty:
@@ -262,8 +262,8 @@ class Loader:
         frames_times = pd.read_csv(frames_times_path, index_col=0).reset_index().rename(columns={'index': 'frame_id'})
         frames_times['time'] = pd.to_datetime(frames_times['0'], unit='s', utc=True).dt.tz_convert(
             'Asia/Jerusalem').dt.tz_localize(None)
-        orig_frames = self.frames_df.loc[frame_ids][['time']].reset_index().rename(columns={'frame_id': 'orig_frame'})
-        # orig_frames.columns = [c[0] for c in orig_frames.columns]
+        orig_frames = self.frames_df.loc[frame_ids][['time']].reset_index().rename(columns={'index': 'orig_frame'})
+        orig_frames.columns = [c[0] for c in orig_frames.columns]
         merged = pd.merge_asof(left=orig_frames, right=frames_times, left_on='time', right_on='time', 
                                  direction='nearest', tolerance=pd.Timedelta('100 ms'))
         new_frames_ids = sorted(merged.frame_id.unique().tolist())

@@ -611,6 +611,15 @@ def list_media():
     return media_files
 
 
+@app.route('/get_audio_files')
+def get_audio_files():
+    audio_files = []
+    for f in Path(config.STATIC_FILES_DIR).glob('*'):
+        if f.suffix.lower() in ['.wav']:
+            audio_files.append(f.name)
+    return jsonify(audio_files)
+
+
 @app.route('/media/<filename>')
 def send_media(filename):
     return send_from_directory(config.STATIC_FILES_DIR, filename)
@@ -854,7 +863,7 @@ def restart():
 def start_app(queue):
     global cache, arena_mgr, periphery_mgr, queue_app
     queue_app = queue
-    if pytest.main(['-x', 'tests', '-s', '--tb=line', '--color=yes']) != 0:
+    if pytest.main(['-x', 'unittests', '-s', '--tb=line', '--color=yes']) != 0:
         queue_app.put('stop')
         return
 

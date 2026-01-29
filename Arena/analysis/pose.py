@@ -21,6 +21,8 @@ from scipy.spatial import distance
 from scipy.signal import savgol_filter
 from scipy.stats import ttest_ind
 from multiprocessing.pool import ThreadPool
+from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
+import matplotlib.font_manager as fm
 import os
 if Path('.').resolve().name != 'Arena':
     os.chdir('..')
@@ -490,6 +492,7 @@ class ArenaPose:
             return vid.path
 
     def get_video_db_id(self, video_path: Path):
+        video_path = Path(video_path)
         with self.orm.session() as s:
             vid = s.query(Video).filter(Video.path.contains(video_path.stem)).first()
             if vid is None:
@@ -664,6 +667,12 @@ class DLCArenaPose(ArenaPose):
                 if b and isinstance(self.pose_df[b], pd.DataFrame)]
 
 
+class PogonaHeadPose(DLCArenaPose):
+    def __init__(self, cam_name, predictor_name='pogona_head', is_use_db=True, orm=None, commit_bodypart='mid_ears',
+                 **kwargs):
+        super().__init__(cam_name, predictor_name, is_use_db, orm, commit_bodypart=commit_bodypart, **kwargs)
+
+
 class SpatialAnalyzer:
     """
     A class for analyzing the spatial data of the animals in the arena.
@@ -706,7 +715,7 @@ class SpatialAnalyzer:
     }
 
     def __init__(self, animal_ids=None, day=None, start_date=None, cam_name='front', bodypart='mid_ears', split_by=None,
-                 orm=None, is_use_db=False, cache_dir=None, arena_name=None, excluded_animals=None, **block_kwargs):
+                 orm=None, is_use_db=False, cache_dir=None, arena_name=None, excluded_animals=None, max_y_arena=20, **block_kwargs):
         if animal_ids and not isinstance(animal_ids, list):
             animal_ids = [animal_ids]
         self.animal_ids = animal_ids
@@ -723,12 +732,21 @@ class SpatialAnalyzer:
         self.cache_dir = cache_dir
         self.orm = orm if orm is not None else ORM()
         self.dlc = DLCArenaPose('front', is_use_db=is_use_db, orm=self.orm)
+        self.max_x_arena = 70
+        self.max_y_arena = max_y_arena
         self.coords = {
-            'arena': np.array([(-3, -2), (42, 78)]),
-            'arena_close': np.array([(-3, -2), (42, 15)]),
-            'screen': np.array([(-1, -3), (39, -1)])
+            'arena': np.array([(0, 0), (self.max_x_arena, self.max_y_arena)]),
+            'screen': np.array([(10, 0), (60, 1)])
         }
         self.pose_dict = self.get_pose()
+        # fix for arenas
+        for k, pf in self.pose_dict.items():
+            # align msi-regev arean to reptilearn
+            idx = pf.animal_id.isin(['PV80', 'PV42'])
+            pf.loc[idx, 'x'] = pf.loc[idx, 'x'] * (self.max_x_arena/50)
+            # move x-y coordinates in reptilearn arenas to start from 0
+            pf['x'] = pf['x'] + 3
+            # pf['y'] = pf['y'] + 2
 
     def get_pose(self) -> dict:
         """
@@ -807,6 +825,11 @@ class SpatialAnalyzer:
                 exps = exps.filter(Experiment.start_time >= self.start_date)
             for exp in exps.all():
                 for blk in exp.blocks:
+                    if exp.animal_id == 'PV163' and self.block_kwargs.get(
+                            'movement_type') == 'low_horizontal' and blk.movement_type == 'rect_tunnel':
+                        blk.movement_type = 'low_horizontal'
+                        blk.exit_hole = 'bottomRight'
+
                     if self.block_kwargs and any(getattr(blk, k) != v for k, v in self.block_kwargs.items()):
                         continue
 
@@ -842,11 +865,6 @@ class SpatialAnalyzer:
                 continue
             s.append(f"{c}={val}")
         return ','.join(s)
-
-    def drop_out_of_arena_coords(self, df):
-        xmin, xmax = self.coords['arena'][:, 0].flatten().tolist()
-        idx = df[(df.y < xmin) | (df.y > xmax)].index
-        return df.drop(idx)
 
     def get_out_of_experiment_pose(self):
         groups_pose = {}
@@ -887,11 +905,14 @@ class SpatialAnalyzer:
                 continue
             cbar_ax = None
             if i == len(pose_dict) - 1 and len(pose_dict) > 1:
-                # cbar_ax = axes_[i].inset_axes([1.05, 0.1, 0.03, 0.8])
-                cbar_ax = axes_[i].inset_axes([0.2, -0.3, 0.6, 0.05])
-            df_ = pose_df.query('0 <= x <= 40 and y<20')
-            self.plot_hist2d(df_, axes_[i], single_animal, animal_colors=animal_colors, cbar_ax=cbar_ax)
-            self.plot_arena(axes_[i], is_close_to_screen_only=True)
+                cbar_ax = inset_axes(
+                    axes_[i], width="3%", height="70%", loc="lower left",
+                    bbox_to_anchor=(1.1, 0., 3, 1),  # x_offset, y_offset, width, height in ax coords
+                    bbox_transform=axes_[i].transAxes, borderpad=0
+                )
+            df_ = pose_df.query(f'0<=x<={self.max_x_arena} and 0<=y<={self.max_y_arena}')
+            self.plot_hist2d(df_, axes_[i], single_animal, cbar_ax=cbar_ax)
+            self.plot_arena(axes_[i])
             if len(self.split_by) == 1 and self.split_by[0] == 'exit_hole':
                 group_name = r'Left $\rightarrow$ Right' if 'right' in group_name else r'Left $\leftarrow$ Right'
             if is_title:
@@ -900,123 +921,79 @@ class SpatialAnalyzer:
             plt.tight_layout()
             plt.show()
 
-    def plot_spatial_x_kde(self, axes=None, cols=4, animal_colors=None, pose_dict=None, is_title=False):
+    def plot_hist2d(self, df, ax, single_animal, cbar_ax=None):
+        df_ = df.query(f'animal_id == "{single_animal}"')
+        sns.histplot(data=df_, x='x', y='y', ax=ax,
+                     bins=(np.arange(0, self.max_x_arena+2, 2), np.arange(0, self.max_y_arena+1, 1)), cmap='Greens', stat='probability',
+                     cbar=cbar_ax is not None, cbar_kws=dict(shrink=.75, label='', orientation='vertical', ticks=[0, 0.04]),
+                     cbar_ax=cbar_ax)
+        ax.set_yticks([])
+        ax.set_xticks([])
+        ax.set_ylabel(None)
+        ax.set_xlabel(None)
+        # scalebar
+        fontprops = fm.FontProperties(size=14)
+        scalebar = AnchoredSizeBar(ax.transData, 10, '10cm', 'lower right', pad=1, color='black', frameon=False,
+                                   size_vertical=0.7, fontproperties=fontprops)
+        ax.add_artist(scalebar)
+        # upper 1D histogram for x values
+        hist_x_ax = ax.inset_axes([0, 1, 1, 0.3])
+        sns.histplot(data=df_, x='x', ax=hist_x_ax, bins=30)
+        hist_x_ax.axis('off')
+
+    def plot_arena(self, ax):
+        # plot screen
+        c = self.coords['screen']
+        rect = patches.Rectangle(c[0, :], *(c[1, :] - c[0, :]).tolist(), linewidth=1, edgecolor='k',
+                                 facecolor='k')
+        ax.add_patch(rect)
+        # set arena bounds
+        ax.set_xlim(self.coords['arena'][:, 0])
+        ax.set_ylim(self.coords['arena'][:, 1])
+        ax.invert_yaxis()
+
+    def plot_spatial_x_kde(self, axes=None, cols=4, animal_colors=None, pose_dict=None):
         if pose_dict is None:
             pose_dict = self.pose_dict
 
         axes_ = self.get_axes(cols, len(pose_dict), axes=axes)
         for i, (group_name, pose_df) in enumerate(pose_dict.items()):
-            df = pose_df.query('0 <= x <= 40 and y<10')
-            for animal_id, df_ in df.groupby('animal_id'):
-                color_kwargs = {'color': animal_colors[animal_id] if animal_colors else None}
-                sns.kdeplot(data=df_, x='x', ax=axes_[i], clip=[0, 40], label=animal_id, **color_kwargs)
-            # inner_ax.legend()
-            axes_[i].axvline(20, linestyle='--', color='tab:orange')
-            axes_[i].set_xticks([0, 20, 40])
-            # inner_ax.set_ylim([0, 0.15])
-            # axes_[i].set_yticks([0.1])
-            # axes_[i].tick_params(axis="y", direction="in", pad=-20)
-            axes_[i].set_ylabel('Probability')
-            axes_[i].set_xlabel(None)
-            axes_[i].set_ylim([0, 0.25])
+            df = pose_df.query(f'0 <= x <= {self.max_x_arena} and y<20')
+            sns.violinplot(data=df, x='x', y='animal_id', hue='animal_id', ax=axes_[i], palette=animal_colors, order=list(animal_colors.keys()), linewidth=1)
+            axes_[i].set_xlim([0, self.max_x_arena])
+            axes_[i].axvline(self.max_x_arena/2, linestyle='--', color='k')
+            axes_[i].set_yticks([])
+            axes_[i].set_ylabel('Animals')
 
-    @staticmethod
-    def plot_hist2d(df, ax, single_animal, animal_colors=None, cbar_ax=None):
-        df_ = df.query(f'animal_id == "{single_animal}"')
-        sns.histplot(data=df_, x='x', y='y', ax=ax,
-                     bins=(30, 25), cmap='Greens', stat='probability',
-                     cbar=cbar_ax is not None, cbar_kws=dict(shrink=.75, label='Probability', orientation='horizontal'),
-                     cbar_ax=cbar_ax)
-        ax.set_yticks([0, 5, 10])
-        ax.set_xticks([0, 20, 40])
-        ax.set_ylabel(None)
-        ax.set_xlabel(None)
-
-        hist_x_ax = ax.inset_axes([0, 1, 1, 0.3])
-        sns.histplot(data=df_, x='x', ax=hist_x_ax, bins=30)
-        hist_x_ax.axis('off')
-
-        # inner_ax = inset_axes(ax, width="90%", height="40%", loc='upper right', borderpad=1)
-        # for animal_id, df_ in df.groupby('animal_id'):
-        #     color_kwargs = {'color': animal_colors[animal_id] if animal_colors else None}
-        #     sns.kdeplot(data=df_, x='x', ax=inner_ax, clip=[0, 40], label=animal_id, **color_kwargs)
-        # # inner_ax.legend()
-        # inner_ax.axvline(20, linestyle='--', color='tab:orange')
-        # inner_ax.set_xticks([0, 20, 40])
-        # # inner_ax.set_ylim([0, 0.15])
-        # inner_ax.set_yticks([0.1])
-        # inner_ax.tick_params(axis="y", direction="in", pad=-20)
-        # inner_ax.set_ylabel(None)
-        # inner_ax.set_xlabel(None)
-
-    def plot_arena(self, ax, is_close_to_screen_only=False):
-        for name, c in self.coords.items():
-            rect = patches.Rectangle(c[0, :], *(c[1, :] - c[0, :]).tolist(), linewidth=1, edgecolor='k',
-                                     facecolor='k' if name == 'screen' else 'none')
-            ax.add_patch(rect)
-        # ax.invert_xaxis()
-        ax.set_xlim(self.coords['arena' if not is_close_to_screen_only else 'arena_close'][:, 0])
-        ax.set_ylim(self.coords['arena' if not is_close_to_screen_only else 'arena_close'][:, 1])
-        ax.invert_yaxis()
-
-    def plot_trajectories(self, single_animal, cols=2, axes=None, only_to_screen=False, is_title=True,
-                          cbar_indices=None, animal_colors=None):
+    def plot_trajectories(self, cols=2, axes=None, only_to_screen=False, is_title=True, animal_colors=None):
         axes_ = self.get_axes(cols, len(self.pose_dict), axes, is_cbar=False)
 
         for i, (group_name, pose_df) in enumerate(self.pose_dict.items()):
-            trajs = self.cluster_trajectories(pose_df, only_to_screen=only_to_screen)
+            trajs = self.cluster_trajectories(pose_df, only_to_screen=only_to_screen, cross_y_val=10)
             if is_title:
                 axes_[i].set_title(group_name.replace(',', '\n'))
             if not trajs:
                 continue
 
-            blocks_ids = sorted(set([t[0] for t in trajs.keys() if t[2] == single_animal]))
-            x = np.linspace(0, 1, len(blocks_ids))
-            cmap = plt.get_cmap('coolwarm')
-            cmap_mat = cmap(x)[:, :3] #.astype(int)
-
-            x_values = {}
+            # x_values = {}
+            traj_df = []
             for (block_id, frame_id, animal_id), traj in trajs.items():
-                x_values.setdefault(animal_id, []).append(traj.x.values[-1])
-               #  if animal_id != single_animal:
-               #      continue
-               #
-               # # plot single animal trajectories
-               #  traj = np.array(traj)
-               #  # remove NaNs
-               #  traj = traj[~np.isnan(traj).any(axis=1), :]
-               #  total_distance = np.sum(np.sqrt(np.sum(np.diff(traj, axis=0) ** 2, axis=1)))
-               #  if total_distance < 5:
-               #      continue
+                traj_df.append({'animal_id': animal_id, 'x': traj.x.values[-1]})
+                # x_values.setdefault(animal_id, []).append(traj.x.values[-1])
+            traj_df = pd.DataFrame(traj_df)
 
-            #     color = cmap_mat[blocks_ids.index(block_id), :].tolist()
-            #     axes_[i].plot([traj[0, 0], traj[-1, 0]], [traj[0, 1], traj[-1, 1]], color=color)
-            #     axes_[i].scatter(traj[-1, 0], traj[-1, 1], marker='*', color=color)
-            #
-            # axes_[i].set_xticks([0, 20, 40])
-            # axes_[i].set_yticks([0, 5, 10])
-            # if not cbar_indices or i in cbar_indices:
-            #     cbaxes = axes_[i].inset_axes([1.05, 0.1, 0.03, 0.8])
-            #     blocks_ids = [b - blocks_ids[0] for b in blocks_ids]
-            #     matplotlib.colorbar.ColorbarBase(cbaxes, cmap=cmap,
-            #                                      norm=matplotlib.colors.Normalize(vmin=blocks_ids[0], vmax=blocks_ids[-1]),
-            #                                      orientation='vertical', label='Block Number')
-
-            # inner_ax = inset_axes(axes_[i], width="90%", height="40%", loc='upper right', borderpad=1)
             inner_ax = axes_[i]
-            for animal_id, x_ in x_values.items():
-                color_kwargs = {'color': animal_colors[animal_id] if animal_colors else None}
-                sns.kdeplot(x=x_, ax=inner_ax, clip=[0, 40], label=animal_id, bw_adjust=.4, **color_kwargs)
+            sns.boxplot(data=traj_df, x='x', y='animal_id', hue='animal_id', ax=inner_ax, palette=animal_colors, order=list(animal_colors.keys()))
+            # for animal_id, x_ in x_values.items():
+                # color_kwargs = {'color': animal_colors[animal_id] if animal_colors else None}
+                # sns.kdeplot(x=x_, ax=inner_ax, label=animal_id, **color_kwargs) # clip=[0, 40], bw_adjust=.4,
+            inner_ax.axvline(self.max_x_arena/2, linestyle='--', color='k')
+            inner_ax.set_xticks([0, 20, 40, 60])
+            inner_ax.set_xlim([0, self.max_x_arena])
+            inner_ax.set_yticks([])
+            # inner_ax.set_ylabel('Probability')
+            # inner_ax.set_ylim([0, 0.12])
             # inner_ax.legend()
-            inner_ax.axvline(20, linestyle='--', color='tab:orange')
-            inner_ax.set_xticks([0, 20, 40])
-            # inner_ax.set_ylim([0, 0.15])
-            # inner_ax.set_yticks([0.1])
-            # inner_ax.tick_params(axis="y", direction="in", pad=-20)
-            inner_ax.set_ylabel('Probability')
-            inner_ax.set_ylim([0, 0.2])
-            # self.plot_arena(axes_[i], is_close_to_screen_only=True)
-            # axes[i].legend()
 
         if axes is None:
             plt.tight_layout()
@@ -1085,7 +1062,7 @@ class SpatialAnalyzer:
 
         """
         trajs = {}
-        dist_df = pose[['time', 'x', 'y', 'prob', 'block_id', 'animal_id'
+        dist_df = pose[['time', 'x', 'y', 'prob', 'block_id', 'animal_id', 'bug_x'
                         ]].reset_index().copy().rename(columns={'index': 'frame_id'})
         dist_df = dist_df.drop(index=dist_df[(dist_df.prob < 0.5) | (dist_df.x.isna())].index, errors='ignore')
         if len(dist_df) < window_length:
@@ -1119,7 +1096,7 @@ class SpatialAnalyzer:
                 crosses.append(cross_id)
                 frame_id = xf.loc[lower_lim, 'frame_id']
                 animal_id = gf.animal_id.unique()[0]
-                trajs[(block_id, frame_id, animal_id)] = xf.loc[lower_lim:upper_lim, ['x', 'y']].copy()
+                trajs[(block_id, frame_id, animal_id)] = xf.loc[lower_lim:upper_lim, ['x', 'y', 'bug_x', 'time']].copy()
                 if is_plot:
                     axes[i].plot(xf.y.loc[lower_lim:upper_lim])
             if is_plot:
@@ -1505,19 +1482,8 @@ class VideoPoseScanner:
 
 
 if __name__ == '__main__':
-    # matplotlib.use('TkAgg')
-    # DLCArenaPose('front').test_loaders(19)
-    # print(get_videos_to_predict('PV148'))
-    # commit_video_pred_to_db(animal_ids="PV163")
-    # VideoPoseScanner().fix_calibrations()
-    # VideoPoseScanner().predict_all(max_videos=20, is_tqdm=True)
-    VideoPoseScanner(only_strikes_vids=True).predict_all(is_tqdm=True)
-    # VideoPoseScanner(cam_name='front', animal_ids=['PV91b'], is_use_db=False,
-    #                  model_path="/data/PreyTouch/output/models/deeplabcut/front_head_only_resnet_152"
-    #                  ).fix_calibrations(experiments_dir='/media/sil2/Data/regev/experiments/reptilearn4',
-    #                                     calibration_dir='/media/sil2/Data/regev/calibrations/reptilearn4')
-    # VideoPoseScanner(cam_name='top', animal_ids=['PV157'], is_use_db=False).predict_video('/data/Pogona_Pursuit/output/experiments/PV157/20240307/block2/videos/top_20240307T141316.mp4')
-    # VideoPoseScanner(cam_name='top', animal_ids=['PV157'], is_use_db=True, only_strikes_vids=False).predict_all()
+    PogonaHeadPose('top').predict_video(video_path='/data/PreyTouch/output/experiments/PV51/20250130/block2/videos/top_20250130T163032.mp4')
+    # VideoPoseScanner(only_strikes_vids=True).predict_all(is_tqdm=True)
     # VideoPoseScanner(animal_id='PV163').add_bug_trajectory(videos=[Path('/media/reptilearn4/experiments/PV163/20240201/block10/videos/front_20240201T173016.mp4')])
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/Archive/front/20221205T093815_front.png', 0)
     # print(run_predict('pogona_head', [img]))

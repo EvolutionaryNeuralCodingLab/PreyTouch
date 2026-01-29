@@ -190,8 +190,9 @@ class CharucoEstimator:
         self.dist = self.calibrator.calib_params['dist']
         self.newcam_mtx = self.calibrator.newcameramtx
 
-        self.arucoDict = cv2.aruco.Dictionary_get(ARUCO_DICT)
-        self.arucoParams = cv2.aruco.DetectorParameters_create()
+        aruco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_DICT)
+        aruco_params = cv2.aruco.DetectorParameters()
+        self.detector = cv2.aruco.ArucoDetector(aruco_dict, aruco_params)
         self.state = 0  # 0 - not initiated, 1 - failure, 2 - initiated
         self.markers_image_date = None
         self.image_date = None
@@ -271,7 +272,7 @@ class CharucoEstimator:
         frame, gray_frame = self.load_aruco_image(image_path, image_date)
         self.logger.info(f'Start Aruco marker detection for image size: {frame.shape}')
         # detect Charuco markers
-        marker_corners, marker_ids, rejected = cv2.aruco.detectMarkers(gray_frame, self.arucoDict, parameters=self.arucoParams)
+        marker_corners, marker_ids, rejected = self.detector.detectMarkers(gray_frame)
         if marker_ids is None:
             raise Exception('Could not find aruco markers')
         # sort markers ids

@@ -38,6 +38,7 @@ class CacheColumns:
     IS_COMPRESSED_LONG_RECORDING = Column('IS_COMPRESSED_LONG_RECORDING', bool, config.MAX_DURATION_CONT_BLANK)
     TEMPERATURE = Column('TEMPERATURE', str, 60)
     HOLD_AGENT = Column('HOLD_AGENT', bool, 'static')
+    IS_ANIMAL_ENGAGED = Column('IS_ANIMAL_ENGAGED', bool, 1)
 
 
 class RedisCache:
@@ -67,7 +68,9 @@ class RedisCache:
             value = int(value)
         elif cache_column.type == list:
             value = ','.join(value)
-        return self._redis.set(cache_column.name, value, ex=timeout)
+
+        kwargs = {'ex': timeout} if (not timeout or isinstance(timeout, int)) else {'px': round(timeout*1000)}
+        return self._redis.set(cache_column.name, value, **kwargs)
 
     def update_cam_dict(self, cam_name, **kwargs):
         key = self._get_cam_dict_key(cam_name)

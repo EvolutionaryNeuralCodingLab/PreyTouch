@@ -22,7 +22,7 @@ humanize==4.3.0
 werkzeug<3
 
 # cameras
-opencv-python==4.5.4.58
+opencv-python==4.12.0.88
 opencv-python-headless==4.5.4.58
 opencv-contrib-python==4.5.4.58
 
