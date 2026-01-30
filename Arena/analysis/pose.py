@@ -7,7 +7,6 @@ import yaml
 import cv2
 import traceback
 import importlib
-import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
