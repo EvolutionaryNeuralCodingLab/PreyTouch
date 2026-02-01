@@ -54,3 +54,5 @@ Arena/configurations/archive
 
 */node_modules/*
 redis/package-lock.json
+/head_turn_detection/output/
+/head_turn_detection/data/*
