@@ -500,7 +500,7 @@ def plot_mean_scores_pp(
     else:
         fig = ax.figure
     for animal_id, g in rolling_df.groupby("animal_id"):
-        ax.plot(g["time_bin"], g["score_roll"], label=animal_id, alpha=0.4)
+        ax.plot(g["time_bin"], g["score_roll"], label=animal_id, alpha=0.2)
 
     ax.axvline(hit_time, color="red", linestyle="--", linewidth=1, label="_nolegend_")
     ax.axvline(end_time, color="green", linestyle="--", linewidth=1, label="_nolegend_")
@@ -512,7 +512,7 @@ def plot_mean_scores_pp(
         mean_all["time_bin"],
         mean_all["score_roll"],
         color="black",
-        linewidth=3.5,
+        linewidth=3,
         label="Avg(all animals)",
         zorder=10,
     )
@@ -524,7 +524,7 @@ def plot_mean_scores_pp(
         legend = ax.get_legend()
         if legend is not None:
             legend.remove()
-    ax.grid(alpha=0.3)
+    # ax.grid(alpha=0.3)
 
     return fig, rolling_df
 

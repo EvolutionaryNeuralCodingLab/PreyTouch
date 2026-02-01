@@ -2660,7 +2660,7 @@ def plot_one_trial_feature_traces_from_results(
     ax.set_title(f"Trial {title_tid} — DLC FEATURES")
     ax.set_xlabel("rel time to trial end [s]")
     ax.set_ylabel("Feature diff [px]")
-    ax.grid(True, alpha=0.2)
+    # ax.grid(True, alpha=0.2)
     if time_range:
         ax.set_xlim(float(time_range[0]), float(time_range[1]))
     if is_legend:
