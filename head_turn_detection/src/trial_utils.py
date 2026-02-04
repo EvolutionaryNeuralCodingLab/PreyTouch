@@ -469,30 +469,25 @@ def plot_mean_scores_pp(
 
     mean_group = rolling_df.groupby("time_bin", as_index=False)
 
-    def _score_weighted_mean(g):
+    def _score_mean(g):
         values = g["score_roll"].to_numpy(dtype=float)
-        weights = g["score_roll"].to_numpy(dtype=float)
-        num = np.nansum(values * weights)
-        weight_sum = np.nansum(weights)
-        score_roll = np.divide(num, weight_sum, out=np.array([np.nanmean(values)]), where=weight_sum != 0).item()
+        has_values = np.isfinite(values).any()
+        score_roll = float(np.nanmean(values)) if has_values else np.nan
         out = {
             "score_roll": score_roll,
             "n_animals": g["animal_id"].nunique(),
-            "weight_sum": weight_sum,
         }
         out["n_trials"] = g["n_trials"].sum()
         return pd.Series(out)
 
-    mean_all = mean_group.apply(_score_weighted_mean).reset_index(drop=True)
+    mean_all = mean_group.apply(_score_mean).reset_index(drop=True)
 
     mean_all = mean_all.sort_values("time_bin").copy()
     tuniq = np.sort(pd.to_numeric(mean_all["time_bin"], errors="coerce").dropna().unique())
     dt_mean = float(np.nanmedian(np.diff(tuniq)))
     ratio = np.divide(float(mean_smooth_window_s), dt_mean, out=np.array([1.0]), where=np.isfinite(dt_mean) & (dt_mean > 0))
     win_mean = max(1, int(round(float(ratio))))
-    num = (mean_all["score_roll"] * mean_all["weight_sum"]).rolling(win_mean, center=True, min_periods=1).sum()
-    den = mean_all["weight_sum"].rolling(win_mean, center=True, min_periods=1).sum()
-    mean_all["score_roll"] = num / den.replace(0, np.nan)
+    mean_all["score_roll"] = mean_all["score_roll"].rolling(win_mean, center=True, min_periods=1).mean()
 
     created_fig = ax is None
     if created_fig:
