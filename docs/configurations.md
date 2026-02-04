@@ -221,7 +221,14 @@ and also add a new camera using a simple form.
   - **start_time** - Time for the agent to start setting experiments (format: "HH:MM").
   - **end_time** - End time for the agent (format: "HH:MM").
   - **time_between_experiments** - Time in minutes between scheduled experiments.
+- **success_announce** (optional)
+  - **enabled** - Enable daily success announcements.
+  - **min_trials_with_strikes** - Minimum number of trials with strikes required for evaluation.
+  - **success_threshold** - Success ratio threshold (0-1) for announcing.
 - **trials**
+  - **repeat** (optional) - int repeat count or `"fill"` to fill the remaining daily slots.
+  - **name_template** (optional) - supports `{time}` (HHMM) and `{index}` for generated trial names.
+  - **evaluate_success** (optional) - whether to include this block in daily success evaluation.
 
 #### Example
 ```json

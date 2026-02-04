@@ -207,6 +207,7 @@ class Block:
     trial_duration: int = 10
     iti: int = 10
     notes: str = ''
+    evaluate_success: bool = True
     background_color: str = ''
     bug_mapped_background: dict = field(default_factory=dict)
     block_type: str = 'bugs'  # options: 'bugs', 'blank', 'media', 'psycho'
