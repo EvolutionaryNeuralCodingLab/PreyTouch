@@ -238,7 +238,7 @@ class ArenaPose:
             self.predictor = getattr(prd_module, prd_class)(self.cam_name, self.model_path)
 
     def predict_video(self, db_video_id=None, video_path=None, is_save_cache=True, is_create_example_video=False,
-                      prefix='', is_tqdm=True):
+                      prefix='', is_tqdm=True, progress_cb=None):
         """
         predict pose for a given video
         @param db_video_id: The DB index of the video in the videos table
@@ -263,6 +263,8 @@ class ArenaPose:
         iters = range(n_frames)
         if not is_tqdm:
             self.logger.info(f'Start video prediction of {video_path}')
+        if progress_cb:
+            progress_cb(0, n_frames)
         for frame_id in (tqdm(iters, desc=f'{prefix}{Path(video_path).stem}') if is_tqdm else iters):
             ret, frame = cap.read()
             if not self.is_initialized:
@@ -278,6 +280,8 @@ class ArenaPose:
             if is_create_example_video:
                 self.write_to_example_video(frame, frame_id, pred_row, fps, video_path)
             pose_df.append(pred_row)
+            if progress_cb:
+                progress_cb(frame_id + 1, n_frames)
         cap.release()
 
         if not pose_df:
@@ -440,7 +444,11 @@ class ArenaPose:
         csv_path = frames_output_dir / 'bug_trajectory.csv'
         if not csv_path.exists():
             return None
-        return pd.read_csv(csv_path, index_col=0)
+        # Try UTF-8 first, then fallback to latin-1 to avoid hard failures on bad encoding
+        try:
+            return pd.read_csv(csv_path, index_col=0)
+        except UnicodeDecodeError:
+            return pd.read_csv(csv_path, index_col=0, encoding="latin-1", engine="python")
 
     def add_bug_traj(self, pred_row, bug_traj, timestamp):
         dt = (bug_traj.timestamp - timestamp).abs()
