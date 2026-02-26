@@ -124,6 +124,7 @@ class Block(Base):
     movement_type = Column(String)
     holes_height_scale = Column(Float, nullable=True)
     background_color = Column(String, nullable=True)
+    bug_mapped_background = Column(JSON, nullable=True)
     agent_label = Column(String, nullable=True)  # The key in the trials dict of the agent_config
     tags = Column(String, nullable=True, default='')
     strikes = relationship('Strike')

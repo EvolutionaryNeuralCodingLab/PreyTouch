@@ -267,7 +267,8 @@ export default {
         this.currentBugType = this.bugsSettings.bugTypes[0]
         return
       } else if (this.bugsSettings.bugTypes.length === this.bugsSettings.numOfBugs) {
-        if (this.bugId === 0) {
+        const shouldShuffle = !(this.bugsSettings && this.bugsSettings.isSplitBugsView)
+        if (this.bugId === 0 && shouldShuffle) {
           shuffle(this.bugsSettings.bugTypes)
         }
         this.currentBugType = this.bugsSettings.bugTypes[this.bugId]

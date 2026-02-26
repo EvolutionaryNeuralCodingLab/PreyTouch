@@ -55,6 +55,7 @@ class Experiment:
         self.day = self.start_time.strftime('%Y%m%d')
         self.name = str(self)
         self.orm = ORM()
+        self.blocks = [self._normalize_block_defaults(block) for block in self.blocks]
         blocks_ids = range(self.first_block, self.first_block + len(self.blocks))
         self.blocks = [Block(i, self.cameras, str(self), self.experiment_path, self.animal_id, self.cam_units, self.orm,
                              self.cache, extra_time_recording=self.extra_time_recording, **kwargs)
@@ -67,6 +68,19 @@ class Experiment:
 
     def __str__(self):
         return f'EXP{self.day}'
+
+    @staticmethod
+    def _normalize_block_defaults(block_dict):
+        if not isinstance(block_dict, dict):
+            return block_dict
+        block_type = block_dict.get('block_type', 'bugs')
+        if block_type in ('bugs', None):
+            if not block_dict.get('background_color'):
+                block_dict['background_color'] = getattr(config, 'DEFAULT_BACKGROUND_COLOR', '#e8eaf6')
+            bug_mapped_background = block_dict.get('bug_mapped_background')
+            if bug_mapped_background in (None, ''):
+                block_dict['bug_mapped_background'] = {}
+        return block_dict
 
     @property
     def first_block(self):
