@@ -139,6 +139,7 @@ COUNT_TIMESTAMPS_FOR_FPS_CALC = env.int('COUNT_TIMESTAMPS_FOR_FPS_CALC', 200, gr
 WRITING_VIDEO_QUEUE_MAXSIZE = env.int('WRITING_VIDEO_QUEUE_MAXSIZE', 100, group='Cameras', desc='Max frames in the writing video queue')
 shm_buffer_dtype = 'uint8'
 PREDICTORS_WAIT_FRAME_TIMEOUT = env.int('PREDICTORS_WAIT_FRAME_TIMEOUT', 2, group='Cameras', desc='Timeout for waiting frames for a predictor')
+PREDICTORS_WARMUP_SEC = env.int('PREDICTORS_WARMUP_SEC', 5, group='Cameras', desc='Seconds to wait after camera start before predictors begin')
 
 # Periphery
 DISABLE_PERIPHERY = env.bool('DISABLE_PERIPHERY', False, group='Periphery', desc='Disable all periphery integration')
@@ -197,6 +198,7 @@ IR_TOGGLE_EVERY = env.int('IR_TOGGLE_EVERY', 10*60, group='Experiments', desc='T
 IS_RECORD_SCREEN_IN_EXPERIMENT = env.bool('IS_RECORD_SCREEN_IN_EXPERIMENT', False, group='Experiments', desc='Whether to record the screen in the experiment. Notice it has high CPU usage!')
 EXTRA_TIME_RECORDING = env.int('EXTRA_TIME_RECORDING', 30, group='Experiments', desc='Extra time in seconds before and after the experiment in which no trials are on and only the cameras record')
 TIME_BETWEEN_BLOCKS = env.int('TIME_BETWEEN_BLOCKS', 300, group='Experiments', desc='Time in seconds between blocks in an experiment')
+DEFAULT_BACKGROUND_COLOR = env('DEFAULT_BACKGROUND_COLOR', '#e8eaf6', group='Experiments', desc='Default background color for bug blocks')
 EXPERIMENTS_TIMEOUT = env.int('EXPERIMENTS_TIMEOUT', 60 * 60, group='Experiments', desc='Timeout in seconds used by the cache for maximum experiment time')
 REWARD_TIMEOUT = env.int('REWARD_TIMEOUT', 10, group='Experiments', desc='Time in seconds to wait between rewards')
 MAX_DAILY_REWARD = env.int('MAX_DAILY_REWARD', 40, group='Experiments', desc='Max number of rewards per day')
@@ -240,7 +242,7 @@ TELEGRAM_TOKEN = env('TELEGRAM_TOKEN', None, group='Publishers', desc='Token to 
 SENTRY_DSN = env('SENTRY_DSN', '', group='Publishers', desc='Data source name for the sentry service')
 
 # Pose Estimation
-NIGHT_POSE_CAMERA = env('NIGHT_POSE_CAMERA', '', group='Pose-Estimation', validator='cam_exist', desc='Which camera videos should the nighlty pose estimation take. Must set this and NIGHT_POSE_PREDICTOR to activate nightly pose estimation.')
+NIGHT_POSE_CAMERA = env('NIGHT_POSE_CAMERA', '', group='Pose-Estimation', validator='cam_exist', desc='Which camera videos should the nighlty pose estimation take. Must set this and NIGHT_POSE_PREDICTOR to activate nightly pose estimation. Comma-separated list is allowed.')
 NIGHT_POSE_PREDICTOR = env('NIGHT_POSE_PREDICTOR', '', group='Pose-Estimation', validator='predict_model_exist', desc='Name of Deeplabcut predictor from predict_config to use for nighly pose estimation')
 NIGHT_POSE_RUN_ONLY_BUG_SESSIONS = env.bool('NIGHT_POSE_RUN_ONLY_BUG_SESSIONS', False, group='Pose-Estimation', desc='Whether to run nightly pose estimation only on bugs experiments')
 IS_RUN_NIGHTLY_POSE_ESTIMATION = bool(NIGHT_POSE_CAMERA) and bool(NIGHT_POSE_PREDICTOR)

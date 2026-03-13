@@ -20,6 +20,7 @@ class PredictHandler(ImageHandler):
         self.last_timestamp = None
         self.is_initiated = False
         self.prediction_summary = ''
+        self.last_frame_timeout_log = 0
 
     def __str__(self):
         return f'Predictor-{self.cam_name}'
@@ -37,7 +38,15 @@ class PredictHandler(ImageHandler):
         self.logger.info('start predictor loop')
         try:
             while not self.stop_signal.is_set() and not self.mp_metadata['predictors_stop'].is_set():
-                timestamp = self.wait_for_next_frame()
+                try:
+                    timestamp = self.wait_for_next_frame()
+                except QueueException as exc:
+                    now = time.time()
+                    if now - self.last_frame_timeout_log > 10:
+                        self.logger.warning(str(exc))
+                        self.last_frame_timeout_log = now
+                    time.sleep(0.05)
+                    continue
                 img = np.frombuffer(self.shm.buf, dtype=config.shm_buffer_dtype).reshape(self.cam_config['image_size'])
                 img = self.before_predict(img)
 

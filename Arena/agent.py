@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import re
 import utils
-from db_models import ORM, Block, Experiment, Trial
+from db_models import ORM, Block, Experiment, Trial, Strike
 from cache import RedisCache, CacheColumns as cc
 from experiment import ExperimentCache, ExperimentValidation
 from loggers import get_logger
@@ -26,6 +26,7 @@ class Agent:
         self.history = {}
         self.next_trial_name = None
         self.success_announce = {}
+        self.daily_bug_hit_announce = {}
 
         if Path(config.configurations['agent'][0]).exists():
             agent_config = config.load_configuration('agent')
@@ -35,6 +36,7 @@ class Agent:
             self.history_scope = agent_config.get('history_scope', 'all')
             self.schedule_mode = agent_config.get('schedule_mode', 'next_available')
             self.success_announce = agent_config.get('success_announce', {})
+            self.daily_bug_hit_announce = agent_config.get('daily_bug_hit_announce', {})
             self.trials = self.expand_trials(agent_config['trials'])
         else:
             self.trials = {}
@@ -76,6 +78,7 @@ class Agent:
             party_emoji = u'\U0001F389'
             self.set_last_error('All agent trials are complete')
             self.publish(f'Animal {self.animal_id} has finished all its experiments {party_emoji}')
+            self.check_daily_bug_hit_announce()
             return
         self.create_cached_experiment()
         if self.exp_validation.is_ready():
@@ -340,6 +343,65 @@ class Agent:
                f'last strike is reward bug)')
         self.publish(msg, force=True)
         self.cache.set(cc.DAILY_SUCCESS_ANNOUNCED_DATE, day_string)
+
+    def check_daily_bug_hit_announce(self):
+        if not self.daily_bug_hit_announce or self.daily_bug_hit_announce.get('enabled', True) is False:
+            return
+        if config.DISABLE_DB:
+            return
+        if not self.animal_id:
+            return
+        day_string = datetime.now().strftime('%Y-%m-%d')
+        if self.cache.get(cc.DAILY_BUG_HIT_ANNOUNCED_DATE) == day_string:
+            return
+
+        counts, total_hits = self.get_daily_bug_hit_counts()
+        min_hits = self.daily_bug_hit_announce.get('min_hits', 1)
+        if total_hits < min_hits:
+            return
+        if total_hits == 0:
+            return
+
+        sorted_counts = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        if not sorted_counts:
+            return
+        top_count = sorted_counts[0][1]
+        top_bugs = [bug for bug, cnt in sorted_counts if cnt == top_count]
+        distribution = '; '.join(
+            f'{bug}: {cnt / total_hits:.1%} ({cnt}/{total_hits})'
+            for bug, cnt in sorted_counts
+        )
+        top_label = ', '.join(top_bugs)
+        msg = (f'Animal {self.animal_id} daily prey preference: top hit bug(s) {top_label} '
+               f'({top_count}/{total_hits}, {top_count / total_hits:.1%}). Distribution: {distribution}')
+        self.publish(msg, force=True)
+        self.cache.set(cc.DAILY_BUG_HIT_ANNOUNCED_DATE, day_string)
+
+    def get_daily_bug_hit_counts(self):
+        day_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        day_end = day_start + timedelta(days=1)
+        counts = {}
+        total_hits = 0
+        with self.orm.session() as s:
+            strikes = s.query(Strike, Block, Experiment).join(
+                Block, Block.id == Strike.block_id).join(
+                Experiment, Experiment.id == Block.experiment_id).filter(
+                Strike.time >= day_start,
+                Strike.time < day_end,
+                Experiment.animal_id == self.animal_id,
+                Experiment.arena == config.ARENA_NAME,
+                Block.block_type == 'bugs'
+            ).all()
+            for strk, blk, exp in strikes:
+                if strk.is_hit is not True:
+                    continue
+                if strk.is_climbing:
+                    continue
+                if not strk.bug_type:
+                    continue
+                counts[strk.bug_type] = counts.get(strk.bug_type, 0) + 1
+                total_hits += 1
+        return counts, total_hits
 
     def get_daily_success_stats(self):
         day_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)

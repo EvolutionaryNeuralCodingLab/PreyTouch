@@ -4,6 +4,7 @@ import json
 import subprocess
 import tempfile
 import shutil
+import queue
 from functools import wraps
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -65,6 +66,9 @@ class Scheduler(threading.Thread):
         self.compress_threads = {}
         self.current_animal_id = None
         self.dwh_commit_tries = 0
+        self._dwh_commit_proc = None
+        self._dwh_commit_result_q = multiprocessing.Queue()
+        self._dwh_commit_started_at = None
         self.last_daily_summary_sent = cache.get(cc.DAILY_SUMMARY_SENT_DATE)
         self.last_timelapse_summary_sent = cache.get(cc.DAILY_TIMELAPSE_SUMMARY_SENT_DATE)
         self.last_daily_timelapse_sent = cache.get(cc.DAILY_TIMELAPSE_SENT_DATE)
@@ -164,18 +168,50 @@ class Scheduler(threading.Thread):
 
     @schedule_method
     def dwh_commit(self):
+        self._check_dwh_commit_result()
         if self.is_in_range('dwh_commit_time') and config.DWH_HOST and not cache.get_current_experiment():
-            if self.dwh_commit_tries >= config.DWH_N_TRIES:
-                self.dwh_commit_tries = 0
-                utils.send_telegram_message(f'Commit to DWH failed after {config.DWH_N_TRIES} times')
+            if self._dwh_commit_proc is not None and self._dwh_commit_proc.is_alive():
                 return
-            try:
-                DWH().commit()
-            except Exception as exc:
-                self.dwh_commit_tries += 1
-                self.logger.warning(f'Failed committing to DWH ({self.dwh_commit_tries}/{config.DWH_N_TRIES}): {exc}')
-            else:
+            if self.dwh_commit_tries >= config.DWH_N_TRIES:
+                msg = f'Commit to DWH failed after {config.DWH_N_TRIES} times'
+                self.logger.warning(msg)
+                utils.send_telegram_message(msg)
                 self.dwh_commit_tries = 0
+                return
+            self._start_dwh_commit_process()
+
+    def _start_dwh_commit_process(self):
+        self._dwh_commit_started_at = time.time()
+        self._dwh_commit_proc = multiprocessing.Process(
+            target=_run_dwh_commit,
+            args=(self._dwh_commit_result_q,),
+            daemon=True
+        )
+        self._dwh_commit_proc.start()
+        self.logger.info('DWH commit started in background process')
+
+    def _check_dwh_commit_result(self):
+        if self._dwh_commit_proc is None:
+            return
+        if self._dwh_commit_proc.is_alive():
+            return
+        self._dwh_commit_proc.join(timeout=1)
+        self._dwh_commit_proc = None
+        self._dwh_commit_started_at = None
+
+        result = None
+        try:
+            result = self._dwh_commit_result_q.get_nowait()
+        except queue.Empty:
+            result = {'ok': False, 'error': 'DWH commit process exited without a result'}
+
+        if not result.get('ok'):
+            self.dwh_commit_tries += 1
+            msg = f'Failed committing to DWH ({self.dwh_commit_tries}/{config.DWH_N_TRIES}): {result.get("error")}'
+            self.logger.warning(msg)
+            utils.send_telegram_message(msg)
+        else:
+            self.dwh_commit_tries = 0
 
     @schedule_method
     def agent_update(self):
@@ -696,7 +732,13 @@ class Scheduler(threading.Thread):
                 not config.IS_RUN_NIGHTLY_POSE_ESTIMATION:
             return
 
-        multiprocessing.Process(target=_run_pose_callback, args=(self.dlc_on, self.dlc_errors_cache)).start()
+        cameras = [c.strip() for c in config.NIGHT_POSE_CAMERA.split(',') if c.strip()] if config.NIGHT_POSE_CAMERA else []
+        if not cameras:
+            return
+        multiprocessing.Process(
+            target=_run_pose_callback,
+            args=(self.dlc_on, self.dlc_errors_cache, cameras),
+        ).start()
         self.dlc_on.set()
 
     @schedule_method
@@ -719,9 +761,23 @@ class Scheduler(threading.Thread):
             return True
 
 
-def _run_pose_callback(dlc_on, errors_cache):
+def _run_pose_callback(dlc_on, errors_cache, cameras=None):
     try:
-        VideoPoseScanner().predict_all(max_videos=20, errors_cache=errors_cache, is_tqdm=False)
+        pred_conf = config.load_configuration('predict')
+        base_predictor = (config.NIGHT_POSE_PREDICTOR or '').strip()
+        cams = cameras or ([config.NIGHT_POSE_CAMERA] if config.NIGHT_POSE_CAMERA else [])
+        for cam_name in cams:
+            if not cam_name:
+                continue
+            predictor_key = f'{base_predictor}-{cam_name}' if base_predictor else ''
+            if predictor_key not in pred_conf:
+                predictor_key = base_predictor
+            model_path = pred_conf.get(predictor_key, {}).get('model_path') if predictor_key else None
+            VideoPoseScanner(cam_name=cam_name, model_path=model_path).predict_all(
+                max_videos=20,
+                errors_cache=errors_cache,
+                is_tqdm=False,
+            )
     finally:
         dlc_on.clear()
 
@@ -731,3 +787,18 @@ def _run_tracking_pose(tracking_pose_on):
         predict_tracking(max_videos=30, is_tqdm=False)
     finally:
         tracking_pose_on.clear()
+
+
+def _run_dwh_commit(result_q):
+    try:
+        DWH().commit()
+    except Exception as exc:
+        try:
+            result_q.put({'ok': False, 'error': str(exc)})
+        except Exception:
+            pass
+    else:
+        try:
+            result_q.put({'ok': True})
+        except Exception:
+            pass

@@ -140,7 +140,12 @@ class Validator:
         if not cam_name:
             return
         cam_config = load_configuration('cameras')
-        assert cam_name in cam_config, f'Camera {cam_name} does not exist'
+        if isinstance(cam_name, (list, tuple)):
+            cam_list = cam_name
+        else:
+            cam_list = [c.strip() for c in str(cam_name).split(',') if c.strip()]
+        for name in cam_list:
+            assert name in cam_config, f'Camera {name} does not exist'
 
     def predict_model_exist(pred_name):
         if not pred_name:

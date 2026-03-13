@@ -231,10 +231,10 @@ class ImageSink(ArenaProcess):
         def loop(q):
             while not self.stop_signal.is_set() and not self.writing_stop_event.is_set():
                 try:
-                    frame = q.get_nowait()
+                    frame = q.get(timeout=0.1)
                     self.video_out.write(frame)
                 except queue.Empty:
-                    pass
+                    time.sleep(0.01)
             self.logger.debug('video writing thread is closed')
 
         if self.writing_stop_event.is_set():
@@ -417,6 +417,10 @@ class CameraUnit:
             self.listen_stop_events()
             [proc.start() for proc in self.processes.values()]
             cache.append_to_list(cc.ACTIVE_CAMERAS, self.cam_name)
+            warmup_sec = getattr(config, 'PREDICTORS_WARMUP_SEC', 0)
+            if warmup_sec and self.cam_config.get('predictors'):
+                self.logger.info(f'warming up for {warmup_sec}s before starting predictors')
+                time.sleep(warmup_sec)
             self.start_predictors(is_experiment, **kwargs)
         except Exception as exc:
             self.logger.error(exc)

@@ -1,4 +1,5 @@
 import datetime
+import csv
 import math
 import time
 import pickle
@@ -417,6 +418,7 @@ class ArenaPose:
                     if tr.bug_trajectory is not None:
                         bt = pd.DataFrame(tr.bug_trajectory)
                         bt['trial_id'] = tr.id
+                        bt['in_block_trial_id'] = tr.in_block_trial_id
                         bug_trajs.append(bt)
             if bug_trajs:
                 bug_trajs = pd.concat(bug_trajs)
@@ -431,7 +433,33 @@ class ArenaPose:
             return
 
         bug_trajs = self.rename_bug_columns(bug_trajs)
-        bug_trajs['datetime'] = pd.to_datetime(bug_trajs['time']).dt.tz_localize(None)
+        # TODO: MAKE SURE IF WE WANT THIS
+        if 'time' not in bug_trajs.columns:
+            vid_ref = video_path or f'video_id={db_video_id}'
+            self.logger.warning(
+                f"Bug trajectory is missing a 'time' column ({vid_ref}); continuing without bug trajectory."
+            )
+            return None
+
+        datetimes = pd.to_datetime(bug_trajs['time'], errors='coerce').dt.tz_localize(None)
+        invalid_mask = datetimes.isna()
+        if invalid_mask.any():
+            n_bad = int(invalid_mask.sum())
+            vid_ref = video_path or f'video_id={db_video_id}'
+            self.logger.warning(
+                f"Found {n_bad} unparsable bug trajectory timestamps ({vid_ref}); dropping bad rows."
+            )
+            bug_trajs = bug_trajs.loc[~invalid_mask].copy()
+            datetimes = datetimes.loc[~invalid_mask]
+
+        if len(bug_trajs) == 0:
+            vid_ref = video_path or f'video_id={db_video_id}'
+            self.logger.warning(
+                f"No valid bug trajectory timestamps ({vid_ref}); continuing without bug trajectory."
+            )
+            return None
+
+        bug_trajs['datetime'] = datetimes
         bug_trajs['timestamp'] = bug_trajs.datetime.astype(int).div(10**9)
         bug_trajs = bug_trajs.sort_values(by='datetime').reset_index(drop=True)
         return bug_trajs
@@ -441,7 +469,106 @@ class ArenaPose:
         csv_path = frames_output_dir / 'bug_trajectory.csv'
         if not csv_path.exists():
             return None
-        return pd.read_csv(csv_path, index_col=0)
+        try:
+            bug_traj = pd.read_csv(csv_path, index_col=0)
+        except pd.errors.ParserError as exc:
+            self.logger.warning(
+                f"Failed parsing bug trajectory CSV ({csv_path}): {exc}. "
+                "Attempting auto-fix (6-column bug_trajectory.csv) and retrying."
+            )
+            bug_traj = None
+
+            fixed = False
+            try:
+                fixed = self._try_fix_bug_trajectory_csv_6_columns(csv_path)
+            except Exception as exc_fix:
+                self.logger.warning(
+                    f"Auto-fix failed for bug_trajectory.csv ({csv_path}): {exc_fix}."
+                )
+
+            if fixed:
+                try:
+                    bug_traj = pd.read_csv(csv_path, index_col=0)
+                except Exception as exc_retry:
+                    self.logger.warning(
+                        f"Retry failed after auto-fix for bug_trajectory.csv ({csv_path}): {exc_retry}."
+                    )
+                    bug_traj = None
+
+            if bug_traj is None:
+                try:
+                    bug_traj = pd.read_csv(
+                        csv_path, index_col=0, engine="python", on_bad_lines="skip"
+                    )
+                except Exception as exc2:
+                    self.logger.warning(
+                        f"Failed parsing bug trajectory CSV with fallback parser ({csv_path}): {exc2}. "
+                        "Continuing without bug trajectory."
+                    )
+                    return None
+        except Exception as exc:
+            self.logger.warning(
+                f"Failed reading bug trajectory CSV ({csv_path}): {exc}. "
+                "Continuing without bug trajectory."
+            )
+            return None
+
+        if "time" not in bug_traj.columns:
+            self.logger.warning(
+                f"bug_trajectory.csv is missing a 'time' column ({csv_path}). "
+                "Continuing without bug trajectory."
+            )
+            return None
+
+        return bug_traj
+
+    @staticmethod
+    def _try_fix_bug_trajectory_csv_6_columns(csv_path: Path) -> bool:
+        """
+        Some bug_trajectory.csv files end up with 8 data columns but only 6 header columns.
+        This function fixes such files in-place by shifting values left to fill gaps and trimming
+        to 6 columns, while saving a backup alongside the original.
+
+        Backup path: bug_trajectory_orig.csv (same folder).
+        """
+
+        header_columns = 6
+        expected_row_columns = 8
+
+        backup_path = csv_path.with_name(f"{csv_path.stem}_orig{csv_path.suffix}")
+        source_path = backup_path if backup_path.exists() else csv_path
+
+        with source_path.open(newline="", encoding="utf-8") as fh:
+            rows = [row for row in csv.reader(fh)]
+        if not rows:
+            return False
+
+        header_len = len(rows[0])
+        max_len = max(len(r) for r in rows)
+        if header_len != header_columns or max_len <= header_columns:
+            return False
+
+        full_len = max(max_len, expected_row_columns)
+        fixed_rows = [rows[0][:header_columns]]
+        for row in rows[1:]:
+            padded = list(row) + [""] * (full_len - len(row))
+            for i in range(full_len - 1):
+                if padded[i]:
+                    continue
+                for j in range(i + 1, full_len):
+                    if padded[j]:
+                        padded[i] = padded[j]
+                        padded[j] = ""
+                        break
+            fixed_rows.append(padded[:header_columns])
+
+        if not backup_path.exists():
+            csv_path.rename(backup_path)
+
+        with csv_path.open("w", newline="", encoding="utf-8") as fh:
+            writer = csv.writer(fh)
+            writer.writerows(fixed_rows)
+        return True
 
     def add_bug_traj(self, pred_row, bug_traj, timestamp):
         dt = (bug_traj.timestamp - timestamp).abs()
@@ -455,20 +582,21 @@ class ArenaPose:
         for i in bug_indices:
             single = (len(bug_indices) == 1 and i == 0)
             if single:
-                x_name, y_name, trial_name = 'bug_x',   'bug_y',   'trial_id'
+                x_name, y_name = 'bug_x', 'bug_y'
+                type_name, alive_name = 'bug_type', 'bug_alive'
                 xcm_name, ycm_name           = 'bug_x_cm','bug_y_cm'
             else:
                 x_name, y_name               = f'bug{i}_x',   f'bug{i}_y'
-                trial_name                   = 'trial_id'
+                type_name, alive_name        = f'bug{i}_type', f'bug{i}_alive'
                 xcm_name, ycm_name           = f'bug{i}_x_cm', f'bug{i}_y_cm'
 
-            for nm in (x_name, y_name, trial_name, xcm_name, ycm_name):
+            for nm in (x_name, y_name, type_name, alive_name, 'trial_id', 'in_block_trial_id', xcm_name, ycm_name):
                 pred_row[(nm, '')] = np.nan
 
             if dt.min() < 0.03:  # in case the diff is bigger than 30 msec, it means that this frame is not with bug.
                 idx = dt.idxmin()
 
-                for col in (x_name, y_name, trial_name):
+                for col in (x_name, y_name, type_name, alive_name, 'trial_id', 'in_block_trial_id'):
                     if col in bug_traj.columns:
                         val = bug_traj.loc[idx, col]
                         pred_row[(col, '')] = val

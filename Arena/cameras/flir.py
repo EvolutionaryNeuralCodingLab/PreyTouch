@@ -83,7 +83,7 @@ class FLIRCamera(Camera):
         waiting_time = 0.1
         if self.stop_signal.is_set():
             return
-        img = image_result.GetNDArray()
+        img = self.get_image_array(image_result)
         timestamp = image_result.GetTimeStamp() / 1e9 + self.camera_time_delta
         while True:
             try:
@@ -109,7 +109,7 @@ class FLIRCamera(Camera):
             if self.cam_config.get('is_color'):
                 self.logger.info(f'setting camera {self.cam_name} to BGR8; '
                                  f'due to is_color={self.cam_config.get("is_color")}')
-                cam.PixelFormat.SetValue(PySpin.PixelFormat_BGR8)
+                self.set_pixel_format(cam)
 
             assert not (self.cam_config.get('trigger_source') and self.cam_config.get('fps')), \
                 'must provide either fps or trigger_source'
@@ -119,12 +119,6 @@ class FLIRCamera(Camera):
                 cam.TriggerSource.SetValue(getattr(PySpin, f"TriggerSource_{self.cam_config['trigger_source']}"))
                 cam.TriggerMode.SetValue(PySpin.TriggerMode_On)
                 cam.TriggerActivation.SetValue(PySpin.TriggerActivation_FallingEdge)
-                s_node_map = cam.GetTLStreamNodeMap()
-                buffer_count = PySpin.CIntegerPtr(s_node_map.GetNode('StreamBufferCountManual'))
-                if not PySpin.IsAvailable(buffer_count) or not PySpin.IsWritable(buffer_count):
-                    self.logger.error('Unable to set Buffer Count (Integer node retrieval). Aborting...\n')
-                else:
-                    buffer_count.SetValue(20)
 
             elif self.cam_config.get('fps'):
                 cam.DeviceLinkThroughputLimit.SetValue(self.get_max_throughput(cam))
@@ -135,6 +129,7 @@ class FLIRCamera(Camera):
             else:
                 raise Exception('bad configuration. must provide either trigger_source or fps in cam_config')
 
+            self.configure_stream_buffers(cam)
             # cam.TriggerSelector.SetValue(PySpin.TriggerSelector_FrameStart)
             # max_throughput = self.get_max_throughput(cam)
             # self.logger.info(f'Max throughput: {max_throughput}')
@@ -144,6 +139,82 @@ class FLIRCamera(Camera):
 
         except PySpin.SpinnakerException as exc:
             self.logger.error(f'(configure_images); {exc}')
+
+    def configure_stream_buffers(self, cam):
+        try:
+            s_node_map = cam.GetTLStreamNodeMap()
+
+            buffer_mode = PySpin.CEnumerationPtr(s_node_map.GetNode('StreamBufferCountMode'))
+            if PySpin.IsAvailable(buffer_mode) and PySpin.IsWritable(buffer_mode):
+                buffer_mode.SetIntValue(PySpin.StreamBufferCountMode_Manual)
+
+            buffer_count = PySpin.CIntegerPtr(s_node_map.GetNode('StreamBufferCountManual'))
+            if PySpin.IsAvailable(buffer_count) and PySpin.IsWritable(buffer_count):
+                count = int(self.cam_config.get('stream_buffer_count', 20))
+                buffer_count.SetValue(count)
+            else:
+                self.logger.warning('Unable to set StreamBufferCountManual')
+
+            handling_mode = PySpin.CEnumerationPtr(s_node_map.GetNode('StreamBufferHandlingMode'))
+            if PySpin.IsAvailable(handling_mode) and PySpin.IsWritable(handling_mode):
+                handling = self.cam_config.get('stream_buffer_handling', 'OldestFirst')
+                handling_attr = f'StreamBufferHandlingMode_{handling}'
+                handling_value = getattr(PySpin, handling_attr, PySpin.StreamBufferHandlingMode_OldestFirst)
+                handling_mode.SetIntValue(handling_value)
+            else:
+                self.logger.warning('Unable to set StreamBufferHandlingMode')
+        except PySpin.SpinnakerException as exc:
+            self.logger.warning(f'Could not configure stream buffers: {exc}')
+
+    def set_pixel_format(self, cam):
+        try:
+            node_map = cam.GetNodeMap()
+            pixel_format = PySpin.CEnumerationPtr(node_map.GetNode('PixelFormat'))
+            if not PySpin.IsAvailable(pixel_format):
+                self.logger.warning('PixelFormat node not available; leaving current value')
+                return
+            if not PySpin.IsWritable(pixel_format):
+                current = self._get_pixel_format_name(pixel_format)
+                self.logger.warning(f'PixelFormat not writable (current={current}); leaving current value')
+                return
+
+            preferred = self.cam_config.get('pixel_format', 'BGR8')
+            candidates = [preferred, 'BGR8', 'RGB8', 'BayerRG8', 'BayerBG8', 'BayerGR8', 'BayerGB8']
+            for fmt in dict.fromkeys(candidates):
+                if not fmt:
+                    continue
+                entry = pixel_format.GetEntryByName(fmt)
+                if PySpin.IsAvailable(entry) and PySpin.IsReadable(entry):
+                    pixel_format.SetIntValue(entry.GetValue())
+                    self.logger.info(f'PixelFormat set to {fmt}')
+                    return
+
+            current = self._get_pixel_format_name(pixel_format)
+            self.logger.warning(f'No supported color PixelFormat found; current={current}')
+        except PySpin.SpinnakerException as exc:
+            self.logger.warning(f'Could not set PixelFormat: {exc}')
+
+    def _get_pixel_format_name(self, pixel_format):
+        try:
+            if not PySpin.IsReadable(pixel_format):
+                return 'unknown'
+            current_entry = pixel_format.GetCurrentEntry()
+            if PySpin.IsAvailable(current_entry) and PySpin.IsReadable(current_entry):
+                return current_entry.GetSymbolic()
+        except PySpin.SpinnakerException:
+            pass
+        return 'unknown'
+
+    def get_image_array(self, image_result: PySpin.ImagePtr):
+        if not self.cam_config.get('is_color'):
+            return image_result.GetNDArray()
+        try:
+            if image_result.GetPixelFormat() != PySpin.PixelFormat_BGR8:
+                converted = image_result.Convert(PySpin.PixelFormat_BGR8, PySpin.HQ_LINEAR)
+                return converted.GetNDArray()
+        except PySpin.SpinnakerException as exc:
+            self.logger.warning(f'Could not convert image to BGR8: {exc}')
+        return image_result.GetNDArray()
 
     def get_cam(self, cam_list):
         cam_id = str(self.cam_config['id'])
