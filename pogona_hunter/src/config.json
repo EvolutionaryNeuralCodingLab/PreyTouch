@@ -10,6 +10,60 @@
       },
       "stepsPerImage": 10
     },
+    "2snakes": {
+      "text": "2 Snakes ",
+      "numImagesPerBug": 1,
+      "speed": 3,
+      "radiusRange": {
+        "min": 140,
+        "max": 160
+      },
+      "stepsPerImage": 10
+    },
+    "snake_control": {
+      "text": "Snake Control",
+      "numImagesPerBug": 1,
+      "speed": 3,
+      "radiusRange": {
+        "min": 140,
+        "max": 160
+      },
+      "stepsPerImage": 10,
+      "stretchToScreen": true
+    },
+    "snake_rotating": {
+      "text": "Snake Rotating",
+      "numImagesPerBug": 1,
+      "speed": 3,
+      "radiusRange": {
+        "min": 140,
+        "max": 160
+      },
+      "stepsPerImage": 10,
+      "fillToScreen": true
+    },
+    "snake_control_move": {
+      "text": "Snake Control Move",
+      "numImagesPerBug": 8,
+      "speed": 3,
+      "radiusRange": {
+        "min": 140,
+        "max": 160
+      },
+      "stepsPerImage": 10,
+      "fillToScreen": true
+    },
+    "snake_rotating_move": {
+      "text": "Snake Rotating Move",
+      "numImagesPerBug": 8,
+      "speed": 3,
+      "radiusRange": {
+        "min": 140,
+        "max": 160
+      },
+      "stepsPerImage": 10,
+      "fillToScreen": true
+    },
     
     "cockroach": {
       "text": "Cockroach",
@@ -61,6 +115,106 @@
       },
       "stepsPerImage": 10
     },
+    "dark_worm": {
+      "text": "Dark Worm",
+      "numImagesPerBug": 5,
+      "speed": 1,
+      "radiusRange": {
+        "min": 220,
+        "max": 230
+      },
+      "stepsPerImage": 10
+    },
+    "light_worm": {
+      "text": "Light Worm",
+      "numImagesPerBug": 5,
+      "speed": 1,
+      "radiusRange": {
+        "min": 220,
+        "max": 230
+      },
+      "stepsPerImage": 10
+    },
+    "lighter_worm": {
+      "text": "Lighter Worm",
+      "numImagesPerBug": 5,
+      "speed": 1,
+      "radiusRange": {
+        "min": 220,
+        "max": 230
+      },
+      "stepsPerImage": 10
+    },
+    "darker_worm": {
+      "text": "Darker Worm",
+      "numImagesPerBug": 5,
+      "speed": 1,
+      "radiusRange": {
+        "min": 220,
+        "max": 230
+      },
+      "stepsPerImage": 10
+    },
+    "val_dark_worm": {
+      "text": "Val Dark Worm",
+      "numImagesPerBug": 5,
+      "speed": 1,
+      "radiusRange": {
+        "min": 220,
+        "max": 230
+      },
+      "stepsPerImage": 10
+    },
+    "val_light_worm": {
+      "text": "Val Light Worm",
+      "numImagesPerBug": 5,
+      "speed": 1,
+      "radiusRange": {
+        "min": 220,
+        "max": 230
+      },
+      "stepsPerImage": 10
+    },
+    "val_lighter_worm": {
+      "text": "Val Lighter Worm",
+      "numImagesPerBug": 5,
+      "speed": 1,
+      "radiusRange": {
+        "min": 220,
+        "max": 230
+      },
+      "stepsPerImage": 10
+    },
+    "val_darker_worm": {
+      "text": "Val Darker Worm",
+      "numImagesPerBug": 5,
+      "speed": 1,
+      "radiusRange": {
+        "min": 220,
+        "max": 230
+      },
+      "stepsPerImage": 10
+    },
+    "bw_neutral_worm": {
+      "text": "Neutral Worm White BG",
+      "numImagesPerBug": 5,
+      "speed": 1,
+      "radiusRange": {
+        "min": 220,
+        "max": 230
+      },
+      "stepsPerImage": 10
+    },
+    "bb_neutral_worm": {
+      "text": "Neutral Worm Black BG",
+      "numImagesPerBug": 5,
+      "speed": 1,
+      "radiusRange": {
+        "min": 220,
+        "max": 230
+      },
+      "stepsPerImage": 10
+    },
     "10cm_worm": {
       "text": "Tiny Worm",
       "numImagesPerBug": 5,
@@ -73,6 +227,16 @@
     },
     "60cm_worm": {
       "text": "Standard Worm",
+      "numImagesPerBug": 5,
+      "speed": 1,
+      "radiusRange": {
+        "min": 220,
+        "max": 230
+      },
+      "stepsPerImage": 10
+    },
+    "90cm_worm": {
+      "text": "Large Worm",
       "numImagesPerBug": 5,
       "speed": 1,
       "radiusRange": {
@@ -206,6 +370,7 @@
     "half_circle": "half circle",
     "low_horizontal": "low horizontal",
     "low_horizontal_noise": "low horizontal + noise",
+    "vertical": "vertical",
     "jump_up": "jump up",
     "accelerate": "accelerate",
     "rect_tunnel": "rect tunnel",
@@ -214,7 +379,7 @@
     "circle_flip": "circle flip"
   },
   "boards": {
-    "holes": ["random", "random_speeds", "circle", "low_horizontal", "low_horizontal_noise", "jump_up", "accelerate", "random_low_horizontal", "static", "circle_accelerate", "circle_flip"],
+    "holes": ["random", "random_speeds", "circle", "low_horizontal", "low_horizontal_noise", "vertical", "jump_up", "accelerate", "random_low_horizontal", "static", "circle_accelerate", "circle_flip"],
     "tunnel": ["rect_tunnel"],
     "pbtunnel": ["pt_tunnel"]
   },

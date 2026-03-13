@@ -11,11 +11,14 @@
         <component
           :is="bugComponent"
           v-for="(value, index) in bugsProps"
-          :key="index"
-          :bug-id="index"
+          :key="value.slotKey || value.bugId || index"
+          :bug-id="value.slotIndex !== undefined ? value.slotIndex : index"
           :bugsSettings="bugsSettings"
           :exit-hole-pos="exitHolePos(index)"
           :entrance-hole-pos="entranceHolePos(index)"
+          :segment-index="index"
+          :segment-count="segmentsCount"
+          :segment-bounds-override="getSegmentBounds(index)"
           ref="bugChild"
           v-on:bugRetreated="endTrial"
         />
@@ -56,8 +59,20 @@ export default {
       }
       return 'holesBug'
     },
+    segmentsCount: function () {
+      const configuredCount = Number(this.bugsSettings && this.bugsSettings.numOfBugs)
+      const fallbackCount = Array.isArray(this.bugsSettings.bugTypes)
+        ? this.bugsSettings.bugTypes.length
+        : 0
+      const count = Number.isFinite(configuredCount) && configuredCount > 0 ? configuredCount : fallbackCount
+      return count > 0 ? count : 1
+    },
+    segmentWidth: function () {
+      const width = this.canvasParams ? this.canvasParams.width : 0
+      return this.segmentsCount > 0 ? width / this.segmentsCount : width
+    },
     holesPositions: function () {
-      let [canvasW, canvasH] = [this.canvas.width, this.canvas.height]
+      let [canvasW, canvasH] = [this.canvasParams.width, this.canvasParams.height]
       let [holeW, holeH] = this.bugsSettings.holeSize
       let configuredHolesHeight = (canvasH - holeH / 2) * this.bugsSettings.holesHeightScale
       return {
@@ -67,26 +82,55 @@ export default {
     },
     mirrorBugsProps() {
       // iterate over the bugs and assign entrance and exit holes left for the even index and right for the odd index
-      let bugTypes = this.bugsSettings.bugTypes.length > 1
-        ? this.bugsSettings.bugTypes // array of size this.bugsSettings.numOfBugs with the same bug type duplicated
-        : Array(this.bugsSettings.numOfBugs).fill(this.bugsSettings.bugTypes[0])
+      const totalBugs = this.segmentsCount
+      let bugTypes = Array.isArray(this.bugsSettings.bugTypes) ? [...this.bugsSettings.bugTypes] : []
+      if (bugTypes.length === 0 && this.bugsSettings.bugTypes) {
+        bugTypes = [this.bugsSettings.bugTypes]
+      }
+      if (bugTypes.length === 0) {
+        bugTypes = ['']
+      }
+      if (bugTypes.length === 1) {
+        bugTypes = Array(totalBugs).fill(bugTypes[0])
+      } else if (bugTypes.length < totalBugs) {
+        bugTypes = Array.from({length: totalBugs}, (_, i) => bugTypes[i % bugTypes.length])
+      } else if (bugTypes.length > totalBugs) {
+        bugTypes = bugTypes.slice(0, totalBugs)
+      }
       if (this.bugsSettings.exitHole === 'right') {
         bugTypes = [...bugTypes].reverse()
       }
-      console.log('Mirror bug types', bugTypes, this.bugsSettings.numOfBugs > 1)
-      // iterate over the bugs and assign entrance and exit holes left for the even index and right for the odd index
+      console.log('Mirror bug types', bugTypes, totalBugs > 1)
       const sides = bugTypes.map((bug, i) => ({
-       entranceHole: i % 2 === 0 ? 'left' : 'right',
-       exitHole: i % 2 === 0 ? 'left' : 'right',
-       bugId: `${bug}_${i}`
-     }))
-      console.log(
-        'mirrorBugsProps',
-        sides)
+        entranceHole: i % 2 === 0 ? 'left' : 'right',
+        exitHole: i % 2 === 0 ? 'left' : 'right',
+        bugId: `${bug}_${i}`
+      }))
+      console.log('mirrorBugsProps', sides)
       return sides
     }
   },
   methods: {
+    getSegmentBounds(bugId) {
+      const width = this.segmentWidth || (this.canvasParams ? this.canvasParams.width : 0)
+      const left = width * bugId
+      return {left, right: left + width, width}
+    },
+    getSegmentPad(segmentWidth, holeW) {
+      const maxPad = Math.max(0, (segmentWidth - holeW) / 2)
+      return Math.min(this.xpad, maxPad)
+    },
+    getHolePositionsForSegment(bugId) {
+      const canvasH = this.canvasParams.height
+      const [holeW, holeH] = this.bugsSettings.holeSize
+      const configuredHolesHeight = (canvasH - holeH / 2) * this.bugsSettings.holesHeightScale
+      const bounds = this.getSegmentBounds(bugId)
+      const pad = this.getSegmentPad(bounds.width, holeW)
+      return {
+        left: [bounds.left + pad, canvasH - holeH - configuredHolesHeight],
+        right: [bounds.right - holeW - pad, canvasH - holeH - configuredHolesHeight]
+      }
+    },
     initDrawing() {
       // Draw the background first
       if (this.isSplitBugsView && this.bugsSettings.bugMappedBackground) {
@@ -117,24 +161,24 @@ export default {
       let exitHole = this.bugsSettings.exitHole
       if (this.isSplitBugsView) {
         const exit = this.mirrorBugsProps[bugId]
-        if (!exit || !exit['exitHole']) {
+        if (!exit) {
           console.error('No exit found for bugId', bugId, this.mirrorBugsProps)
-          return this.holesPositions[exitHole]
         }
-        exitHole = exit['exitHole']
+        exitHole = exit ? (exit['exitHole'] || exitHole) : exitHole
+        const positions = this.getHolePositionsForSegment(bugId)
+        return positions[exitHole] || positions.left
       }
 
       return this.holesPositions[exitHole]
     },
     entranceHolePos: function (bugId) {
       if (this.isSplitBugsView) {
-        const entry = this.mirrorBugsProps[bugId]
-        if (!entry || !entry['entranceHole']) {
-          console.error('No entrance found for bugId', bugId, this.mirrorBugsProps)
-          const fallback = this.bugsSettings.exitHole === 'left' ? 'right' : 'left'
-          return this.holesPositions[fallback]
-        }
-        return this.holesPositions[entry['entranceHole']]
+        const entrance = this.mirrorBugsProps[bugId]
+          ? this.mirrorBugsProps[bugId]['entranceHole']
+          : null
+        const entranceHole = entrance || (this.bugsSettings.exitHole === 'left' ? 'right' : 'left')
+        const positions = this.getHolePositionsForSegment(bugId)
+        return positions[entranceHole] || positions.left
       }
       let entranceHole = this.bugsSettings.exitHole === 'left' ? 'right' : 'left'
       return this.holesPositions[entranceHole]
@@ -160,10 +204,7 @@ export default {
         }
       }
 
-      let bug = this.$refs.bugChild && this.$refs.bugChild[0]
-      if (!bug) {
-        return d
-      }
+      let bug = this.$refs.bugChild[0]
       if (bug.isMoveInCircles) {
         d['circle_radius'] = bug.r
         d['circle_position'] = bug.r0

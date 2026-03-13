@@ -15,7 +15,7 @@ export default {
         trialDuration: 5,
         iti: 5,
         bugTypes: process.env.BUG_TYPES || ['cockroach', 'green_beetle'],
-        rewardBugs: process.env.REWARD_BUGS || 'cockroach',
+        rewardBugs: process.env.REWARD_BUGS || [],
         movementType: process.env.MOVEMENT_TYPE || 'circle',
         speed: 0, // if 0 config default for bug will be used
         bugSize: 0, // if 0 will be handled in bug component (native size or config default)
@@ -41,6 +41,7 @@ export default {
         height: window.innerHeight
       },
       bugTrajectoryLog: [],
+      trajectoryBugCount: null,
       trialData: {},
       eventsLog: [],
       identifier: uuidv4()
@@ -129,11 +130,6 @@ export default {
         this.$refs.bugChild = []
         cancelAnimationFrame(this.animationHandler)
       }
-      this.bugsProps = []
-      this.eventsLog = []
-      if (isLogTrajectory) {
-        this.startLogBugTrajectory()
-      }
       this.initDrawing()
       this.drawSquareForPhotoDiode()
 
@@ -150,9 +146,13 @@ export default {
        this.bugsSettings.bugTypes = types
       }
       this.spawnBugs(this.bugsSettings.numOfBugs)
+      this.trajectoryBugCount = this.bugsProps.length || null
       this.$nextTick(function () {
         if (this.$refs.bugChild) {
           console.log('start animation...')
+          if (isLogTrajectory) {
+            this.startLogBugTrajectory()
+          }
           this.dumpTrialData()
           this.animate()
         }
@@ -244,12 +244,15 @@ export default {
       y -= this.canvas.offsetTop
       let strikeDistances = {}
       let isRewardAnyTouch = Math.random() < this.bugsSettings.rewardAnyTouchProb
+      const rewardBugs = this.bugsSettings.rewardBugs || []
       for (let i = 0; i < this.$refs.bugChild.length; i++) {
         let bug = this.$refs.bugChild[i]
         if (bug.isDead || bug.isRetreated) {
           continue
         }
-        let isRewardBug = this.bugsSettings.rewardBugs.includes(bug.currentBugType)
+        let isRewardBug = Array.isArray(rewardBugs)
+          ? rewardBugs.includes(bug.currentBugType)
+          : String(rewardBugs).includes(bug.currentBugType)
         strikeDistances[i] = [bug.hitDistance(x, y), bug.isHit(x, y), isRewardBug]
       }
       if (Object.keys(strikeDistances).length > 0) {
@@ -356,7 +359,9 @@ export default {
         let properties = {
           x: x,
           y: y,
-          bugId: `${this.bugsSettings.bugTypes[i]}_${i}`
+          bugId: `${this.bugsSettings.bugTypes[i]}_${i}`,
+          slotIndex: i,
+          slotKey: `bug-slot-${i}`
         }
         // if (i !== 0) {
         //   for (let j = 0; j < i; j++) {
@@ -377,23 +382,56 @@ export default {
     },
     startLogBugTrajectory() {
       console.log('trajectory log started')
+      if (!Number.isFinite(this.trajectoryBugCount) || this.trajectoryBugCount <= 0) {
+        const fallbackCount = this.bugsProps ? this.bugsProps.length : 0
+        this.trajectoryBugCount = fallbackCount > 0 ? fallbackCount : null
+      }
+      if (!this.trajectoryBugCount) {
+        console.log('no bugs to log')
+        return
+      }
       this.trajectoryLogInterval = setInterval(() => {
         const bugs = this.$refs.bugChild || []
         if (bugs.length === 0) {
           console.log('no bugs to log')
           return
         }
-        const entry = { time: Date.now() } // timestamp
-        if (bugs.length === 1) {
-          // single-bug shorthand
-          entry.x = bugs[0].x
-          entry.y = bugs[0].y
-        } else {
-          // multi-bug: x0/y0, x1/y1, …
-          bugs.forEach((bug, idx) => {
-            entry[`x${idx}`] = bug.x
-            entry[`y${idx}`] = bug.y
-          })
+        const entry = {
+          time: Date.now(),
+          in_block_trial_id: this.bugsSettings.trialID,
+          trial_id: this.bugsSettings.trialDBId
+        }
+        const slotCount = Math.max(this.trajectoryBugCount || 0, 2)
+        for (let i = 0; i < slotCount; i++) {
+          entry[`bug${i}_x`] = null
+          entry[`bug${i}_y`] = null
+          entry[`bug${i}_type`] = null
+          entry[`bug${i}_alive`] = null
+        }
+        const bugMap = {}
+        bugs.forEach((bug, idx) => {
+          let bugIndex = idx
+          if (bug && Number.isFinite(bug.bugId)) {
+            bugIndex = bug.bugId
+          } else if (bug && typeof bug.bugId === 'string' && bug.bugId.trim() !== '' && !Number.isNaN(Number(bug.bugId))) {
+            bugIndex = Number(bug.bugId)
+          }
+          if (!Number.isFinite(bugIndex) || bugIndex < 0) {
+            bugIndex = idx
+          }
+          bugMap[bugIndex] = bug
+        })
+        for (let i = 0; i < slotCount; i++) {
+          const bug = bugMap[i]
+          if (bug) {
+            entry[`bug${i}_type`] = bug.currentBugType || null
+            const isAlive = !(bug.isDead || bug.isRetreated)
+            entry[`bug${i}_alive`] = isAlive
+            if (isAlive) {
+              entry[`bug${i}_x`] = bug.x
+              entry[`bug${i}_y`] = bug.y
+            }
+          }
         }
         this.bugTrajectoryLog.push(entry)
       }, 1000 / 60)
@@ -402,6 +440,7 @@ export default {
       clearInterval(this.trajectoryLogInterval)
       this.trajectoryLogInterval = null
       this.bugTrajectoryLog = []
+      this.trajectoryBugCount = null
       console.log('trajectory log ended')
     },
     getBugMappedBackgroundColor(bugType) {
@@ -435,28 +474,26 @@ export default {
       // Clear the canvas first
       ctx.clearRect(0, 0, canvasWidth, canvasHeight)
 
-      if (!this.bugsSettings.bugMappedBackground || !this.bugsSettings.bugTypes || this.bugsSettings.bugTypes.length < 2) {
+      const bugTypes = Array.isArray(this.bugsSettings.bugTypes)
+        ? this.bugsSettings.bugTypes
+        : (this.bugsSettings.bugTypes ? [this.bugsSettings.bugTypes] : [])
+      if (!this.bugsSettings.bugMappedBackground || bugTypes.length === 0) {
         // Fallback to solid background
         ctx.fillStyle = this.getCurrentBackgroundColor()
         ctx.fillRect(0, 0, canvasWidth, canvasHeight)
         return
       }
+      const configuredCount = Number(this.bugsSettings && this.bugsSettings.numOfBugs)
+      const segmentsCount = Number.isFinite(configuredCount) && configuredCount > 0
+        ? configuredCount
+        : bugTypes.length
+      const segmentWidth = canvasWidth / (segmentsCount || 1)
 
-      // Get colors for each bug type
-      const leftBugType = this.bugsSettings.bugTypes[0]
-      const rightBugType = this.bugsSettings.bugTypes[1]
-
-      // Get individual colors for each bug type
-      const leftColor = this.getBugMappedBackgroundColor(leftBugType)
-      const rightColor = this.getBugMappedBackgroundColor(rightBugType)
-
-      // Draw left half
-      ctx.fillStyle = leftColor
-      ctx.fillRect(0, 0, canvasWidth / 2, canvasHeight)
-
-      // Draw right half
-      ctx.fillStyle = rightColor
-      ctx.fillRect(canvasWidth / 2, 0, canvasWidth / 2, canvasHeight)
+      for (let i = 0; i < segmentsCount; i++) {
+        const bugType = bugTypes[i] || bugTypes[i % bugTypes.length] || bugTypes[0]
+        ctx.fillStyle = this.getBugMappedBackgroundColor(bugType)
+        ctx.fillRect(i * segmentWidth, 0, segmentWidth, canvasHeight)
+      }
     },
     drawSolidBackground(currentBugType) {
       // Draw solid background for single bug or regular view

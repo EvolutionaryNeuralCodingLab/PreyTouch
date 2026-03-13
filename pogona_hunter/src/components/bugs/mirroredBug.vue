@@ -8,27 +8,19 @@
 import holesBug from '../bugs/holesBug.vue'
 
 export default {
-  name: `mirroredBug`,
+  name: 'mirroredBug',
   extends: holesBug,
   props: {
     bugId: Number,
     bugsSettings: Object,
     entranceHolePos: Array,
     exitHolePos: Array,
-    bugDetails: Object
-  },
-  data() {
-    return {
-      isChangingDirection: false,
-      theta: 0,
-      retreatTurningFrames: 10,
-      retreatTurningProgress: 0
-    }
+    bugDetails: Object,
+    segmentIndex: Number,
+    segmentCount: Number,
+    segmentBoundsOverride: Object
   },
   computed: {
-    viewWidth() {
-      return this.canvas.width
-    },
     holeSize() {
       return this.bugsSettings.holeSize || [100, 100]
     },
@@ -38,46 +30,78 @@ export default {
     isLeftExit() {
       return this.bugId % 2 === 0
     },
+    isStaticMovement() {
+      return this.bugsSettings.movementType === 'static'
+    },
     screenMidX() {
       return (this.canvas && this.canvas.width / 2) || 0
     },
-    entranceHole() {
-      return this.entranceHolePos
+    segmentsCount() {
+      const overrideCount = Number(this.segmentCount)
+      if (Number.isFinite(overrideCount) && overrideCount > 0) {
+        return overrideCount
+      }
+      const configuredCount = Number(this.bugsSettings && this.bugsSettings.numOfBugs)
+      if (Number.isFinite(configuredCount) && configuredCount > 0) {
+        return configuredCount
+      }
+      const fallbackCount = Array.isArray(this.bugsSettings && this.bugsSettings.bugTypes)
+        ? this.bugsSettings.bugTypes.length
+        : 0
+      if (fallbackCount > 0) {
+        return fallbackCount
+      }
+      return 1
     },
-    exitHole() {
-      return this.exitHolePos
+    segmentWidth() {
+      if (this.segmentBoundsOverride &&
+          Number.isFinite(this.segmentBoundsOverride.width) &&
+          this.segmentBoundsOverride.width > 0) {
+        return this.segmentBoundsOverride.width
+      }
+      const canvasWidth = this.canvas ? this.canvas.width : 0
+      return this.segmentsCount > 0 ? canvasWidth / this.segmentsCount : canvasWidth
     },
-    entranceDelay() {
-      return this.bugId * 10 * this.bugsSettings.splitRandomizeTiming
+    segmentBounds() {
+      if (this.segmentBoundsOverride &&
+          Number.isFinite(this.segmentBoundsOverride.left) &&
+          Number.isFinite(this.segmentBoundsOverride.right)) {
+        return this.segmentBoundsOverride
+      }
+      const width = this.segmentWidth || (this.canvas ? this.canvas.width : 0)
+      const overrideIndex = Number(this.segmentIndex)
+      const bugIndex = Number(this.bugId)
+      const index = Number.isFinite(overrideIndex)
+        ? overrideIndex
+        : (Number.isFinite(bugIndex) ? bugIndex : 0)
+      const left = width * index
+      return {left, right: left + width, width}
     },
-    entranceApproachDuration() {
-      return this.bugId * (Math.random() * 2000) * this.bugsSettings.splitRandomizeTiming
+    segmentCenterX() {
+      const bounds = this.segmentBounds
+      if (Number.isFinite(bounds.width) && bounds.width > 0) {
+        return bounds.left + (bounds.width / 2)
+      }
+      return this.screenMidX
     },
-    leftBoundary() {
-      return this.screenMidX * this.bugId
-    },
-    rightBoundary() {
-      return this.leftBoundary + this.screenMidX
+    useSplitCircle() {
+      return this.segmentsCount > 2
     },
     circleR() {
-      const radius = this.screenMidX
+      if (!this.useSplitCircle) {
+        const radius = this.screenMidX
+        return Math.abs(radius) * (this.bugsSettings.circleRadiusScale + 0.1)
+      }
+      const radius = this.segmentWidth / 2
       return Math.abs(radius) * (this.bugsSettings.circleRadiusScale + 0.1)
     },
     circleR0() {
+      if (!this.useSplitCircle) {
         const xValue = this.xToTarget.enter[0]
         const midPointCircle = this.isLeftExit ? xValue + this.screenMidX / 4 : xValue - this.screenMidX / 4
         return [midPointCircle, this.canvas.height / 2 - 55]
-    },
-    xToTarget() {
-      const x = this.entranceHolePos[0] + (this.bugsSettings.holeSize[0] / 2)
-      const y = this.entranceHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
-      const xTarget = this.exitHolePos[0] + (this.bugsSettings.holeSize[0] / 2)
-      const yTarget = this.exitHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
-      console.log(this.bugId, x, y, xTarget, yTarget)
-      return {'enter': [x, y], 'exit': [xTarget, yTarget]}
-    },
-    circleTheta() {
-      return (this.isRightExit ? Math.PI / 5 : (2 * Math.PI) / 3) + (this.bugId * 0.6)
+      }
+      return [this.segmentCenterX, this.canvas.height / 2 - 55]
     }
   },
   methods: {
@@ -85,96 +109,89 @@ export default {
       this.currentBugType = this.bugsSettings.bugTypes[this.bugId]
     },
     move() {
+      if (!this.isStaticMovement) {
+        holesBug.methods.move.call(this)
+        return
+      }
       if (this.isDead || this.isRetreated || (this.isJumped && this.isJumpUpMovement)) {
         this.draw()
         return
       }
       this.frameCounter++
-
-      if (this.frameCounter < this.entranceDelay && this.bugId) {
-        return
+      if (!this.isHoleRetreatStarted && this.frameCounter > this.numFramesToRetreat) {
+        this.startRetreat()
       }
-      this.edgeDetection()
-      this.checkHoleRetreat()
-      if (this.isMoveInCircles && !this.isHoleRetreatStarted) {
-        if (this.frameCounter < ((this.entranceDelay + this.entranceApproachDuration) / (1000 / 60))) {
-          this.initSplitBugPosition()
-          return
-        } else {
-          this.circularMove()
-        }
-      } else {
-        this.straightMove()
+      if (this.isHoleRetreatStarted) {
+        this.edgeDetection()
+        this.straightMove(0)
       }
       this.draw()
     },
-    initSplitBugPosition() {
-        const totalSteps = this.entranceApproachDuration / (1000 / 60)
-        const step = (this.frameCounter - (this.entranceDelay / (1000 / 60))) / totalSteps
-        const outsideX = this.x - (this.isLeftExit ? this.holeSize / 2 : -this.holeSize / 2)
-        const outsideY = this.y
-        this.x = this.x || outsideX
-        this.x = outsideX + (this.x - outsideX) * step
-        this.y = outsideY + (this.y - outsideY) * step
+    initiateStartPosition() {
+      holesBug.methods.initiateStartPosition.call(this)
+
+      if (this.isVerticalMovement || this.isStaticMovement) {
+        this.alignToSegmentCenter()
+      }
+
+      if (this.isStaticMovement) {
+        this.y = this.canvas.height / 2
+        this.vx = 0
+        this.vy = 0
+        this.dx = 0
+        this.dy = 0
+      }
+    },
+    alignToSegmentCenter() {
+      const bounds = this.segmentBounds
+      const width = Number.isFinite(bounds.width) && bounds.width > 0
+        ? bounds.width
+        : this.segmentWidth
+      const left = Number.isFinite(bounds.left) ? bounds.left : 0
+      const center = left + (width / 2)
+      const margin = this.currentBugSize / 2
+      const minX = margin
+      const maxX = this.canvas.width - margin
+      this.x = Math.min(Math.max(center, minX), maxX)
     },
     edgeDetection() {
-      if (this.isChangingDirection) return
-      // borders
-      const radius = this.isInsidePolicy ? this.currentBugSize / 2 : -this.currentBugSize
-      const exceedsLeft = this.x < this.leftBoundary + radius
-      const exceedsRight = this.x > this.rightBoundary - radius
-      const exceedsY = this.y < radius || this.y > this.canvas.height - radius
-
-      if (exceedsLeft || exceedsRight || exceedsY) {
-        this.setAfterEdgeAngleSplitView(this.leftBoundary, this.rightBoundary, radius)
-      } else if (this.frameCounter > this.numFramesToRetreat && this.isInsideHoleBoundaries()) {
+      if (this.isChangingDirection) {
+        return
+      }
+      const radius = this.currentBugSize / 2
+      const bounds = this.segmentBounds
+      const leftEdge = Number.isFinite(bounds.left) ? bounds.left : 0
+      const rightEdge = Number.isFinite(bounds.right) && bounds.right > leftEdge
+        ? bounds.right
+        : (this.canvas ? this.canvas.width : 0)
+      if (this.x < leftEdge + radius || this.x > rightEdge - radius ||
+          this.y < this.upper_edge || this.y > this.canvas.height - radius) {
+        this.setNextAngle()
+      } else if (this.frameCounter > 100 && this.isInsideHoleBoundaries()) {
         if ((this.isHoleRetreatStarted && this.isInsideExitHoleBoundaries()) || !(this.isRandomMovement || this.isRandomSpeeds)) {
           this.hideBug()
         } else {
-          this.setAfterEdgeAngleSplitView(this.leftBoundary, this.rightBoundary, radius)
+          this.setNextAngle()
         }
       } else {
         return
       }
       this.changeDirectionTimeout()
     },
-    setAfterEdgeAngleSplitView() {
-      let nextAngle = this.directionAngle
-      if (this.isOutsideEndPolicy) {
-        this.hideBug()
-        return
-      }
-      let openAngles = this.getNotBlockedAnglesSplitView()
-      if (openAngles.length === 0) {
-        nextAngle = (this.directionAngle + Math.PI) % (2 * Math.PI)
-      } else {
-        openAngles.sort()
-        for (let i = 0; i < openAngles.length - 1; i++) {
-          if ((openAngles[i + 1] - openAngles[i]) > Math.PI / 2) {
-            openAngles[i] += 2 * Math.PI
-          }
-        }
-        openAngles.sort()
-        nextAngle = Math.random() * (openAngles[openAngles.length - 1] - openAngles[0]) + openAngles[0]
-      }
-      this.setNextAngle(nextAngle)
-      this.changeDirectionTimeout()
-    },
-    getNotBlockedAnglesSplitView() {
-      const angles = []
-      const borderDistances = {
+    getNotBlockedAngles() {
+      const bounds = this.segmentBounds
+      const leftEdge = Number.isFinite(bounds.left) ? bounds.left : 0
+      const rightEdge = Number.isFinite(bounds.right) && bounds.right > leftEdge
+        ? bounds.right
+        : (this.canvas ? this.canvas.width : 0)
+      let borderDistances = {
         top: this.y,
         bottom: this.canvas.height - this.y,
-        left: this.x - this.leftBoundary,
-        right: this.rightBoundary - this.x
+        left: this.x - leftEdge,
+        right: rightEdge - this.x
       }
-      const bordersAngles = {
-        top: 3 * Math.PI / 2,
-        bottom: Math.PI / 2,
-        left: Math.PI,
-        right: 0
-      }
-      for (const [key, angle] of Object.entries(bordersAngles)) {
+      let angles = []
+      for (const [key, angle] of Object.entries(this.bordersAngles)) {
         if (borderDistances[key] > this.minDistFromObstacle) {
           angles.push(angle)
         }
@@ -184,5 +201,6 @@ export default {
   }
 }
 </script>
+
 <style scoped>
 </style>

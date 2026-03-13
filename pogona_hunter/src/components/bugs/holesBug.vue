@@ -81,6 +81,12 @@ export default {
     isRandomSpeeds: function () {
       return this.bugsSettings.movementType === 'random_speeds'
     },
+    isVerticalMovement: function () {
+      return this.bugsSettings.movementType === 'vertical'
+    },
+    isStaticMovement: function () {
+      return this.bugsSettings.movementType === 'static'
+    },
     isCounterClockWise: function () {
       return this.isLeftExit
     },
@@ -105,16 +111,47 @@ export default {
   },
   methods: {
     move() {
+      if (this.isStaticMovement) {
+        if (this.isDead || this.isRetreated || (this.isJumped && this.isJumpUpMovement)) {
+          this.draw()
+          return
+        }
+        this.frameCounter++
+        if (!this.isHoleRetreatStarted && this.frameCounter > this.numFramesToRetreat) {
+          this.startRetreat()
+        }
+        if (this.isHoleRetreatStarted) {
+          this.edgeDetection()
+          this.straightMove(0)
+        } else {
+          this.vx = 0
+          this.vy = 0
+          this.dx = 0
+          this.dy = 0
+        }
+        this.draw()
+        return
+      }
       if (this.isDead || this.isRetreated || (this.isJumped && this.isJumpUpMovement)) {
         this.draw()
         return
       }
       this.frameCounter++
-      this.edgeDetection()
-      this.checkHoleRetreat()
+      if (!this.isVerticalMovement) {
+        this.edgeDetection()
+        this.checkHoleRetreat()
+      }
       // circle
       if (this.isHalfCircleMovement || (this.isMoveInCircles && !this.isHoleRetreatStarted)) {
         this.circularMove()
+      // vertical
+      } else if (this.isVerticalMovement) {
+        if (!this.isHoleRetreatStarted && this.frameCounter > this.numFramesToRetreat) {
+          this.isHoleRetreatStarted = true
+          this.hideBug()
+        } else if (!this.isHoleRetreatStarted) {
+          this.verticalMove()
+        }
       // low horizontal noise
       } else if (this.isNoisyLowHorizontalMovement) {
         this.checkNoisyTrack()
@@ -134,6 +171,21 @@ export default {
         this.straightMove()
       }
       this.draw()
+    },
+    verticalMove() {
+      const radius = this.currentBugSize / 2
+      const top = this.upper_edge
+      const bottom = this.canvas.height - radius
+      if (this.y <= top) {
+        this.y = top
+        this.vy = Math.abs(this.currentSpeed)
+      } else if (this.y >= bottom) {
+        this.y = bottom
+        this.vy = -Math.abs(this.currentSpeed)
+      }
+      this.dx = 0
+      this.dy = this.vy
+      this.y += this.dy
     },
     edgeDetection() {
       if (this.isChangingDirection) {
@@ -210,6 +262,29 @@ export default {
           this.directionAngle = this.isRightExit ? 2 * Math.PI : Math.PI
           this.startRetreat()
           break
+        case 'vertical':
+          {
+            const configuredCount = Number(this.bugsSettings && this.bugsSettings.numOfBugs)
+            const fallbackCount = Array.isArray(this.bugsSettings && this.bugsSettings.bugTypes)
+              ? this.bugsSettings.bugTypes.length
+              : 0
+            const totalBugs = Number.isFinite(configuredCount) && configuredCount > 0
+              ? configuredCount
+              : (fallbackCount > 0 ? fallbackCount : 1)
+            if (totalBugs > 1) {
+              const index = Number.isFinite(this.bugId) ? this.bugId : 0
+              const segmentWidth = this.canvas.width / totalBugs
+              const center = segmentWidth * (index + 0.5)
+              const margin = this.currentBugSize / 2
+              const minX = margin
+              const maxX = this.canvas.width - margin
+              this.x = Math.min(Math.max(center, minX), maxX)
+            }
+          }
+          this.y = this.upper_edge + 1
+          this.vx = 0
+          this.vy = this.currentSpeed
+          break
         case 'low_horizontal_noise':
           this.directionAngle = this.isRightExit ? 2 * Math.PI : Math.PI
           this.setRetreatSpeeds()
@@ -240,6 +315,14 @@ export default {
       this.y += this.dy
     },
     isHit(x, y) {
+      if (this.isStretchToScreen || this.isFillToScreen) {
+        const bounds = this.getStretchBounds()
+        if (!bounds) {
+          return false
+        }
+        return x >= bounds.left && x <= bounds.right &&
+          y >= bounds.top && y <= bounds.bottom
+      }
       if (this.isMoveInCircles && this.isHoleRetreatStarted) {
         // in case of circles don't consider hits while the bug is retreating from the circle
         return false

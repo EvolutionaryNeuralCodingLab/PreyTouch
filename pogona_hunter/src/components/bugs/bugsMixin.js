@@ -30,6 +30,18 @@ export default {
     bugsSettings: Object
   },
   computed: {
+    bugTypeConfig: function () {
+      if (!this.bugTypeOptions || !this.currentBugType) {
+        return {}
+      }
+      return this.bugTypeOptions[this.currentBugType] || {}
+    },
+    isStretchToScreen: function () {
+      return !!(this.bugTypeConfig && this.bugTypeConfig.stretchToScreen)
+    },
+    isFillToScreen: function () {
+      return !!(this.bugTypeConfig && this.bugTypeConfig.fillToScreen)
+    },
     startPosition: function () {
       return [this.canvas.width / 2, this.currentBugSize / 2]
     },
@@ -156,6 +168,38 @@ export default {
           return
         }
 
+        if (this.isFillToScreen || this.isStretchToScreen) {
+          const bounds = this.getStretchBounds()
+          if (!bounds) {
+            return
+          }
+          const boundsW = bounds.right - bounds.left
+          const boundsH = bounds.bottom - bounds.top
+          if (boundsW === 0 || boundsH === 0) {
+            return
+          }
+          if (this.isFillToScreen) {
+            const imgW = bugImage.naturalWidth || bugImage.width || bugImage.videoWidth || 0
+            const imgH = bugImage.naturalHeight || bugImage.height || bugImage.videoHeight || 0
+            if (imgW === 0 || imgH === 0) {
+              return
+            }
+            const scale = Math.min(boundsW / imgW, boundsH / imgH)
+            const drawW = imgW * scale
+            const drawH = imgH * scale
+            const drawX = bounds.left + (boundsW - drawW) / 2
+            const drawY = bounds.top + (boundsH - drawH) / 2
+            ctx.save()
+            ctx.drawImage(bugImage, drawX, drawY, drawW, drawH)
+            ctx.restore()
+            return
+          }
+          ctx.save()
+          ctx.drawImage(bugImage, bounds.left, bounds.top, boundsW, boundsH)
+          ctx.restore()
+          return
+        }
+
         const useNativeSize = !this.bugsSettings.isDefaultBugSize && this.bugsSettings.bugSize === 0
         const imgW = bugImage.naturalWidth || bugImage.width || bugImage.videoWidth || 0
         const imgH = bugImage.naturalHeight || bugImage.height || bugImage.videoHeight || 0
@@ -195,6 +239,12 @@ export default {
       }, fadeTimeoutValue)
     },
     hitDistance(x, y) {
+      if (this.isStretchToScreen || this.isFillToScreen) {
+        const center = this.getStretchCenter()
+        if (center) {
+          return distance(x, y, center[0], center[1])
+        }
+      }
       return distance(x, y, this.x, this.y)
     },
     isHit(x, y) {
@@ -296,6 +346,36 @@ export default {
       let img = new Image()
       img.src = this.getImageSrc(`/${this.currentBugType}_dead.png`)
       return img
+    },
+    getStretchBounds() {
+      if (!this.canvas) {
+        return null
+      }
+      const bounds = this.segmentBounds
+      if (bounds && Number.isFinite(bounds.left) && Number.isFinite(bounds.right)) {
+        return {
+          left: bounds.left,
+          right: bounds.right,
+          top: 0,
+          bottom: this.canvas.height
+        }
+      }
+      return {
+        left: 0,
+        right: this.canvas.width,
+        top: 0,
+        bottom: this.canvas.height
+      }
+    },
+    getStretchCenter() {
+      const bounds = this.getStretchBounds()
+      if (!bounds) {
+        return null
+      }
+      return [
+        (bounds.left + bounds.right) / 2,
+        (bounds.top + bounds.bottom) / 2
+      ]
     }
   }
 }

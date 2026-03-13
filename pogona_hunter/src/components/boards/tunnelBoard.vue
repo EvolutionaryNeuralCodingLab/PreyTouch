@@ -10,7 +10,8 @@
     <canvas id="bugCanvas" v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"
             v-on:mousedown="setCanvasClick($event)">
       <tunnel-bug v-for="(value, index) in bugsProps"
-                 :key="index"
+                 :key="value.slotKey || value.bugId || index"
+                 :bug-id="value.slotIndex !== undefined ? value.slotIndex : index"
                  :bugsSettings="bugsSettings"
                  ref="bugChild"
                  v-on:bugRetreated="endTrial">
