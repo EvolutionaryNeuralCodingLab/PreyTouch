@@ -40,7 +40,7 @@
         "max": 160
       },
       "stepsPerImage": 10,
-      "fillToScreen": true
+      "stretchToScreen": true
     },
     "snake_control_move": {
       "text": "Snake Control Move",

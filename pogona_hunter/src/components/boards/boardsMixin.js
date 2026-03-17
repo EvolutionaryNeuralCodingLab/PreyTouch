@@ -130,22 +130,32 @@ export default {
         this.$refs.bugChild = []
         cancelAnimationFrame(this.animationHandler)
       }
+
+      this.bugsSettings.bugTypes = this.normalizeBugTypes(this.bugsSettings.bugTypes)
+      if (this.bugsSettings.bugTypes.length === 0) {
+        this.bugsSettings.bugTypes = ['cockroach']
+      }
+
       this.initDrawing()
       this.drawSquareForPhotoDiode()
 
+      let bugsToSpawn = Number(this.bugsSettings.numOfBugs)
+      bugsToSpawn = Number.isFinite(bugsToSpawn) && bugsToSpawn > 0 ? bugsToSpawn : 1
+
       if (this.isSplitBugsView) {
         // inflate the number of bugs to be equal to the number of bug types
-       const baseType = this.bugsSettings.bugTypes[0]
-       let types = (this.bugsSettings.bugTypes.length > 1)
-         ? [...this.bugsSettings.bugTypes]
-         : Array(this.bugsSettings.numOfBugs).fill(baseType)
-       if (this.bugsSettings.exitHole === 'right') {
-         types.reverse()
-       }
+        const baseType = this.bugsSettings.bugTypes[0]
+        let types = (this.bugsSettings.bugTypes.length > 1)
+          ? [...this.bugsSettings.bugTypes]
+          : Array(bugsToSpawn).fill(baseType)
+        if (this.bugsSettings.exitHole === 'right') {
+          types.reverse()
+        }
 
-       this.bugsSettings.bugTypes = types
+        this.bugsSettings.bugTypes = types
+        bugsToSpawn = Math.max(bugsToSpawn, this.bugsSettings.bugTypes.length)
       }
-      this.spawnBugs(this.bugsSettings.numOfBugs)
+      this.spawnBugs(bugsToSpawn)
       this.trajectoryBugCount = this.bugsProps.length || null
       this.$nextTick(function () {
         if (this.$refs.bugChild) {
@@ -350,6 +360,18 @@ export default {
     },
     extraTrialData: function () {
       return {}
+    },
+    normalizeBugTypes(value) {
+      if (Array.isArray(value)) {
+        return value.map((v) => String(v).trim()).filter(Boolean)
+      }
+      if (typeof value === 'string') {
+        return value.split(',').map((v) => v.trim()).filter(Boolean)
+      }
+      if (value === null || value === undefined) {
+        return []
+      }
+      return [String(value).trim()].filter(Boolean)
     },
     spawnBugs(noOfBugs) {
       // const minDistance = 100

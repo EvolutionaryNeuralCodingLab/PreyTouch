@@ -10,7 +10,7 @@
               v-on:mousedown="setCanvasClick($event)">
         <component
           :is="bugComponent"
-          v-for="(value, index) in bugsProps"
+          v-for="(value, index) in renderBugSlots"
           :key="value.slotKey || value.bugId || index"
           :bug-id="value.slotIndex !== undefined ? value.slotIndex : index"
           :bugsSettings="bugsSettings"
@@ -50,8 +50,37 @@ export default {
     }
   },
   computed: {
+    normalizedBugTypes: function () {
+      const value = this.bugsSettings && this.bugsSettings.bugTypes
+      if (Array.isArray(value)) {
+        return value.map(v => String(v).trim()).filter(Boolean)
+      }
+      if (typeof value === 'string') {
+        return value.split(',').map(v => v.trim()).filter(Boolean)
+      }
+      if (value === null || value === undefined) {
+        return []
+      }
+      return [String(value).trim()].filter(Boolean)
+    },
+    splitBugsCount: function () {
+      const configuredCount = Number(this.bugsSettings && this.bugsSettings.numOfBugs)
+      const configured = Number.isFinite(configuredCount) && configuredCount > 0 ? configuredCount : 0
+      const bugTypesCount = this.normalizedBugTypes.length
+      const count = Math.max(configured, bugTypesCount)
+      return count > 0 ? count : 1
+    },
+    isSplitRequested: function () {
+      const splitValue = this.bugsSettings && this.bugsSettings.isSplitBugsView
+      if (typeof splitValue === 'string') {
+        const normalizedValue = splitValue.trim().toLowerCase()
+        return normalizedValue === 'true' || normalizedValue === '1'
+      }
+      return splitValue === true || splitValue === 1
+    },
     isSplitBugsView: function () {
-      return this.bugsSettings.isSplitBugsView && this.bugsSettings.numOfBugs > 1
+      const configuredCount = Number(this.bugsSettings && this.bugsSettings.numOfBugs)
+      return this.isSplitRequested && Number.isFinite(configuredCount) && configuredCount > 1
     },
     bugComponent: function () {
       if (this.isSplitBugsView) {
@@ -59,7 +88,19 @@ export default {
       }
       return 'holesBug'
     },
+    renderBugSlots: function () {
+      if (!this.isSplitBugsView) {
+        return this.bugsProps
+      }
+      return Array.from({length: this.segmentsCount}, (_, slotIndex) => ({
+        slotIndex,
+        slotKey: `mirror-slot-${slotIndex}`
+      }))
+    },
     segmentsCount: function () {
+      if (this.isSplitBugsView) {
+        return this.splitBugsCount
+      }
       const configuredCount = Number(this.bugsSettings && this.bugsSettings.numOfBugs)
       const fallbackCount = Array.isArray(this.bugsSettings.bugTypes)
         ? this.bugsSettings.bugTypes.length
@@ -136,13 +177,13 @@ export default {
       if (this.isSplitBugsView && this.bugsSettings.bugMappedBackground) {
         this.drawSplitBackground()
       } else if (this.$refs.bugChild && this.$refs.bugChild.length > 0) {
-        // send current bug type 
+        // send current bug type
         const currentBugType = this.$refs.bugChild[0].currentBugType
         this.drawSolidBackground(currentBugType)
       } else {
         this.drawSolidBackground(this.bugsSettings.bugTypes[0] || null)
       }
-      
+
       // Then draw the holes
       let image = new Image()
       let canvas = document.getElementById('backgroundCanvas')

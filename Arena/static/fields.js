@@ -263,7 +263,7 @@ const blockFields = {
   },
   bugs: {
     num_of_bugs: new FieldObject('numOfBugs', NumericalField),
-    is_split_bugs_view: new FieldObject('isSplitBugsView', CheckField, {movement_type: 'circle', num_of_bugs: 2}),
+    is_split_bugs_view: new FieldObject('isSplitBugsView', CheckField),
     split_repeated_pos_ratio: new FieldObject('splitRepeatedPosRatio', NumericalField),
     split_randomize_timing: new FieldObject('randomizeTiming', CheckField),
     bug_speed: new FieldObject('bugSpeed', NumericalField),

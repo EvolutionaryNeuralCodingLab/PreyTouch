@@ -106,7 +106,15 @@ export default {
   },
   methods: {
     loadNextBugType() {
-      this.currentBugType = this.bugsSettings.bugTypes[this.bugId]
+      const bugTypes = Array.isArray(this.bugsSettings.bugTypes)
+        ? this.bugsSettings.bugTypes
+        : [this.bugsSettings.bugTypes]
+      if (!bugTypes.length) {
+        return
+      }
+      const rawIndex = Number(this.bugId)
+      const index = Number.isFinite(rawIndex) && rawIndex >= 0 ? rawIndex : 0
+      this.currentBugType = bugTypes[index % bugTypes.length]
     },
     move() {
       if (!this.isStaticMovement) {
@@ -129,6 +137,13 @@ export default {
     },
     initiateStartPosition() {
       holesBug.methods.initiateStartPosition.call(this)
+
+      // In split view each bug has its own segment, so keep the base Y line.
+      // The holes bug implementation offsets Y by bugId for overlap avoidance.
+      if (this.isLowHorizontalMovement || this.isAccelerateMovement || this.isJumpUpMovement) {
+        this.y = this.xToTarget.enter[1]
+        this.yTarget = this.xToTarget.exit[1]
+      }
 
       if (this.isVerticalMovement || this.isStaticMovement) {
         this.alignToSegmentCenter()
