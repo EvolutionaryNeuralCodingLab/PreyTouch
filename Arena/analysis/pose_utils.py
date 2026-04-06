@@ -80,7 +80,7 @@ def project(cx, cy, x, y) -> np.ndarray:
 
 
 def colorline(ax, x, y, z=None, cmap=plt.get_cmap('jet'), norm=plt.Normalize(0.0, 1.0), linewidth=3, alpha=1.0,
-              set_ax_lim=True):
+              set_ax_lim=True, is_dashed=False, **kwargs):
     """
     http://nbviewer.ipython.org/github/dpsanders/matplotlib-examples/blob/master/colorline.ipynb
     http://matplotlib.org/examples/pylab_examples/multicolored_line.html
@@ -101,8 +101,9 @@ def colorline(ax, x, y, z=None, cmap=plt.get_cmap('jet'), norm=plt.Normalize(0.0
     #     rgb = to_rgb(cmap)
     #     h, s, v = colorsys.rgb_to_hsv(*rgb)
     #     cmap = ListedColormap([colorsys.hsv_to_rgb(h, s=s, v=v * scale) for scale in np.linspace(1, 0, min(100, len(x)))])
-
-    lc = mcoll.LineCollection(segments, array=z, cmap=cmap, norm=norm, linewidth=linewidth, alpha=alpha)
+    if is_dashed:
+        kwargs['linestyle'] = (0, (1, 3))
+    lc = mcoll.LineCollection(segments, array=z, cmap=cmap, norm=norm, linewidth=linewidth, alpha=alpha, **kwargs)
     ax.add_collection(lc)
     if set_ax_lim:
         if not all(np.isnan(x)):

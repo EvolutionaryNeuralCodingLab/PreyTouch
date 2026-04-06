@@ -227,6 +227,7 @@ class ImageSink(ArenaProcess):
         if config.MAX_VIDEO_TIME_SEC and rec_time > config.MAX_VIDEO_TIME_SEC:
             self.close_video_out()
 
+
     def start_writing_thread(self):
         def loop(q):
             while not self.stop_signal.is_set() and not self.writing_stop_event.is_set():
@@ -311,7 +312,13 @@ class ImageSink(ArenaProcess):
     @property
     def writing_fps(self):
         wf = self.cam_config.get('writing_fps') or self.cam_config.get('fps')
-        return int(wf) if wf is not None else None
+        if wf is None or wf == '':
+            return None
+        try:
+            return float(wf)
+        except (TypeError, ValueError):
+            self.logger.warning(f'Invalid writing_fps value: {wf!r}; disabling video writing FPS override')
+            return None
 
 
 class ImageHandler(ArenaProcess):
