@@ -58,6 +58,12 @@ def should_skip_or_mark_processing(cache_path: Path, *, skip_existing: bool) -> 
         return True
 
     flag_path = cache_path.with_suffix(".processing")
+    resume_path = cache_path.with_suffix(".resume")
+    resume_tmp_path = resume_path.parent / f'{resume_path.name}.tmp'
+    if (not cache_path.exists()) and (resume_path.exists() or resume_tmp_path.exists()):
+        flag_path.write_text(datetime.now(timezone.utc).isoformat() + "\n")
+        return False
+
     if (not cache_path.exists()) and flag_path.exists():
         try:
             ts_text = flag_path.read_text().strip()

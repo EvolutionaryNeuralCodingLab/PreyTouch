@@ -253,6 +253,7 @@ class ArenaPose:
         db_video_id, video_path = self.check_video_inputs(db_video_id, video_path)
         frames_times = self.load_frames_times(db_video_id, video_path)
         bug_traj = self.load_bug_trajectory(db_video_id, video_path)
+        resume_df = self.load_resume_video(video_path) if is_save_cache else None
 
         pose_df = []
         cap = cv2.VideoCapture(video_path)
@@ -261,8 +262,18 @@ class ArenaPose:
             self.tag_error_video(video_path, 'video has 0 frames')
             return
         fps = cap.get(cv2.CAP_PROP_FPS)
+        start_frame = 0
+        if resume_df is not None and not resume_df.empty:
+            resume_df = resume_df[resume_df.index < n_frames].sort_index()
+            if not resume_df.empty:
+                warmup_frames = max(1, int(fps * 2)) if fps and not np.isnan(fps) else 1
+                start_frame = min(n_frames, max(0, int(resume_df.index.max()) + 1 - warmup_frames))
+                resume_df = resume_df[resume_df.index < start_frame].copy()
+                if start_frame:
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
         self.start_new_session(fps)
-        iters = range(n_frames)
+        checkpoint_stride = max(1, n_frames // 5)
+        iters = range(start_frame, n_frames)
         if not is_tqdm:
             self.logger.info(f'Start video prediction of {video_path}')
         for frame_id in (tqdm(iters, desc=f'{prefix}{Path(video_path).stem}') if is_tqdm else iters):
@@ -280,11 +291,24 @@ class ArenaPose:
             if is_create_example_video:
                 self.write_to_example_video(frame, frame_id, pred_row, fps, video_path)
             pose_df.append(pred_row)
+            if is_save_cache and ((frame_id == n_frames - 1) or ((frame_id + 1) % checkpoint_stride == 0)):
+                checkpoint_parts = []
+                if resume_df is not None and not resume_df.empty:
+                    checkpoint_parts.append(resume_df)
+                if pose_df:
+                    checkpoint_parts.append(pd.concat(pose_df))
+                if checkpoint_parts:
+                    self.save_resume_video(pd.concat(checkpoint_parts), video_path)
         cap.release()
 
-        if not pose_df:
+        pose_parts = []
+        if resume_df is not None and not resume_df.empty:
+            pose_parts.append(resume_df)
+        if pose_df:
+            pose_parts.append(pd.concat(pose_df))
+        if not pose_parts:
             return
-        pose_df = pd.concat(pose_df)
+        pose_df = pd.concat(pose_parts)
         if is_save_cache:
             self.save_predicted_video(pose_df, video_path)
             self.logger.info(f'Video prediction of {video_path} was saved successfully')
@@ -460,9 +484,96 @@ class ArenaPose:
             return None
 
         bug_trajs['datetime'] = datetimes
-        bug_trajs['timestamp'] = bug_trajs.datetime.astype(int).div(10**9)
         bug_trajs = bug_trajs.sort_values(by='datetime').reset_index(drop=True)
+        bug_trajs = self._backfill_bug_traj_trial_ids_from_trials_data(bug_trajs, video_path)
+        bug_trajs['timestamp'] = bug_trajs.datetime.astype(int).div(10**9)
         return bug_trajs
+
+    def _backfill_bug_traj_trial_ids_from_trials_data(self, bug_trajs: pd.DataFrame, video_path: str):
+        needs_trial_id = ('trial_id' not in bug_trajs.columns) or bug_trajs['trial_id'].isna().all()
+        needs_in_block = ('in_block_trial_id' not in bug_trajs.columns) or bug_trajs['in_block_trial_id'].isna().all()
+        if (not needs_trial_id and not needs_in_block) or video_path is None or 'datetime' not in bug_trajs.columns:
+            return bug_trajs
+
+        trials_df = self._load_trials_data_from_file(video_path)
+        if trials_df is None or trials_df.empty:
+            return bug_trajs
+
+        bug_trajs = bug_trajs.copy()
+        if 'trial_id' not in bug_trajs.columns:
+            bug_trajs['trial_id'] = np.nan
+        if 'in_block_trial_id' not in bug_trajs.columns:
+            bug_trajs['in_block_trial_id'] = np.nan
+
+        matched_rows = 0
+        for trial_num, row in enumerate(trials_df.itertuples(index=False), start=1):
+            start_time = getattr(row, 'start_time', pd.NaT)
+            end_time = getattr(row, 'end_time', pd.NaT)
+            if pd.isna(start_time) or pd.isna(end_time):
+                continue
+
+            mask = bug_trajs['datetime'].between(start_time, end_time, inclusive='both')
+            if not mask.any():
+                continue
+
+            matched_rows += int(mask.sum())
+            if needs_trial_id:
+                trial_db_id = getattr(row, 'trial_db_id', np.nan)
+                if pd.notna(trial_db_id):
+                    bug_trajs.loc[mask, 'trial_id'] = int(trial_db_id)
+            if needs_in_block:
+                in_block_trial_id = getattr(row, 'in_block_trial_id', trial_num)
+                if pd.notna(in_block_trial_id):
+                    bug_trajs.loc[mask, 'in_block_trial_id'] = int(in_block_trial_id)
+
+        if matched_rows:
+            vid_ref = video_path
+            self.logger.info(
+                f'Backfilled trial IDs for {matched_rows} bug trajectory rows from trials_data.csv ({vid_ref}).'
+            )
+
+        return bug_trajs
+
+    def _load_trials_data_from_file(self, video_path: str):
+        block_dir = Path(video_path).parent.parent
+        trials_path = block_dir / 'trials_data.csv'
+        if not trials_path.exists():
+            return None
+
+        try:
+            trials_df = pd.read_csv(trials_path)
+        except Exception as exc:
+            self.logger.warning(
+                f'Failed reading trials_data.csv ({trials_path}): {exc}. Continuing without trial-id backfill.'
+            )
+            return None
+
+        if 'start_time' not in trials_df.columns:
+            self.logger.warning(
+                f"trials_data.csv is missing 'start_time' ({trials_path}). Continuing without trial-id backfill."
+            )
+            return None
+
+        trials_df = trials_df.copy()
+        trials_df['start_time'] = pd.to_datetime(trials_df['start_time'], errors='coerce').dt.tz_localize(None)
+
+        if 'end_time' in trials_df.columns:
+            trials_df['end_time'] = pd.to_datetime(trials_df['end_time'], errors='coerce').dt.tz_localize(None)
+        elif 'duration' in trials_df.columns:
+            durations = pd.to_numeric(trials_df['duration'], errors='coerce')
+            trials_df['end_time'] = trials_df['start_time'] + pd.to_timedelta(durations, unit='s')
+        else:
+            self.logger.warning(
+                f"trials_data.csv is missing both 'end_time' and 'duration' ({trials_path}). "
+                "Continuing without trial-id backfill."
+            )
+            return None
+
+        if 'in_block_trial_id' not in trials_df.columns:
+            trials_df['in_block_trial_id'] = np.arange(1, len(trials_df) + 1)
+
+        trials_df = trials_df.dropna(subset=['start_time', 'end_time']).sort_values(by='start_time').reset_index(drop=True)
+        return trials_df
 
     def _load_bug_trajectory_from_file(self, video_path):
         frames_output_dir = Path(video_path).parent.parent
@@ -633,6 +744,39 @@ class ArenaPose:
             raise MissingFile(f'No prediction cache found under: {cache_path}')
         pose_df = pd.read_parquet(cache_path)
         return pose_df
+
+    def get_resume_cache_path(self, video_path) -> Path:
+        return self.get_predicted_cache_path(video_path).with_suffix('.resume')
+
+    def get_resume_cache_tmp_path(self, video_path) -> Path:
+        resume_path = self.get_resume_cache_path(video_path)
+        return resume_path.parent / f'{resume_path.name}.tmp'
+
+    def load_resume_video(self, video_path):
+        for resume_path in [self.get_resume_cache_path(video_path), self.get_resume_cache_tmp_path(video_path)]:
+            if not resume_path.exists():
+                continue
+            try:
+                return pd.read_parquet(resume_path)
+            except Exception:
+                continue
+        return None
+
+    def save_resume_video(self, pose_df: pd.DataFrame, video_path: str) -> None:
+        tmp_path = self.get_resume_cache_tmp_path(video_path)
+        resume_path = self.get_resume_cache_path(video_path)
+        pose_df.to_parquet(tmp_path)
+        tmp_path.replace(resume_path)
+
+    def cleanup_prediction_progress(self, video_path: str) -> None:
+        cache_path = self.get_predicted_cache_path(video_path)
+        for path in [
+            cache_path.with_suffix('.processing'),
+            self.get_resume_cache_path(video_path),
+            self.get_resume_cache_tmp_path(video_path),
+        ]:
+            if path.exists():
+                path.unlink()
     
     def save_predicted_video(self, pose_df: pd.DataFrame, video_path: str) -> None:
         """
@@ -648,6 +792,7 @@ class ArenaPose:
         """
         cache_path = self.get_predicted_cache_path(video_path)
         pose_df.to_parquet(cache_path)
+        self.cleanup_prediction_progress(video_path)
 
     def write_to_example_video(self, frame, frame_id, pred_row, fps, video_path=None, example_path=None,
                                is_plot_preds=True):
@@ -1552,16 +1697,26 @@ class VideoPoseScanner:
                     animal_id = Path(video_path).parts[-5]
                     self.dlc.is_use_db = False
                     pose_df = self.dlc.load(video_path=video_path, only_load=True)
-                    if ('bug_x_cm', '') in pose_df.columns:
+                    has_bug_coords = any(
+                        isinstance(col, tuple) and re.match(r'bug\d*_x_cm', col[0])
+                        for col in pose_df.columns
+                    )
+                    has_trial_ids = ('trial_id', '') in pose_df.columns and pose_df[('trial_id', '')].notna().any()
+                    has_in_block_trial_ids = ('in_block_trial_id', '') in pose_df.columns and pose_df[('in_block_trial_id', '')].notna().any()
+                    if has_bug_coords and has_trial_ids and has_in_block_trial_ids:
                         self.dlc.is_use_db = self.is_use_db
                         continue
                     bug_traj = self.dlc.load_bug_trajectory(None, video_path)
                     self.dlc.is_use_db = self.is_use_db
-                    for i, row in tqdm(pose_df.iterrows(), desc=f'({i+1}/{len(videos)}) {animal_id} {video_path.stem}', total=len(pose_df)):
-                        new_df.append(self.dlc.add_bug_traj(row, bug_traj, row[('time', '')]))
-                    new_df = pd.DataFrame(new_df)
+                    if bug_traj is None:
+                        continue
+                    for row_idx in tqdm(pose_df.index, desc=f'({i+1}/{len(videos)}) {animal_id} {video_path.stem}', total=len(pose_df)):
+                        row_df = pose_df.loc[[row_idx]].copy()
+                        new_df.append(self.dlc.add_bug_traj(row_df, bug_traj, row_df.iloc[0][('time', '')]))
+                    new_df = pd.concat(new_df).sort_index()
                     self.dlc.save_predicted_video(new_df, video_path)
-                    self.orm.update_video_prediction(video_path.stem, self.dlc.predictor.model_name, new_df.dropna(subset=[('nose', 'x')]))
+                    if self.is_use_db:
+                        self.orm.update_video_prediction(video_path.stem, self.dlc.predictor.model_name, new_df.dropna(subset=[('nose', 'x')]))
             except Exception as exc:
                 self.logger.error(f'{video_path}, {exc}')
 
