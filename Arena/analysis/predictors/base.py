@@ -1,5 +1,6 @@
 import yaml
 from pathlib import Path
+from datetime import datetime, timezone
 import cv2
 import pandas as pd
 if __name__ == '__main__':
@@ -75,11 +76,21 @@ class Predictor:
         resume_path = self.get_resume_cache_path(video_path)
         df.to_parquet(tmp_path)
         tmp_path.replace(resume_path)
+        self.write_processing_flag(video_path)
+
+    def write_processing_flag(self, video_path):
+        cache_path = self.get_predicted_cache_path(video_path)
+        cache_path.with_suffix('.processing').write_text(datetime.now(timezone.utc).isoformat() + '\n')
+
+    def write_done_flag(self, video_path):
+        cache_path = self.get_predicted_cache_path(video_path)
+        cache_path.with_suffix('.done').write_text(datetime.now(timezone.utc).isoformat() + '\n')
 
     def cleanup_prediction_progress(self, video_path):
         cache_path = self.get_predicted_cache_path(video_path)
         for path in [
             cache_path.with_suffix('.processing'),
+            cache_path.with_suffix('.bak_pre_trial_id_fill.parquet'),
             self.get_resume_cache_path(video_path),
             self.get_resume_cache_tmp_path(video_path),
         ]:
@@ -89,6 +100,7 @@ class Predictor:
     def save_predicted_video(self, df: pd.DataFrame, video_path):
         cache_path = self.get_predicted_cache_path(video_path)
         df.to_parquet(cache_path)
+        self.write_done_flag(video_path)
         self.cleanup_prediction_progress(video_path)
 
     def plot_predictions(self, frame, *args, **kwargs):

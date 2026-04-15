@@ -27,6 +27,31 @@ def run_one(run_model_py: Path, folder: str, calib_dir: str, model: str = "deepl
     subprocess.run(cmd, check=True)
 
 
+
+def should_skip_or_mark_processing(cache_path: Path, *, skip_existing: bool) -> bool:
+    if skip_existing and cache_path.exists():
+        print(f"Skipping (exists): {cache_path}")
+        return True
+
+    flag_path = cache_path.with_suffix(".processing")
+    if (not cache_path.exists()) and flag_path.exists():
+        try:
+            ts_text = flag_path.read_text().strip()
+            ts = datetime.fromisoformat(ts_text)
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            age = datetime.now(timezone.utc) - ts.astimezone(timezone.utc)
+            if age < timedelta(hours=24):
+                print(f"Skipping (processing <24h): {flag_path}")
+                return True
+        except Exception:
+            pass
+
+    flag_path.write_text(datetime.now(timezone.utc).isoformat() + "\n")
+    return False
+
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--jobs_csv", required=True,
