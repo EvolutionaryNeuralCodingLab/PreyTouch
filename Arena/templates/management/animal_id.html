@@ -89,9 +89,16 @@
     }
 
     $("#animalSummary").click(function (e) {
-        $("#animalIdsForSummarySelect").val($("#animalIdsForSummarySelect option:first").val()).trigger('change')
-        $("#updateAnimalSummary").click()
-        $('#animalSummaryModal').modal('toggle')
+        let animalIdValue = $("#animalId").val()
+        refreshAnimalSummaryData().done(() => {
+            if (animalIdValue && selectHasValue($("#animalIdsForSummarySelect"), animalIdValue)) {
+                $("#animalIdsForSummarySelect").val(animalIdValue).trigger('change')
+            } else {
+                $("#animalIdsForSummarySelect").val($("#animalIdsForSummarySelect option:first").val()).trigger('change')
+            }
+            $("#updateAnimalSummary").click()
+            $('#animalSummaryModal').modal('toggle')
+        })
     })
 
     $("#updateAnimalId").click(() => {

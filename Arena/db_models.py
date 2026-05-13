@@ -588,7 +588,7 @@ class ORM:
         if animal_id:
             filters.append(Experiment.animal_id == animal_id)
         cols = ['id', 'time', 'bug_type', 'movement_type', 'bug_speed', 'tags', 'x', 'y', 'bug_x', 'bug_y', 'bug_size',
-                'in_block_trial_id', 'is_hit', 'is_climbing', 'analysis_error', 'block_id', 'trial_id', 'video_id']
+                'in_block_trial_id', 'is_hit', 'is_reward_bug' ,'is_climbing', 'analysis_error', 'block_id', 'trial_id', 'video_id']
         df = []
         with self.session() as s:
             orm_res = s.query(Strike, Block, Experiment).join(
