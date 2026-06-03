@@ -87,6 +87,9 @@ export default {
     isStaticMovement: function () {
       return this.bugsSettings.movementType === 'static'
     },
+    isInPlaceMovement: function () {
+      return this.bugsSettings.movementType === 'in_place'
+    },
     isCounterClockWise: function () {
       return this.isLeftExit
     },
@@ -111,27 +114,31 @@ export default {
   },
   methods: {
     move() {
-      if (this.isStaticMovement) {
-        if (this.isDead || this.isRetreated || (this.isJumped && this.isJumpUpMovement)) {
+        if (this.isStaticMovement || this.isInPlaceMovement) {
+          if (this.isDead || this.isRetreated || (this.isJumped && this.isJumpUpMovement)) {
+            this.draw()
+            return
+          }
+          this.frameCounter++
+          if (!this.isHoleRetreatStarted && this.frameCounter > this.numFramesToRetreat) {
+            this.startRetreat()
+          }
+          if (this.isHoleRetreatStarted) {
+            if (this.isInPlaceMovement) {
+              this.retreatToExitHole()
+            } else {
+              this.edgeDetection()
+              this.straightMove(0)
+            }
+          } else {
+            this.vx = 0
+            this.vy = 0
+            this.dx = 0
+            this.dy = 0
+          }
           this.draw()
           return
         }
-        this.frameCounter++
-        if (!this.isHoleRetreatStarted && this.frameCounter > this.numFramesToRetreat) {
-          this.startRetreat()
-        }
-        if (this.isHoleRetreatStarted) {
-          this.edgeDetection()
-          this.straightMove(0)
-        } else {
-          this.vx = 0
-          this.vy = 0
-          this.dx = 0
-          this.dy = 0
-        }
-        this.draw()
-        return
-      }
       if (this.isDead || this.isRetreated || (this.isJumped && this.isJumpUpMovement)) {
         this.draw()
         return
@@ -229,6 +236,28 @@ export default {
       this.vx = this.currentSpeed * Math.cos(nextAngle)
       this.vy = this.currentSpeed * Math.sin(nextAngle)
     },
+    getInPlacePosition() {
+      const pos = this.bugsSettings.inPlacePosition
+
+      if (Array.isArray(pos) && pos.length >= 2) {
+        return { x: pos[0], y: pos[1] }
+      }
+
+      if (pos && typeof pos === 'object' && pos.x !== undefined && pos.y !== undefined) {
+        return { x: pos.x, y: pos.y }
+      }
+
+      return this.getRandomInPlacePosition()
+    },
+
+    getRandomInPlacePosition() {
+      const radius = this.currentBugSize / 2
+
+      return {
+        x: randomRange(radius, this.canvas.width - radius),
+        y: randomRange(this.upper_edge, this.canvas.height - radius)
+      }
+    },
     initiateStartPosition() {
       this.x = this.xToTarget.enter[0]
       this.y = this.xToTarget.enter[1]
@@ -294,6 +323,20 @@ export default {
           this.bugsSettings.speed = randomRange(2, 10)
           this.setNextAngle()
           break
+        case 'in_place':
+          const inPlacePos = this.getInPlacePosition()
+          this.x = inPlacePos.x
+          this.y = inPlacePos.y
+
+          this.xTarget = pos.x
+          this.yTarget = pos.y
+
+          this.vx = 0
+          this.vy = 0
+          this.dx = 0
+          this.dy = 0
+          break
+
         default:
           this.directionAngle = randomRange(3 * Math.PI / 4, 2 * Math.PI)
           this.setNextAngle()

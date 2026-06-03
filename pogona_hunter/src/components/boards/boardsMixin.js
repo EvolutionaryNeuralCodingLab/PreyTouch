@@ -14,7 +14,7 @@ export default {
         numTrials: null, // deprecated. Trials are governed by the experiment
         trialDuration: 5,
         iti: 5,
-        bugTypes: process.env.BUG_TYPES || ['cockroach', 'green_beetle'],
+        bugTypes: process.env.BUG_TYPES || [],
         rewardBugs: process.env.REWARD_BUGS || [],
         movementType: process.env.MOVEMENT_TYPE || 'circle',
         speed: 0, // if 0 config default for bug will be used
@@ -120,8 +120,8 @@ export default {
       return this.bugsSettings.isSplitBugsView && this.bugsSettings.numOfBugs > 1
     },
     currentBugType: function () {
-      let bug = this.$refs.bugChild[0]
-      return bug.currentBugType
+      const bugs = this.$refs.bugChild || []
+      return bugs.length > 0 ? bugs[0].currentBugType : null
     }
   },
   methods: {
@@ -132,10 +132,21 @@ export default {
       }
 
       this.bugsSettings.bugTypes = this.normalizeBugTypes(this.bugsSettings.bugTypes)
-      if (this.bugsSettings.bugTypes.length === 0) {
-        this.bugsSettings.bugTypes = ['cockroach']
+      const hasActiveBugConfig = this.hasActiveBugConfig(this.bugsSettings.bugTypes)
+      if (!hasActiveBugConfig) {
+        console.log('No active bug payload; keeping board idle until init_bugs arrives')
+        this.bugsProps = []
+        this.trajectoryBugCount = null
+        this.initDrawing()
+        return
       }
 
+      if (this.bugsSettings.bugTypes.length === 0) {
+        console.warn('No bug types received for trial; defaulting to worm')
+        this.bugsSettings.bugTypes = ['worm']
+      }
+
+      this.bugsProps = []
       this.initDrawing()
       this.drawSquareForPhotoDiode()
 
@@ -372,6 +383,16 @@ export default {
         return []
       }
       return [String(value).trim()].filter(Boolean)
+    },
+    hasActiveBugConfig(normalizedBugTypes = null) {
+      const bugTypes = Array.isArray(normalizedBugTypes)
+        ? normalizedBugTypes
+        : this.normalizeBugTypes(this.bugsSettings.bugTypes)
+      if (bugTypes.length > 0) {
+        return true
+      }
+      const configuredCount = Number(this.bugsSettings.numOfBugs)
+      return Number.isFinite(configuredCount) && configuredCount > 0
     },
     spawnBugs(noOfBugs) {
       // const minDistance = 100

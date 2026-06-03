@@ -152,6 +152,19 @@ export default {
     }
   },
   methods: {
+    normalizeHoleSide(value, fallback = 'right') {
+      if (typeof value !== 'string') {
+        return fallback
+      }
+      const normalized = value.trim().toLowerCase()
+      if (normalized.includes('left')) {
+        return 'left'
+      }
+      if (normalized.includes('right')) {
+        return 'right'
+      }
+      return fallback
+    },
     getSegmentBounds(bugId) {
       const width = this.segmentWidth || (this.canvasParams ? this.canvasParams.width : 0)
       const left = width * bugId
@@ -199,30 +212,35 @@ export default {
       }
     },
     exitHolePos: function (bugId) {
-      let exitHole = this.bugsSettings.exitHole
+      let exitHole = this.normalizeHoleSide(this.bugsSettings.exitHole, 'right')
       if (this.isSplitBugsView) {
         const exit = this.mirrorBugsProps[bugId]
         if (!exit) {
           console.error('No exit found for bugId', bugId, this.mirrorBugsProps)
         }
-        exitHole = exit ? (exit['exitHole'] || exitHole) : exitHole
+        exitHole = this.normalizeHoleSide(exit ? exit['exitHole'] : exitHole, exitHole)
         const positions = this.getHolePositionsForSegment(bugId)
         return positions[exitHole] || positions.left
       }
 
-      return this.holesPositions[exitHole]
+      return this.holesPositions[exitHole] || this.holesPositions.right
     },
     entranceHolePos: function (bugId) {
       if (this.isSplitBugsView) {
         const entrance = this.mirrorBugsProps[bugId]
           ? this.mirrorBugsProps[bugId]['entranceHole']
           : null
-        const entranceHole = entrance || (this.bugsSettings.exitHole === 'left' ? 'right' : 'left')
+        const fallbackEntrance = this.normalizeHoleSide(this.bugsSettings.exitHole, 'right') === 'left'
+          ? 'right'
+          : 'left'
+        const entranceHole = this.normalizeHoleSide(entrance, fallbackEntrance)
         const positions = this.getHolePositionsForSegment(bugId)
         return positions[entranceHole] || positions.left
       }
-      let entranceHole = this.bugsSettings.exitHole === 'left' ? 'right' : 'left'
-      return this.holesPositions[entranceHole]
+      const entranceHole = this.normalizeHoleSide(this.bugsSettings.exitHole, 'right') === 'left'
+        ? 'right'
+        : 'left'
+      return this.holesPositions[entranceHole] || this.holesPositions.left
     },
     extraTrialData: function () {
       let d = {

@@ -8,7 +8,6 @@ import yaml
 import cv2
 import traceback
 import importlib
-import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
@@ -240,7 +239,7 @@ class ArenaPose:
             self.predictor = getattr(prd_module, prd_class)(self.cam_name, self.model_path)
 
     def predict_video(self, db_video_id=None, video_path=None, is_save_cache=True, is_create_example_video=False,
-                      prefix='', is_tqdm=True):
+                      prefix='', is_tqdm=True, progress_cb=None):
         """
         predict pose for a given video
         @param db_video_id: The DB index of the video in the videos table
@@ -253,6 +252,7 @@ class ArenaPose:
         db_video_id, video_path = self.check_video_inputs(db_video_id, video_path)
         frames_times = self.load_frames_times(db_video_id, video_path)
         bug_traj = self.load_bug_trajectory(db_video_id, video_path)
+        resume_df = self.load_resume_video(video_path) if is_save_cache else None
 
         pose_df = []
         cap = cv2.VideoCapture(video_path)
@@ -261,10 +261,22 @@ class ArenaPose:
             self.tag_error_video(video_path, 'video has 0 frames')
             return
         fps = cap.get(cv2.CAP_PROP_FPS)
+        start_frame = 0
+        if resume_df is not None and not resume_df.empty:
+            resume_df = resume_df[resume_df.index < n_frames].sort_index()
+            if not resume_df.empty:
+                warmup_frames = max(1, int(fps * 2)) if fps and not np.isnan(fps) else 1
+                start_frame = min(n_frames, max(0, int(resume_df.index.max()) + 1 - warmup_frames))
+                resume_df = resume_df[resume_df.index < start_frame].copy()
+                if start_frame:
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
         self.start_new_session(fps)
-        iters = range(n_frames)
+        checkpoint_stride = max(1, n_frames // 5)
+        iters = range(start_frame, n_frames)
         if not is_tqdm:
             self.logger.info(f'Start video prediction of {video_path}')
+        if progress_cb:
+            progress_cb(0, n_frames)
         for frame_id in (tqdm(iters, desc=f'{prefix}{Path(video_path).stem}') if is_tqdm else iters):
             ret, frame = cap.read()
             if not self.is_initialized:
@@ -280,11 +292,24 @@ class ArenaPose:
             if is_create_example_video:
                 self.write_to_example_video(frame, frame_id, pred_row, fps, video_path)
             pose_df.append(pred_row)
+            if is_save_cache and ((frame_id == n_frames - 1) or ((frame_id + 1) % checkpoint_stride == 0)):
+                checkpoint_parts = []
+                if resume_df is not None and not resume_df.empty:
+                    checkpoint_parts.append(resume_df)
+                if pose_df:
+                    checkpoint_parts.append(pd.concat(pose_df))
+                if checkpoint_parts:
+                    self.save_resume_video(pd.concat(checkpoint_parts), video_path)
         cap.release()
 
-        if not pose_df:
+        pose_parts = []
+        if resume_df is not None and not resume_df.empty:
+            pose_parts.append(resume_df)
+        if pose_df:
+            pose_parts.append(pd.concat(pose_df))
+        if not pose_parts:
             return
-        pose_df = pd.concat(pose_df)
+        pose_df = pd.concat(pose_parts)
         if is_save_cache:
             self.save_predicted_video(pose_df, video_path)
             self.logger.info(f'Video prediction of {video_path} was saved successfully')
@@ -460,9 +485,96 @@ class ArenaPose:
             return None
 
         bug_trajs['datetime'] = datetimes
-        bug_trajs['timestamp'] = bug_trajs.datetime.astype(int).div(10**9)
         bug_trajs = bug_trajs.sort_values(by='datetime').reset_index(drop=True)
+        bug_trajs = self._backfill_bug_traj_trial_ids_from_trials_data(bug_trajs, video_path)
+        bug_trajs['timestamp'] = bug_trajs.datetime.astype(int).div(10**9)
         return bug_trajs
+
+    def _backfill_bug_traj_trial_ids_from_trials_data(self, bug_trajs: pd.DataFrame, video_path: str):
+        needs_trial_id = ('trial_id' not in bug_trajs.columns) or bug_trajs['trial_id'].isna().all()
+        needs_in_block = ('in_block_trial_id' not in bug_trajs.columns) or bug_trajs['in_block_trial_id'].isna().all()
+        if (not needs_trial_id and not needs_in_block) or video_path is None or 'datetime' not in bug_trajs.columns:
+            return bug_trajs
+
+        trials_df = self._load_trials_data_from_file(video_path)
+        if trials_df is None or trials_df.empty:
+            return bug_trajs
+
+        bug_trajs = bug_trajs.copy()
+        if 'trial_id' not in bug_trajs.columns:
+            bug_trajs['trial_id'] = np.nan
+        if 'in_block_trial_id' not in bug_trajs.columns:
+            bug_trajs['in_block_trial_id'] = np.nan
+
+        matched_rows = 0
+        for trial_num, row in enumerate(trials_df.itertuples(index=False), start=1):
+            start_time = getattr(row, 'start_time', pd.NaT)
+            end_time = getattr(row, 'end_time', pd.NaT)
+            if pd.isna(start_time) or pd.isna(end_time):
+                continue
+
+            mask = bug_trajs['datetime'].between(start_time, end_time, inclusive='both')
+            if not mask.any():
+                continue
+
+            matched_rows += int(mask.sum())
+            if needs_trial_id:
+                trial_db_id = getattr(row, 'trial_db_id', np.nan)
+                if pd.notna(trial_db_id):
+                    bug_trajs.loc[mask, 'trial_id'] = int(trial_db_id)
+            if needs_in_block:
+                in_block_trial_id = getattr(row, 'in_block_trial_id', trial_num)
+                if pd.notna(in_block_trial_id):
+                    bug_trajs.loc[mask, 'in_block_trial_id'] = int(in_block_trial_id)
+
+        if matched_rows:
+            vid_ref = video_path
+            self.logger.info(
+                f'Backfilled trial IDs for {matched_rows} bug trajectory rows from trials_data.csv ({vid_ref}).'
+            )
+
+        return bug_trajs
+
+    def _load_trials_data_from_file(self, video_path: str):
+        block_dir = Path(video_path).parent.parent
+        trials_path = block_dir / 'trials_data.csv'
+        if not trials_path.exists():
+            return None
+
+        try:
+            trials_df = pd.read_csv(trials_path)
+        except Exception as exc:
+            self.logger.warning(
+                f'Failed reading trials_data.csv ({trials_path}): {exc}. Continuing without trial-id backfill.'
+            )
+            return None
+
+        if 'start_time' not in trials_df.columns:
+            self.logger.warning(
+                f"trials_data.csv is missing 'start_time' ({trials_path}). Continuing without trial-id backfill."
+            )
+            return None
+
+        trials_df = trials_df.copy()
+        trials_df['start_time'] = pd.to_datetime(trials_df['start_time'], errors='coerce').dt.tz_localize(None)
+
+        if 'end_time' in trials_df.columns:
+            trials_df['end_time'] = pd.to_datetime(trials_df['end_time'], errors='coerce').dt.tz_localize(None)
+        elif 'duration' in trials_df.columns:
+            durations = pd.to_numeric(trials_df['duration'], errors='coerce')
+            trials_df['end_time'] = trials_df['start_time'] + pd.to_timedelta(durations, unit='s')
+        else:
+            self.logger.warning(
+                f"trials_data.csv is missing both 'end_time' and 'duration' ({trials_path}). "
+                "Continuing without trial-id backfill."
+            )
+            return None
+
+        if 'in_block_trial_id' not in trials_df.columns:
+            trials_df['in_block_trial_id'] = np.arange(1, len(trials_df) + 1)
+
+        trials_df = trials_df.dropna(subset=['start_time', 'end_time']).sort_values(by='start_time').reset_index(drop=True)
+        return trials_df
 
     def _load_bug_trajectory_from_file(self, video_path):
         frames_output_dir = Path(video_path).parent.parent
@@ -633,6 +745,49 @@ class ArenaPose:
             raise MissingFile(f'No prediction cache found under: {cache_path}')
         pose_df = pd.read_parquet(cache_path)
         return pose_df
+
+    def get_resume_cache_path(self, video_path) -> Path:
+        return self.get_predicted_cache_path(video_path).with_suffix('.resume')
+
+    def get_resume_cache_tmp_path(self, video_path) -> Path:
+        resume_path = self.get_resume_cache_path(video_path)
+        return resume_path.parent / f'{resume_path.name}.tmp'
+
+    def load_resume_video(self, video_path):
+        for resume_path in [self.get_resume_cache_path(video_path), self.get_resume_cache_tmp_path(video_path)]:
+            if not resume_path.exists():
+                continue
+            try:
+                return pd.read_parquet(resume_path)
+            except Exception:
+                continue
+        return None
+
+    def save_resume_video(self, pose_df: pd.DataFrame, video_path: str) -> None:
+        tmp_path = self.get_resume_cache_tmp_path(video_path)
+        resume_path = self.get_resume_cache_path(video_path)
+        pose_df.to_parquet(tmp_path)
+        tmp_path.replace(resume_path)
+        self.write_processing_flag(video_path)
+
+    def write_processing_flag(self, video_path: str) -> None:
+        cache_path = self.get_predicted_cache_path(video_path)
+        cache_path.with_suffix('.processing').write_text(datetime.datetime.now(datetime.timezone.utc).isoformat() + '\n')
+
+    def write_done_flag(self, video_path: str) -> None:
+        cache_path = self.get_predicted_cache_path(video_path)
+        cache_path.with_suffix('.done').write_text(datetime.datetime.now(datetime.timezone.utc).isoformat() + '\n')
+
+    def cleanup_prediction_progress(self, video_path: str) -> None:
+        cache_path = self.get_predicted_cache_path(video_path)
+        for path in [
+            cache_path.with_suffix('.processing'),
+            cache_path.with_suffix('.bak_pre_trial_id_fill.parquet'),
+            self.get_resume_cache_path(video_path),
+            self.get_resume_cache_tmp_path(video_path),
+        ]:
+            if path.exists():
+                path.unlink()
     
     def save_predicted_video(self, pose_df: pd.DataFrame, video_path: str) -> None:
         """
@@ -648,6 +803,8 @@ class ArenaPose:
         """
         cache_path = self.get_predicted_cache_path(video_path)
         pose_df.to_parquet(cache_path)
+        self.write_done_flag(video_path)
+        self.cleanup_prediction_progress(video_path)
 
     def write_to_example_video(self, frame, frame_id, pred_row, fps, video_path=None, example_path=None,
                                is_plot_preds=True):
@@ -843,7 +1000,7 @@ class SpatialAnalyzer:
     }
 
     def __init__(self, animal_ids=None, day=None, start_date=None, cam_name='front', bodypart='mid_ears', split_by=None,
-                 orm=None, is_use_db=False, cache_dir=None, arena_name=None, excluded_animals=None, **block_kwargs):
+                 orm=None, is_use_db=False, cache_dir=None, arena_name=None, excluded_animals=None, max_y_arena=20, **block_kwargs):
         if animal_ids and not isinstance(animal_ids, list):
             animal_ids = [animal_ids]
         self.animal_ids = animal_ids
@@ -860,18 +1017,21 @@ class SpatialAnalyzer:
         self.cache_dir = cache_dir
         self.orm = orm if orm is not None else ORM()
         self.dlc = DLCArenaPose('front', is_use_db=is_use_db, orm=self.orm)
-        self.coords = {
-            'arena': np.array([(-3, -2), (68, 78)]),
-            'arena_close': np.array([(-3, -2), (68, 15)]),
-            'screen': np.array([(5, -3), (60, -1)])
-        }
         self.max_x_arena = 70
-        self.max_y_arena = 20
+        self.max_y_arena = max_y_arena
+        self.coords = {
+            'arena': np.array([(0, 0), (self.max_x_arena, self.max_y_arena)]),
+            'screen': np.array([(10, 0), (60, 1)])
+        }
         self.pose_dict = self.get_pose()
-        # fix for msi-regev
+        # fix for arenas
         for k, pf in self.pose_dict.items():
+            # align msi-regev arean to reptilearn
             idx = pf.animal_id.isin(['PV80', 'PV42'])
             pf.loc[idx, 'x'] = pf.loc[idx, 'x'] * (self.max_x_arena/50)
+            # move x-y coordinates in reptilearn arenas to start from 0
+            pf['x'] = pf['x'] + 3
+            # pf['y'] = pf['y'] + 2
 
     def get_pose(self) -> dict:
         """
@@ -991,11 +1151,6 @@ class SpatialAnalyzer:
             s.append(f"{c}={val}")
         return ','.join(s)
 
-    def drop_out_of_arena_coords(self, df):
-        xmin, xmax = self.coords['arena'][:, 0].flatten().tolist()
-        idx = df[(df.y < xmin) | (df.y > xmax)].index
-        return df.drop(idx)
-
     def get_out_of_experiment_pose(self):
         groups_pose = {}
         for group_name, vids in self.get_videos_to_load().items():
@@ -1035,11 +1190,14 @@ class SpatialAnalyzer:
                 continue
             cbar_ax = None
             if i == len(pose_dict) - 1 and len(pose_dict) > 1:
-                # cbar_ax = axes_[i].inset_axes([1.05, 0.1, 0.03, 0.8])
-                cbar_ax = axes_[i].inset_axes([0.2, -0.3, 0.6, 0.05])
-            df_ = pose_df.query(f'0 <= x <= {self.max_x_arena} and y<{self.max_y_arena}')
+                cbar_ax = inset_axes(
+                    axes_[i], width="3%", height="70%", loc="lower left",
+                    bbox_to_anchor=(1.1, 0., 3, 1),  # x_offset, y_offset, width, height in ax coords
+                    bbox_transform=axes_[i].transAxes, borderpad=0
+                )
+            df_ = pose_df.query(f'0<=x<={self.max_x_arena} and 0<=y<={self.max_y_arena}')
             self.plot_hist2d(df_, axes_[i], single_animal, cbar_ax=cbar_ax)
-            self.plot_arena(axes_[i], is_close_to_screen_only=True)
+            self.plot_arena(axes_[i])
             if len(self.split_by) == 1 and self.split_by[0] == 'exit_hole':
                 group_name = r'Left $\rightarrow$ Right' if 'right' in group_name else r'Left $\leftarrow$ Right'
             if is_title:
@@ -1051,11 +1209,9 @@ class SpatialAnalyzer:
     def plot_hist2d(self, df, ax, single_animal, cbar_ax=None):
         df_ = df.query(f'animal_id == "{single_animal}"')
         sns.histplot(data=df_, x='x', y='y', ax=ax,
-                     bins=(np.arange(0, self.max_x_arena, 2), np.arange(0, self.max_y_arena, 1)), cmap='Greens', stat='probability',
-                     cbar=cbar_ax is not None, cbar_kws=dict(shrink=.75, label='Probability', orientation='horizontal', ticks=[0, 0.04]),
+                     bins=(np.arange(0, self.max_x_arena+2, 2), np.arange(0, self.max_y_arena+1, 1)), cmap='Greens', stat='probability',
+                     cbar=cbar_ax is not None, cbar_kws=dict(shrink=.75, label='', orientation='vertical', ticks=[0, 0.04]),
                      cbar_ax=cbar_ax)
-        # ax.set_yticks([0, 5, 10])
-        # ax.set_xticks([0, 20, 40, 60])
         ax.set_yticks([])
         ax.set_xticks([])
         ax.set_ylabel(None)
@@ -1065,19 +1221,20 @@ class SpatialAnalyzer:
         scalebar = AnchoredSizeBar(ax.transData, 10, '10cm', 'lower right', pad=1, color='black', frameon=False,
                                    size_vertical=0.7, fontproperties=fontprops)
         ax.add_artist(scalebar)
-
+        # upper 1D histogram for x values
         hist_x_ax = ax.inset_axes([0, 1, 1, 0.3])
         sns.histplot(data=df_, x='x', ax=hist_x_ax, bins=30)
         hist_x_ax.axis('off')
 
-    def plot_arena(self, ax, is_close_to_screen_only=False):
-        for name, c in self.coords.items():
-            rect = patches.Rectangle(c[0, :], *(c[1, :] - c[0, :]).tolist(), linewidth=1, edgecolor='k',
-                                     facecolor='k' if name == 'screen' else 'none')
-            ax.add_patch(rect)
-        # ax.invert_xaxis()
-        ax.set_xlim(self.coords['arena' if not is_close_to_screen_only else 'arena_close'][:, 0])
-        ax.set_ylim(self.coords['arena' if not is_close_to_screen_only else 'arena_close'][:, 1])
+    def plot_arena(self, ax):
+        # plot screen
+        c = self.coords['screen']
+        rect = patches.Rectangle(c[0, :], *(c[1, :] - c[0, :]).tolist(), linewidth=1, edgecolor='k',
+                                 facecolor='k')
+        ax.add_patch(rect)
+        # set arena bounds
+        ax.set_xlim(self.coords['arena'][:, 0])
+        ax.set_ylim(self.coords['arena'][:, 1])
         ax.invert_yaxis()
 
     def plot_spatial_x_kde(self, axes=None, cols=4, animal_colors=None, pose_dict=None):
@@ -1087,7 +1244,7 @@ class SpatialAnalyzer:
         axes_ = self.get_axes(cols, len(pose_dict), axes=axes)
         for i, (group_name, pose_df) in enumerate(pose_dict.items()):
             df = pose_df.query(f'0 <= x <= {self.max_x_arena} and y<20')
-            sns.violinplot(data=df, x='x', y='animal_id', hue='animal_id', ax=axes_[i], palette=animal_colors, order=list(animal_colors.keys()))
+            sns.violinplot(data=df, x='x', y='animal_id', hue='animal_id', ax=axes_[i], palette=animal_colors, order=list(animal_colors.keys()), linewidth=1)
             axes_[i].set_xlim([0, self.max_x_arena])
             axes_[i].axvline(self.max_x_arena/2, linestyle='--', color='k')
             axes_[i].set_yticks([])
@@ -1103,19 +1260,24 @@ class SpatialAnalyzer:
             if not trajs:
                 continue
 
-            x_values = {}
+            # x_values = {}
+            traj_df = []
             for (block_id, frame_id, animal_id), traj in trajs.items():
-                x_values.setdefault(animal_id, []).append(traj.x.values[-1])
+                traj_df.append({'animal_id': animal_id, 'x': traj.x.values[-1]})
+                # x_values.setdefault(animal_id, []).append(traj.x.values[-1])
+            traj_df = pd.DataFrame(traj_df)
 
             inner_ax = axes_[i]
-            for animal_id, x_ in x_values.items():
-                color_kwargs = {'color': animal_colors[animal_id] if animal_colors else None}
-                sns.kdeplot(x=x_, ax=inner_ax, label=animal_id, **color_kwargs) # clip=[0, 40], bw_adjust=.4,
+            sns.boxplot(data=traj_df, x='x', y='animal_id', hue='animal_id', ax=inner_ax, palette=animal_colors, order=list(animal_colors.keys()))
+            # for animal_id, x_ in x_values.items():
+                # color_kwargs = {'color': animal_colors[animal_id] if animal_colors else None}
+                # sns.kdeplot(x=x_, ax=inner_ax, label=animal_id, **color_kwargs) # clip=[0, 40], bw_adjust=.4,
             inner_ax.axvline(self.max_x_arena/2, linestyle='--', color='k')
             inner_ax.set_xticks([0, 20, 40, 60])
             inner_ax.set_xlim([0, self.max_x_arena])
-            inner_ax.set_ylabel('Probability')
-            inner_ax.set_ylim([0, 0.12])
+            inner_ax.set_yticks([])
+            # inner_ax.set_ylabel('Probability')
+            # inner_ax.set_ylim([0, 0.12])
             # inner_ax.legend()
 
         if axes is None:
@@ -1185,7 +1347,7 @@ class SpatialAnalyzer:
 
         """
         trajs = {}
-        dist_df = pose[['time', 'x', 'y', 'prob', 'block_id', 'animal_id'
+        dist_df = pose[['time', 'x', 'y', 'prob', 'block_id', 'animal_id', 'bug_x'
                         ]].reset_index().copy().rename(columns={'index': 'frame_id'})
         dist_df = dist_df.drop(index=dist_df[(dist_df.prob < 0.5) | (dist_df.x.isna())].index, errors='ignore')
         if len(dist_df) < window_length:
@@ -1219,7 +1381,7 @@ class SpatialAnalyzer:
                 crosses.append(cross_id)
                 frame_id = xf.loc[lower_lim, 'frame_id']
                 animal_id = gf.animal_id.unique()[0]
-                trajs[(block_id, frame_id, animal_id)] = xf.loc[lower_lim:upper_lim, ['x', 'y']].copy()
+                trajs[(block_id, frame_id, animal_id)] = xf.loc[lower_lim:upper_lim, ['x', 'y', 'bug_x', 'time']].copy()
                 if is_plot:
                     axes[i].plot(xf.y.loc[lower_lim:upper_lim])
             if is_plot:
@@ -1552,16 +1714,26 @@ class VideoPoseScanner:
                     animal_id = Path(video_path).parts[-5]
                     self.dlc.is_use_db = False
                     pose_df = self.dlc.load(video_path=video_path, only_load=True)
-                    if ('bug_x_cm', '') in pose_df.columns:
+                    has_bug_coords = any(
+                        isinstance(col, tuple) and re.match(r'bug\d*_x_cm', col[0])
+                        for col in pose_df.columns
+                    )
+                    has_trial_ids = ('trial_id', '') in pose_df.columns and pose_df[('trial_id', '')].notna().any()
+                    has_in_block_trial_ids = ('in_block_trial_id', '') in pose_df.columns and pose_df[('in_block_trial_id', '')].notna().any()
+                    if has_bug_coords and has_trial_ids and has_in_block_trial_ids:
                         self.dlc.is_use_db = self.is_use_db
                         continue
                     bug_traj = self.dlc.load_bug_trajectory(None, video_path)
                     self.dlc.is_use_db = self.is_use_db
-                    for i, row in tqdm(pose_df.iterrows(), desc=f'({i+1}/{len(videos)}) {animal_id} {video_path.stem}', total=len(pose_df)):
-                        new_df.append(self.dlc.add_bug_traj(row, bug_traj, row[('time', '')]))
-                    new_df = pd.DataFrame(new_df)
+                    if bug_traj is None:
+                        continue
+                    for row_idx in tqdm(pose_df.index, desc=f'({i+1}/{len(videos)}) {animal_id} {video_path.stem}', total=len(pose_df)):
+                        row_df = pose_df.loc[[row_idx]].copy()
+                        new_df.append(self.dlc.add_bug_traj(row_df, bug_traj, row_df.iloc[0][('time', '')]))
+                    new_df = pd.concat(new_df).sort_index()
                     self.dlc.save_predicted_video(new_df, video_path)
-                    self.orm.update_video_prediction(video_path.stem, self.dlc.predictor.model_name, new_df.dropna(subset=[('nose', 'x')]))
+                    if self.is_use_db:
+                        self.orm.update_video_prediction(video_path.stem, self.dlc.predictor.model_name, new_df.dropna(subset=[('nose', 'x')]))
             except Exception as exc:
                 self.logger.error(f'{video_path}, {exc}')
 

@@ -549,6 +549,11 @@
                 } else {
                     $(`#bugSpeedDiv${i}`).show()
                 }
+                if ($movementType.val() === 'in_place') {
+                    $(`#inPlacePositionDiv${i}`).show()
+                } else {
+                    $(`#inPlacePositionDiv${i}`).hide()
+                }
                 if (['circle', 'circle_accelerate'].indexOf($movementType.val()) !== -1) {
                     $(`#circleHeightDiv${i}`).show()
                     $(`#circleRadiusDiv${i}`).show()

@@ -299,11 +299,20 @@ def animal_day_summary():
         animal_id, day = data.get('animal_id', cache.get(cc.CURRENT_ANIMAL_ID)), data.get('day', today_str)
         strike_df = arena_mgr.orm.get_strikes_for_day(day, animal_id)
         tr_df = arena_mgr.orm.get_trials_for_day(day, animal_id)
-        rewards_counts = arena_mgr.orm.get_rewards_for_day(day, animal_id)
+        rewards_counts = arena_mgr.orm.get_rewards_for_day(day, animal_id)    
         text = f'\n<div><b>Animal ID:</b> {animal_id}, <b>Day:</b> {day}</div>'
         text += f'<div><b>Total Trials:</b> {len(tr_df)}</div>'
         text += f'<div><b>Total Strikes:</b> {len(strike_df)}</div>'
         text += f'<div><b>Total Rewards:</b> {rewards_counts["auto"]} (manual: {rewards_counts["manual"]})</div>'
+                # num unique trials with strikes
+        if 'trial_id' in strike_df.columns:
+            num_trials_with_strikes = strike_df['trial_id'].nunique()
+            num_trial_woth_correct_strikes = strike_df[strike_df['is_reward_bug']]['trial_id'].nunique()
+            # success rate as num rewards / num trials with strikes
+            success_rate = num_trial_woth_correct_strikes / num_trials_with_strikes if num_trials_with_strikes > 0 else 0
+            text += f'<div><b>Trials with Strikes:</b> {num_trials_with_strikes}</div>'
+            text += f'<div><b>Trials with Correct Strikes:</b> {num_trial_woth_correct_strikes}</div>'
+            text += f'<div><b>Success Rate:</b> {success_rate:.2%}</div>'
         if not strike_df.empty:
             text += f'<h5 class="mt-3">Strikes:</h5>{utils.format_strikes_df(strike_df)}'
         if not tr_df.empty:
