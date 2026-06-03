@@ -328,9 +328,6 @@ export default {
           this.x = inPlacePos.x
           this.y = inPlacePos.y
 
-          this.xTarget = pos.x
-          this.yTarget = pos.y
-
           this.vx = 0
           this.vy = 0
           this.dx = 0
