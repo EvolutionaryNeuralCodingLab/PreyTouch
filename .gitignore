@@ -54,3 +54,8 @@ Arena/configurations/archive
 
 */node_modules/*
 redis/package-lock.json
+
+*/configurations/*
+Arena/configurations/**/*.json
+*.pyc
+*.sql

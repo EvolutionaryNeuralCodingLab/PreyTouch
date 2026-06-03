@@ -232,6 +232,7 @@ class Block:
     split_bugs_order: list = None
     split_randomize_timing: bool = True
     movement_type: str = None
+    in_place_position: Union[str, list, dict, None] = None
     bug_speed: [int, list] = None
     bug_size: int = None
     holes_height_scale: float = 0.1
@@ -277,10 +278,17 @@ class Block:
         if self.periphery is None:
             self.periphery = PeripheryIntegrator()
         if isinstance(self.bug_types, str):
-            self.bug_types = self.bug_types.split(',')
+            self.bug_types = [bug.strip() for bug in self.bug_types.split(',') if bug.strip()]
+        elif isinstance(self.bug_types, list):
+            self.bug_types = [str(bug).strip() for bug in self.bug_types if str(bug).strip()]
+        if self.block_type == 'bugs' and not self.bug_types:
+            self.logger.warning('No bug types were provided for bug block; defaulting to worm')
+            self.bug_types = ['worm']
         if isinstance(self.reward_bugs, str):
-            self.reward_bugs = self.reward_bugs.split(',')
-        elif not self.reward_bugs:
+            self.reward_bugs = [bug.strip() for bug in self.reward_bugs.split(',') if bug.strip()]
+        elif isinstance(self.reward_bugs, list):
+            self.reward_bugs = [str(bug).strip() for bug in self.reward_bugs if str(bug).strip()]
+        if not self.reward_bugs:
             self.logger.debug(f'No reward bugs were given, using all bug types as reward; {self.reward_bugs}')
             self.reward_bugs = self.bug_types
         if isinstance(self.tunnel_rotation, str):
@@ -493,6 +501,66 @@ class Block:
 
         return combined_bugs
 
+    @staticmethod
+    def get_screen_resolution():
+        screen_resolution = getattr(config, 'SCREEN_RESOLUTION', '1920,1080')
+
+        try:
+            width, height = screen_resolution.split(',')
+            return int(width), int(height)
+        except Exception:
+            return 1920, 1080
+
+    def random_in_place_position(self):
+        """
+        Pick a random fixed screen position for in_place movement.
+        Coordinates are in screen pixels.
+        """
+        screen_width, screen_height = self.get_screen_resolution()
+
+        margin = int(self.bug_size / 2) if self.bug_size else 150
+
+        x = random.randint(margin, screen_width - margin)
+        y = random.randint(margin, screen_height - margin)
+
+        return [x, y]
+    
+    def get_in_place_position_for_trial(self):
+        """
+        Return [x, y] for in_place movement.
+
+        Empty UI value means random position.
+        Otherwise parse "x,y".
+        """
+        if self.movement_type != 'in_place':
+            return None
+
+        pos = self.in_place_position
+
+        if pos is None or pos == '':
+            return self.random_in_place_position()
+
+        if isinstance(pos, str):
+            parts = [p.strip() for p in pos.split(',')]
+
+            if len(parts) >= 2:
+                try:
+                    return [int(float(parts[0])), int(float(parts[1]))]
+                except ValueError:
+                    self.logger.warning(f'Invalid in_place_position={pos}; using random position')
+                    return self.random_in_place_position()
+
+            self.logger.warning(f'Invalid in_place_position={pos}; using random position')
+            return self.random_in_place_position()
+
+        if isinstance(pos, (list, tuple)) and len(pos) >= 2:
+            return [int(float(pos[0])), int(float(pos[1]))]
+
+        if isinstance(pos, dict) and 'x' in pos and 'y' in pos:
+            return [int(float(pos['x'])), int(float(pos['y']))]
+
+        self.logger.warning(f'Invalid in_place_position={pos}; using random position')
+        return self.random_in_place_position()
 
     def turn_cameras(self, required_state, **kwargs):
         """Turn on cameras if needed, and load the experiment predictors"""
@@ -745,6 +813,7 @@ class Block:
             'bugTypes': self.bug_types,
             'rewardBugs': self.reward_bugs,
             'movementType': self.movement_type,
+            'inPlacePosition': self.get_in_place_position_for_trial(),
             'isLogTrajectory': True,
             'bugSize': self.bug_size,
             'isDefaultBugSize': self.is_default_bug_size,
@@ -1022,7 +1091,7 @@ def start_trial():
         'iti': 30,
         'trialDuration': 5,
         'speed': args.speed,
-        'bugTypes': ['cockroach'],
+        'bugTypes': ['worm'],
         'rewardBugs': [],
         'movementType': args.movement_type,
         'isLogTrajectory': True,

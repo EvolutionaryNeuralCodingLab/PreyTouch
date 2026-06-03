@@ -64,7 +64,6 @@
       "stepsPerImage": 10,
       "fillToScreen": true
     },
-    
     "cockroach": {
       "text": "Cockroach",
       "numImagesPerBug": 3,
@@ -167,26 +166,6 @@
     },
     "val_light_worm": {
       "text": "Val Light Worm",
-      "numImagesPerBug": 5,
-      "speed": 1,
-      "radiusRange": {
-        "min": 220,
-        "max": 230
-      },
-      "stepsPerImage": 10
-    },
-    "val_lighter_worm": {
-      "text": "Val Lighter Worm",
-      "numImagesPerBug": 5,
-      "speed": 1,
-      "radiusRange": {
-        "min": 220,
-        "max": 230
-      },
-      "stepsPerImage": 10
-    },
-    "val_darker_worm": {
-      "text": "Val Darker Worm",
       "numImagesPerBug": 5,
       "speed": 1,
       "radiusRange": {
@@ -363,6 +342,7 @@
   },
   "movementTypes": {
     "static": "static",
+    "in_place": "in place",
     "random": "random walk",
     "random_speeds": "random speeds",
     "random_low_horizontal": "random low horizontal",
@@ -379,9 +359,27 @@
     "circle_flip": "circle flip"
   },
   "boards": {
-    "holes": ["random", "random_speeds", "circle", "low_horizontal", "low_horizontal_noise", "vertical", "jump_up", "accelerate", "random_low_horizontal", "static", "circle_accelerate", "circle_flip"],
-    "tunnel": ["rect_tunnel"],
-    "pbtunnel": ["pt_tunnel"]
+    "holes": [
+      "random",
+      "random_speeds",
+      "circle",
+      "low_horizontal",
+      "low_horizontal_noise",
+      "vertical",
+      "jump_up",
+      "accelerate",
+      "random_low_horizontal",
+      "static",
+      "in_place",
+      "circle_accelerate",
+      "circle_flip"
+    ],
+    "tunnel": [
+      "rect_tunnel"
+    ],
+    "pbtunnel": [
+      "pt_tunnel"
+    ]
   },
   "targetDrifts": {
     "leftBottom": {

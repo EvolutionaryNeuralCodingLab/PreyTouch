@@ -268,6 +268,7 @@ const blockFields = {
     split_randomize_timing: new FieldObject('randomizeTiming', CheckField),
     bug_speed: new FieldObject('bugSpeed', NumericalField),
     movement_type: new FieldObject('movementTypeSelect', Field),
+    in_place_position: new FieldObject('inPlacePosition', Field, {movement_type: 'in_place'}),
     is_default_bug_size: new FieldObject('isDefaultBugSize', CheckField),
     bug_size: new FieldObject('bugSize', NumericalField, {is_default_bug_size: false}),
     exit_hole: new FieldObject('exitHolePositionSelect', Field),
