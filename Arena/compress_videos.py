@@ -1,9 +1,25 @@
+import importlib.util
 import logging
-import imageio.v2 as iio
 from pathlib import Path
 from db_models import ORM, Experiment, Video, VideoPrediction, PoseEstimation
 import config
 import time
+
+ARENA_ROOT = Path(__file__).resolve().parent
+CONVERT_SCRIPT = ARENA_ROOT / 'scripts' / 'convert_avi_mp4.py'
+_CONVERTER_MODULE = None
+
+
+def _get_converter_module():
+    global _CONVERTER_MODULE
+    if _CONVERTER_MODULE is None:
+        spec = importlib.util.spec_from_file_location('arena_convert_avi_mp4', CONVERT_SCRIPT)
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f'could not load converter script: {CONVERT_SCRIPT}')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _CONVERTER_MODULE = module
+    return _CONVERTER_MODULE
 
 
 def get_videos_ids_for_compression(orm, sort_by_size=False):
@@ -33,7 +49,6 @@ def compress(video_db_id, logger, orm):
     with orm.session() as s:
         v = s.query(Video).filter_by(id=video_db_id).first()
         assert v is not None, 'could not find video in DB'
-        writer, reader = None, None
         source = Path(v.path).resolve()
         try:
             assert source.exists(), f'video does not exist'
@@ -48,10 +63,6 @@ def compress(video_db_id, logger, orm):
 
         finally:
             s.commit()
-            if writer is not None:
-                writer.close()
-            if reader is not None:
-                reader.close()
             time.sleep(2)
 
 
@@ -59,17 +70,15 @@ def compress_video_file(vid_path, logger=None):
     print_func = logger.info if logger is not None else print
     source = Path(vid_path)
     dest = source.with_suffix('.mp4')
+    converter = _get_converter_module()
 
     print_func(f'start video compression of {source}')
     t0 = time.time()
-    reader = iio.get_reader(source.as_posix())
-    fps = reader.get_meta_data()['fps']
-    writer = iio.get_writer(dest.as_posix(), format="FFMPEG", mode="I",
-                            fps=fps, codec="libx264", quality=5,
-                            macro_block_size=8,  # to work with 1440x1080 image size
-                            ffmpeg_log_level="error")
-    for im in reader:
-        writer.append_data(im)
+    ok, cmd, error, _ = converter.convert_file(source, dest, overwrite=True, dry_run=False, quiet=True)
+    if not ok:
+        raise RuntimeError(f'{error}\n\nFFMPEG COMMAND:\n{" ".join(cmd)}')
+    if not converter.mp4_is_valid(dest):
+        raise RuntimeError(f'created invalid mp4: {dest}')
     print_func(f'Finished compression of {dest} in {(time.time() - t0) / 60:.1f} minutes')
     return dest
 

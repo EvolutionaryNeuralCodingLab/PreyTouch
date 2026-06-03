@@ -190,6 +190,7 @@ STRIKE_ANALYSIS_TIME = env('STRIKE_ANALYSIS_TIME', '06:30', group='Scheduler', d
 DAILY_SUMMARY_TIME = env('DAILY_SUMMARY_TIME', '20:00', group='Scheduler', desc='Time of the day to send the daily summary in telegram', validator='hour_validator')
 TIMELAPSE_DAILY_PUSH_TIME = env('TIMELAPSE_DAILY_PUSH_TIME', '09:00', group='Scheduler', desc='Time of the day to send the previous day timelapse video via telegram', validator='hour_validator')
 TIMELAPSE_DAILY_PUSH_ENABLE = env.bool('TIMELAPSE_DAILY_PUSH_ENABLE', True, group='Scheduler', desc='Enable daily telegram push of previous day timelapse videos')
+TIMELAPSE_SUMMARY_ENABLE = env.bool('TIMELAPSE_SUMMARY_ENABLE', False, group='Scheduler', desc='Enable daily telegram push of timelapse summary videos')
 
 # Experiments
 CAM_TRIGGER_DELAY_AROUND_BLOCK = env.int('CAM_TRIGGER_DELAY_AROUND_BLOCK', 8, group='Experiments', desc='The trigger delay in seconds before and after a block in an experiment. If 0, no delay is used')

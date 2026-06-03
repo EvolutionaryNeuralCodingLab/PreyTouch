@@ -361,7 +361,8 @@ class Scheduler(threading.Thread):
         cached_summary = cache.get(cc.DAILY_SUMMARY_SENT_DATE)
         cached_video = cache.get(cc.DAILY_TIMELAPSE_SUMMARY_SENT_DATE)
         summary_sent = (self.last_daily_summary_sent == today_key) or (cached_summary == today_key)
-        video_sent = (self.last_timelapse_summary_sent == today_key) or (cached_video == today_key)
+        video_enabled = getattr(config, 'TIMELAPSE_SUMMARY_ENABLE', False)
+        video_sent = (not video_enabled) or (self.last_timelapse_summary_sent == today_key) or (cached_video == today_key)
         if summary_sent and video_sent:
             return
         if not summary_sent:
@@ -386,7 +387,7 @@ class Scheduler(threading.Thread):
                 self.logger.info('Daily summary sent for %s', today_key)
             else:
                 self.logger.warning('Daily summary failed for %s', today_key)
-        if not video_sent:
+        if video_enabled and not video_sent:
             if self.send_timelapse_summary_clip():
                 self.last_timelapse_summary_sent = today_key
                 cache.set(cc.DAILY_TIMELAPSE_SUMMARY_SENT_DATE, today_key)
@@ -417,10 +418,15 @@ class Scheduler(threading.Thread):
         if cached_sent == target_key:
             self.last_daily_timelapse_sent = target_key
             return
-        if self._send_full_day_timelapse(target_date, settings):
+        send_result = self._send_full_day_timelapse(target_date, settings)
+        if send_result is True:
             self.last_daily_timelapse_sent = target_key
             cache.set(cc.DAILY_TIMELAPSE_SENT_DATE, target_key)
             self.logger.info('Timelapse daily push sent for %s', target_key)
+        elif send_result is None:
+            self.last_daily_timelapse_sent = target_key
+            cache.set(cc.DAILY_TIMELAPSE_SENT_DATE, target_key)
+            self.logger.info('Timelapse daily push skipped for %s - no clips found', target_key)
         else:
             self.logger.warning('Timelapse daily push failed or missing clips for %s', target_key)
 
@@ -571,6 +577,7 @@ class Scheduler(threading.Thread):
         max_attempts = config.TIMELAPSE_MAX_SEND_ATTEMPTS
         all_sent = True
         sent_any = False
+        available_any = False
         for camera in camera_names:
             token = f'{date_key}:{camera}'
             if token in sent_cameras_set:
@@ -590,9 +597,12 @@ class Scheduler(threading.Thread):
                     self.logger.info('Timelapse daily push: no hourly clips for camera %s on %s', camera, date_key)
                     all_sent = False
                     continue
+                available_any = True
                 if not self._stitch_hourly_clips(hourly_files, clip_path):
                     all_sent = False
                     continue
+            else:
+                available_any = True
             caption = f'Timelapse ({camera}) {date_key} full day'
             resp = utils.send_telegram_video(str(clip_path),
                                              caption=caption,
@@ -607,6 +617,8 @@ class Scheduler(threading.Thread):
                 all_sent = False
                 self.logger.warning('Timelapse daily push telegram send failed for camera %s on %s',
                                     camera, date_key)
+        if not available_any and not sent_any:
+            return None
         return all_sent and sent_any
 
     @staticmethod
