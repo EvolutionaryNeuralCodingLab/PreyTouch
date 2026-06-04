@@ -243,10 +243,16 @@ export default {
       return this.holesPositions[entranceHole] || this.holesPositions.left
     },
     extraTrialData: function () {
+      const bugs = Array.isArray(this.$refs.bugChild) ? this.$refs.bugChild : []
+      const bugTypes = bugs.map(bug => bug && bug.currentBugType).filter(Boolean)
+      const configuredBugTypes = this.normalizeBugTypes(this.bugsSettings.bugTypes)
+      const primaryBugType = bugTypes[0] || configuredBugTypes[0] || null
       let d = {
         entrance_hole_pos: this.entranceHolePos,
         exit_hole_pos: this.exitHolePos,
-        canvas_size: [this.canvas.width, this.canvas.height]
+        canvas_size: [this.canvas.width, this.canvas.height],
+        bug_type: primaryBugType,
+        bug_types: bugTypes.length > 0 ? bugTypes : configuredBugTypes
       }
 
       // Add bug-mapped background information

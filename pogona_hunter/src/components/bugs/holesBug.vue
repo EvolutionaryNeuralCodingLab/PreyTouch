@@ -125,7 +125,10 @@ export default {
           }
           if (this.isHoleRetreatStarted) {
             if (this.isInPlaceMovement) {
-              this.retreatToExitHole()
+              this.straightMove(0)
+              if (this.isInsideExitHoleBoundaries()) {
+                this.hideBug()
+              }
             } else {
               this.edgeDetection()
               this.straightMove(0)
