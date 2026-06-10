@@ -158,7 +158,7 @@
                     <div class="form-group row">
                         <label for="trigger-setting-fps" class="col col-form-label">FPS</label>
                         <div class="col-sm-7">
-                            <input type="number" class="form-control" id="trigger-setting-fps" required>
+                            <input type="number" class="form-control" id="trigger-setting-fps" min="1" step="0.1" required>
                         </div>
                     </div>
 
@@ -247,12 +247,20 @@
     })
 
     $("#trigger-settings-modal-save").click((event) => {
+        const form = document.getElementById("trigger-settings-form")
+        if (!form.checkValidity()) {
+            form.reportValidity()
+            return
+        }
         let data = {fps: Number($("#trigger-setting-fps").val())}
         $.ajax({
             url: `/update_trigger_fps`,
             type: "POST",
             data: JSON.stringify(data),
-            contentType: "application/json"
+            contentType: "application/json",
+            error: function (res) {
+                window.alert(res.responseText)
+            }
         })
         $('#triggerSettingsModal').modal('hide')
     })
@@ -266,4 +274,3 @@
     })
 
 </script>
-
