@@ -41,7 +41,13 @@ class AlliedVisionCamera(Camera):
             cam.ExposureAuto.set('Off')
             cam.ExposureMode.set('Timed')
             cam.ExposureTime.set(self.cam_config['exposure'])
-            cam.DeviceLinkThroughputLimit.set(4e8)
+            self.configure_image_size(cam)
+            _, max_throughput = cam.DeviceLinkThroughputLimit.get_range()
+            throughput = min(int(4e8), int(max_throughput))
+            if throughput < 4e8:
+                self.logger.warning(f'Clamping throughput to camera max {throughput}')
+            cam.DeviceLinkThroughputLimit.set(throughput)
+            self.logger.debug(f'Throughput: {cam.DeviceLinkThroughputLimit.get():.0e}')
             self.logger.debug(f'Throughput: {cam.DeviceLinkThroughputLimit.get():.0e}')
             if self.cam_config.get('reverse_y'):
                 cam.ReverseY.set('true')
@@ -50,6 +56,12 @@ class AlliedVisionCamera(Camera):
                     cam.set_pixel_format(getattr(vimba.PixelFormat, self.cam_config['pixel_format']))
                 except Exception as e:
                     self.logger.warning(f'Could not set pixel format {self.cam_config["pixel_format"]}: {e}')
+            elif self.cam_config.get('is_color'):
+                try:
+                    cam.set_pixel_format(vimba.PixelFormat.Bgr8)
+                    self.logger.debug(f'set color pixel format to: {vimba.PixelFormat.Bgr8}')
+                except Exception as e:
+                    self.logger.warning(f'Could not set color pixel format Bgr8: {e}')
             trigger_source = self.cam_config.get('trigger_source')
             fps = self.cam_config.get('fps')
             if trigger_source and fps:
@@ -85,6 +97,24 @@ class AlliedVisionCamera(Camera):
         except Exception as exc:
             self.logger.error(f"Exception while configuring camera: {exc}")
 
+    def configure_image_size(self, cam):
+        image_size = self.cam_config.get('image_size')
+        if not image_size or len(image_size) < 2:
+            return
+        height, width = [int(v) for v in image_size[:2]]
+        try:
+            if hasattr(cam, 'OffsetX'):
+                cam.OffsetX.set(0)
+            if hasattr(cam, 'OffsetY'):
+                cam.OffsetY.set(0)
+            if hasattr(cam, 'Width'):
+                cam.Width.set(width)
+            if hasattr(cam, 'Height'):
+                cam.Height.set(height)
+            self.logger.debug(f'configured image size to: {height}x{width}')
+        except Exception as exc:
+            self.logger.warning(f'Could not configure image size {height}x{width}: {exc}')
+
     def _run(self):
         try:
             system = vimba.Vimba.get_instance()
@@ -97,7 +127,8 @@ class AlliedVisionCamera(Camera):
                         self.update_time_delta(cam)
                         self.logger.debug('start streaming')
                         cache.append_to_list(cc.RECORDING_CAMERAS, self.cam_name)
-                        cam.start_streaming(self._frame_handler, buffer_count=10)
+                        buffer_count = int(self.cam_config.get('stream_buffer_count', 10))
+                        cam.start_streaming(self._frame_handler, buffer_count=buffer_count)
                         self.stop_signal.wait()
                         cache.remove_from_list(cc.RECORDING_CAMERAS, self.cam_name)
                         if self.stop_signal.is_set():
@@ -121,7 +152,11 @@ class AlliedVisionCamera(Camera):
                 try:
                     # Convert Bayer frames to BGR so downstream code stays unchanged.
                     # This saves ~3x USB bandwidth vs sending pre-decoded color.
-                    pixel_fmt = frame.get_pixel_format()
+                    try:
+                        pixel_fmt = frame.get_pixel_format()
+                    except Exception as exc:
+                        self.logger.warning(f'Could not read frame pixel format, using raw frame: {exc}')
+                        pixel_fmt = None
                     bayer_formats = {
                         vimba.PixelFormat.BayerRG8: cv2.COLOR_BayerRG2BGR,
                         vimba.PixelFormat.BayerGB8: cv2.COLOR_BayerGB2BGR,
