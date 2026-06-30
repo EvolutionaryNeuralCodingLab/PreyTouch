@@ -436,7 +436,10 @@ def set_hold_agent():
 @app.route('/update_trigger_fps', methods=['POST'])
 def update_trigger_fps():
     data = request.json
-    periphery_mgr.change_trigger_fps(data['fps'])
+    try:
+        periphery_mgr.change_trigger_fps(data['fps'])
+    except (TypeError, ValueError, ZeroDivisionError, RuntimeError) as exc:
+        return Response(str(exc), status=400)
     return Response('ok')
 
 

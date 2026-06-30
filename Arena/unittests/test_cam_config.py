@@ -19,7 +19,7 @@ class TestCamConfig:
     def test_cams(self):
         mandatory_cols = {'id': (str, int), 'module': str, 'exposure': int, 'image_size': (list, tuple), 'output_dir': (str, type(None))}
         optional_cols = {'mode': str, 'always_on': (int, bool), 'is_color': (int, bool), 'writing_fps': int, 'fps': int, 'predictors': dict,
-                         'trigger_source': str}
+                         'trigger_source': str, 'stream_buffer_count': int}
         for cam_name, d in self.cam_config.items():
             for col, types in mandatory_cols.items():
                 assert col in d, f'{cam_name} dict is missing the key "{col}"'

@@ -1,10 +1,22 @@
 import cv2
+import os
 import pandas as pd
 import time
 import config
 from arrayqueues.shared_arrays import Full
 from arena import Camera, ArenaException
 from cache import RedisCache, CacheColumns as cc
+
+# Ensure the GigE transport layer is on the path regardless of how the
+# process was launched (supervisord may only have VimbaUSBTL configured).
+_GIGETL_PATH = os.path.realpath(os.path.join(
+    os.path.dirname(__file__), '..', 'bin', 'Vimba_6_0',
+    'VimbaGigETL', 'CTI', 'x86_64bit'
+))
+_existing = os.environ.get('GENICAM_GENTL64_PATH', '')
+if _GIGETL_PATH not in _existing:
+    os.environ['GENICAM_GENTL64_PATH'] = _existing + ':' + _GIGETL_PATH
+
 import vimba
 
 cache = RedisCache()
@@ -14,35 +26,94 @@ class AlliedVisionCamera(Camera):
 
     def configure(self, cam):
         try:
+            # Stop any leftover acquisition so configuration features are writable.
+            # Also clear AcquisitionFrameRateEnable unconditionally first: on some
+            # camera models =True conditionally locks TriggerMode, and it is also
+            # not writable when other cameras are streaming on the same USB bus.
+            try:
+                cam.AcquisitionStop.execute()
+            except Exception:
+                pass
+            try:
+                cam.AcquisitionFrameRateEnable.set(False)
+            except Exception:
+                pass
             cam.ExposureAuto.set('Off')
             cam.ExposureMode.set('Timed')
             cam.ExposureTime.set(self.cam_config['exposure'])
-            cam.DeviceLinkThroughputLimit.set(4e8)
+            self.configure_image_size(cam)
+            _, max_throughput = cam.DeviceLinkThroughputLimit.get_range()
+            throughput = min(int(4e8), int(max_throughput))
+            if throughput < 4e8:
+                self.logger.warning(f'Clamping throughput to camera max {throughput}')
+            cam.DeviceLinkThroughputLimit.set(throughput)
+            self.logger.debug(f'Throughput: {cam.DeviceLinkThroughputLimit.get():.0e}')
             self.logger.debug(f'Throughput: {cam.DeviceLinkThroughputLimit.get():.0e}')
             if self.cam_config.get('reverse_y'):
                 cam.ReverseY.set('true')
             if self.cam_config.get('pixel_format'):
-                cam.set_pixel_format(getattr(vimba.PixelFormat, self.cam_config['pixel_format']))
-            if self.cam_config.get('fps') is None:
-                cam.AcquisitionFrameRateEnable.set(False)
+                try:
+                    cam.set_pixel_format(getattr(vimba.PixelFormat, self.cam_config['pixel_format']))
+                except Exception as e:
+                    self.logger.warning(f'Could not set pixel format {self.cam_config["pixel_format"]}: {e}')
+            elif self.cam_config.get('is_color'):
+                try:
+                    cam.set_pixel_format(vimba.PixelFormat.Bgr8)
+                    self.logger.debug(f'set color pixel format to: {vimba.PixelFormat.Bgr8}')
+                except Exception as e:
+                    self.logger.warning(f'Could not set color pixel format Bgr8: {e}')
+            trigger_source = self.cam_config.get('trigger_source')
+            fps = self.cam_config.get('fps')
+            if trigger_source and fps:
+                raise ArenaException('must provide either fps or trigger_source')
+
+            if trigger_source:
                 cam.TriggerMode.set('Off')
                 cam.TriggerSelector.set('FrameStart')
-                cam.LineSelector.set('Line3')
+                cam.LineSelector.set(trigger_source)
                 cam.LineMode.set('Input')
-                cam.TriggerSource.set('Line3')
+                cam.TriggerSource.set(trigger_source)
                 cam.TriggerActivation.set('RisingEdge')
                 cam.TriggerMode.set('On')
-                self.logger.debug('configured trigger source')
-            else:
+                self.logger.debug(f'configured trigger source to: {trigger_source}')
+            elif fps:
                 cam.TriggerMode.set('Off')
-                cam.AcquisitionFrameRateEnable.set(True)
-                cam.AcquisitionFrameRate.set(self.cam_config['fps'])
-                self.logger.debug(f"configured fps to: {self.cam_config['fps']}")
+                try:
+                    cam.AcquisitionFrameRateEnable.set(True)
+                except Exception:
+                    self.logger.warning('AcquisitionFrameRateEnable is read-only on this camera, skipping')
+                requested_fps = float(fps)
+                _, max_fps = cam.AcquisitionFrameRate.get_range()
+                actual_fps = min(requested_fps, max_fps)
+                if actual_fps < requested_fps:
+                    self.logger.warning(f'Requested fps {requested_fps} exceeds camera max {max_fps:.1f}, clamping to {actual_fps:.1f}')
+                cam.AcquisitionFrameRate.set(actual_fps)
+                self.logger.debug(f'configured fps to: {actual_fps:.1f}')
+            else:
+                raise ArenaException('bad configuration. must provide either trigger_source or fps in cam_config')
 
             cam.AcquisitionMode.set('Continuous')
             self.logger.debug('Finish configuration')
         except Exception as exc:
             self.logger.error(f"Exception while configuring camera: {exc}")
+
+    def configure_image_size(self, cam):
+        image_size = self.cam_config.get('image_size')
+        if not image_size or len(image_size) < 2:
+            return
+        height, width = [int(v) for v in image_size[:2]]
+        try:
+            if hasattr(cam, 'OffsetX'):
+                cam.OffsetX.set(0)
+            if hasattr(cam, 'OffsetY'):
+                cam.OffsetY.set(0)
+            if hasattr(cam, 'Width'):
+                cam.Width.set(width)
+            if hasattr(cam, 'Height'):
+                cam.Height.set(height)
+            self.logger.debug(f'configured image size to: {height}x{width}')
+        except Exception as exc:
+            self.logger.warning(f'Could not configure image size {height}x{width}: {exc}')
 
     def _run(self):
         try:
@@ -56,7 +127,8 @@ class AlliedVisionCamera(Camera):
                         self.update_time_delta(cam)
                         self.logger.debug('start streaming')
                         cache.append_to_list(cc.RECORDING_CAMERAS, self.cam_name)
-                        cam.start_streaming(self._frame_handler, buffer_count=10)
+                        buffer_count = int(self.cam_config.get('stream_buffer_count', 10))
+                        cam.start_streaming(self._frame_handler, buffer_count=buffer_count)
                         self.stop_signal.wait()
                         cache.remove_from_list(cc.RECORDING_CAMERAS, self.cam_name)
                         if self.stop_signal.is_set():
@@ -78,12 +150,28 @@ class AlliedVisionCamera(Camera):
         try:
             while True:
                 try:
-                    img = frame.as_numpy_ndarray()
+                    # Convert Bayer frames to BGR so downstream code stays unchanged.
+                    # This saves ~3x USB bandwidth vs sending pre-decoded color.
+                    try:
+                        pixel_fmt = frame.get_pixel_format()
+                    except Exception as exc:
+                        self.logger.warning(f'Could not read frame pixel format, using raw frame: {exc}')
+                        pixel_fmt = None
+                    bayer_formats = {
+                        vimba.PixelFormat.BayerRG8: cv2.COLOR_BayerRG2BGR,
+                        vimba.PixelFormat.BayerGB8: cv2.COLOR_BayerGB2BGR,
+                        vimba.PixelFormat.BayerGR8: cv2.COLOR_BayerGR2BGR,
+                        vimba.PixelFormat.BayerBG8: cv2.COLOR_BayerBG2BGR,
+                    }
+                    if pixel_fmt in bayer_formats:
+                        img = cv2.cvtColor(frame.as_numpy_ndarray(), bayer_formats[pixel_fmt])
+                    else:
+                        img = frame.as_numpy_ndarray()
                     timestamp = frame.get_timestamp() / 1e9 + self.camera_time_delta
                     if not self.is_color_cam():
                         img = img.squeeze()
                     self.frames_queue.put(img, timestamp)
-                    self.calc_fps(timestamp)
+                    self.calc_fps(time.time())
                     break
                 except Full:
                     if (time.time() - t0) > waiting_time:

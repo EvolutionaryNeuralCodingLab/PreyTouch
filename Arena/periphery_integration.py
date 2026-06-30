@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import threading
 import time
 from datetime import datetime
@@ -58,17 +59,37 @@ class PeripheryIntegrator:
         self.mqtt_publish(config.mqtt['publish_topic'], f'["get","Camera Trigger"]')
 
     def change_trigger_fps(self, new_fps):
-        new_duration = round(1000 / new_fps)
+        new_fps = float(new_fps)
+        if new_fps <= 0:
+            raise ValueError('Trigger FPS must be greater than 0')
+        new_duration = max(1, round(1000 / new_fps))
         trig_inters = self.periphery_config[config.CAM_TRIGGER_ARDUINO_NAME]['interfaces'][0]
         trig_inters['pulse_len'] = new_duration
         self.save_config_to_file()
-        next(utils.run_command('cd ../docker && docker-compose restart periphery'))
+        self.restart_periphery_service()
 
         # self.mqtt_publish('change_cam_trigger_duration', new_duration)
 
         time.sleep(5)
         self.cam_trigger(1)
-        self.logger.info(f'Published cam trigger FPS change to {new_fps}')
+        self.logger.info(f'Published cam trigger FPS change to {1000 / new_duration:.1f}')
+
+    def restart_periphery_service(self):
+        docker_dir = Path(__file__).resolve().parent.parent / 'docker'
+        commands = (
+            ['docker', 'compose', 'restart', 'periphery'],
+            ['docker-compose', 'restart', 'periphery'],
+        )
+        errors = []
+        for command in commands:
+            try:
+                subprocess.run(command, cwd=docker_dir, check=True, capture_output=True, text=True)
+                return
+            except FileNotFoundError as exc:
+                errors.append(str(exc))
+            except subprocess.CalledProcessError as exc:
+                errors.append((exc.stderr or exc.stdout or str(exc)).strip())
+        raise RuntimeError(f'Failed to restart periphery service: {"; ".join(errors)}')
 
     def feed(self, is_manual=False):
         if self.cache.get(cc.IS_REWARD_TIMEOUT):
@@ -338,4 +359,3 @@ if __name__ == "__main__":
     # while True:
     #     listener.loop()
     #     time.sleep(0.1)
-

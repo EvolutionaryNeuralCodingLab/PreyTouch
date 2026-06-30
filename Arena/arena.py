@@ -88,7 +88,9 @@ class ArenaProcess(mp.Process):
         fps = 0.0
         self.timestamps_stack.append(timestamp)
         if len(self.timestamps_stack) > config.COUNT_TIMESTAMPS_FOR_FPS_CALC:
-            fps = 1 / np.diff(self.timestamps_stack).mean()
+            mean_diff = np.diff(self.timestamps_stack).mean()
+            if mean_diff > 0:
+                fps = min(1 / mean_diff, 1000.0)  # cap at 1000 fps to filter out timestamp glitches
             self.timestamps_stack.pop(0)
 
         self.mp_metadata[self.calc_fps_name].value = fps
