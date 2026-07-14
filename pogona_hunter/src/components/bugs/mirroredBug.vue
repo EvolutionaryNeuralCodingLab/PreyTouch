@@ -102,6 +102,9 @@ export default {
         return [midPointCircle, this.canvas.height / 2 - 55]
       }
       return [this.segmentCenterX, this.canvas.height / 2 - 55]
+    },
+    circleTheta() {
+      return (this.isRightExit ? Math.PI / 5 : (2 * Math.PI) / 3) + (this.bugId * 0.6)
     }
   },
   methods: {
