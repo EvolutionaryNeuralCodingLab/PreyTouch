@@ -354,11 +354,12 @@ class ORM:
             s.commit()
 
     @commit_func
-    def commit_temperature(self, temps):
+    def commit_temperature(self, temps, timestamp=None):
         self.cache.set(cc.TEMPERATURE, json.dumps(temps))
+        ts = timestamp or datetime.now()
         with self.session() as s:
             for sensor_name, temp in temps.items():
-                t = Temperature(time=datetime.now(), value=temp, block_id=self.cache.get(cc.CURRENT_BLOCK_DB_INDEX),
+                t = Temperature(time=ts, value=temp, block_id=self.cache.get(cc.CURRENT_BLOCK_DB_INDEX),
                                 arena=config.ARENA_NAME, sensor=sensor_name)
                 s.add(t)
             s.commit()

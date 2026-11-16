@@ -40,6 +40,11 @@
     <div class="row mb-2">
         <button id="reward" type="button" class="btn btn-sm btn-primary mx-auto">Reward</button>
     </div>
+    {% if is_sound_stim %}
+    <div class="row mb-2">
+        <button id="sound" type="button" class="btn btn-sm btn-primary mx-auto">Sound</button>
+    </div>
+    {% endif %}
     <div class="row mb-2">
         <button data-toggle="modal" data-target="#calibrationsModal" class="btn btn-sm btn-primary mx-auto">Calibration</button>
     </div>
@@ -191,6 +196,11 @@
     $("#reward").click(function (e) {
         $.get('/reward', function (data) {
             console.log('>> Reward sent manually')
+        })
+    })
+    $("#sound").click(function (e) {
+        $.get('/sound', function (data) {
+            console.log('>> Sound played manually')
         })
     })
 

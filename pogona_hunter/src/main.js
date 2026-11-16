@@ -11,6 +11,19 @@ import {webSocket} from './js/websocket'
 import mediaBoard from "./components/boards/mediaBoard.vue"
 // import VueMqtt from 'vue-mqtt'
 
+const resetViewportPosition = () => {
+  window.scrollTo(0, 0)
+  document.documentElement.scrollTop = 0
+  document.body.scrollTop = 0
+}
+
+if ('scrollRestoration' in window.history) {
+  window.history.scrollRestoration = 'manual'
+}
+
+window.addEventListener('load', resetViewportPosition)
+window.addEventListener('resize', resetViewportPosition)
+
 Vue.use(VueRouter)
 const PageNotFound = { template: '<h1>Page not found</h1>' }
 const routes = [
@@ -22,6 +35,10 @@ const routes = [
 const router = new VueRouter({
   mode: process.env.ROUTER_MODE,
   routes
+})
+
+router.afterEach(() => {
+  resetViewportPosition()
 })
 
 Vue.config.productionTip = false

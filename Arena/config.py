@@ -150,6 +150,7 @@ mqtt = {
 }
 IR_LIGHT_NAME = env('IR_LIGHT_NAME', '', group='Periphery', desc='Name of infrared light in periphery config')
 DAY_LIGHT_NAME = env('DAY_LIGHT_NAME', '', group='Periphery', desc='Name of LED lights in periphery config')
+HEAT_LAMP_NAME = env('HEATLAMP_NAME', '', group='Periphery', desc='Name of heat lamp in periphery config')
 CAM_TRIGGER_ARDUINO_NAME = env('CAM_TRIGGER_ARDUINO_NAME', 'camera trigger', group='Periphery', desc='name of the camera trigger arduino in the periphery config')
 ARENA_ARDUINO_NAME = env('ARENA_ARDUINO_NAME', 'arena', group='Periphery', desc='name of the arena arduino in the periphery config')
 PERIPHERY_HEALTHCHECK = {
@@ -159,6 +160,7 @@ PERIPHERY_HEALTHCHECK = {
     'MAX_ACTION_DELAY':  env.int(  'PERIPHERY_HEALTHCHECK_ACTION_DELAY',3600,   group='Periphery', desc='Minimum seconds between supervisor-restarts'),
 }
 FEEDER_AUDIO_PATH = env('FEEDER_AUDIO_PATH', None, group='Periphery', desc='If path is given, audio will be played when the feeder is triggered')
+SOUND_AUDIO_PATH = env('SOUND_AUDIO_PATH', None, group='Periphery', desc='If path is given, audio will be played when the sound command is triggered')
 
 # Calibration
 MIN_CALIBRATION_IMAGES = env.int('MIN_CALIBRATION_IMAGES', 7, group='Calibration', desc='Nuber of minimum calibration images per camera')
@@ -182,6 +184,9 @@ TRACKING_POSE_ON_TIME = env('TRACKING_POSE_ON_TIME', '05:30', group='Scheduler',
 TRACKING_POSE_OFF_TIME = env('TRACKING_POSE_OFF_TIME', '07:00', group='Scheduler', desc='Time to stop nighly pose analysis on the day after on tracking videos by the scheduler', validator='hour_validator')
 LIGHTS_SUNRISE = env('LIGHTS_SUNRISE', '07:00', group='Scheduler', desc='Time to turn on LED lights by the scheduler', validator='hour_validator')
 LIGHTS_SUNSET = env('LIGHTS_SUNSET', '19:00', group='Scheduler', desc='Time to turn off LED lights by the scheduler', validator='hour_validator')
+HEATLAMP_SUNRISE = env('HEATLAMP_SUNRISE', '07:00', group='Scheduler', desc='Time to turn on heat lamp by the scheduler', validator='hour_validator')
+HEATLAMP_SUNSET = env('HEATLAMP_SUNSET', '19:00', group='Scheduler', desc='Time to turn off heat lamp by the scheduler', validator='hour_validator')
+
 DWH_COMMIT_TIME = env('DWH_COMMIT_TIME', '07:00', group='Scheduler', desc='Time of the day to run the commit to data warehouse', validator='hour_validator')
 STRIKE_ANALYSIS_TIME = env('STRIKE_ANALYSIS_TIME', '06:30', group='Scheduler', desc='Time of the day to run the strike analysis', validator='hour_validator')
 DAILY_SUMMARY_TIME = env('DAILY_SUMMARY_TIME', '20:00', group='Scheduler', desc='Time of the day to send the daily summary in telegram', validator='hour_validator')
