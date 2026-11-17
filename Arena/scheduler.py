@@ -31,6 +31,8 @@ TIME_TABLE = {
     'tracking_pose': (config.TRACKING_POSE_ON_TIME, config.TRACKING_POSE_OFF_TIME),
     'lights_sunrise': config.LIGHTS_SUNRISE,
     'lights_sunset': config.LIGHTS_SUNSET,
+    'heatlamp_sunrise': config.HEATLAMP_SUNRISE,
+    'heatlamp_sunset': config.HEATLAMP_SUNSET,
     'dwh_commit_time': config.DWH_COMMIT_TIME,
     'strike_analysis_time': config.STRIKE_ANALYSIS_TIME,
     'daily_summary': config.DAILY_SUMMARY_TIME,
@@ -87,6 +89,7 @@ class Scheduler(threading.Thread):
                 t0 = time.time()
                 self.current_animal_id = cache.get(cc.CURRENT_ANIMAL_ID)
                 self.check_lights()
+                self.check_heatlamp()
                 self.check_camera_status()
                 self.set_tracking_cameras()
                 self.check_scheduled_experiments()
@@ -117,6 +120,16 @@ class Scheduler(threading.Thread):
         elif self.is_in_range('lights_sunset'):
             self.turn_light(config.IR_LIGHT_NAME, 1)
             self.turn_light(config.DAY_LIGHT_NAME, 0)
+    
+    @schedule_method
+    def check_heatlamp(self):
+        if not getattr(config, "HEATLAMP_SUNRISE", None):
+            return
+        """Check that during the day heat lamp is on and off during the night"""
+        if self.is_in_range('heatlamp_sunrise'):
+            self.turn_light(config.HEAT_LAMP_NAME, 1)
+        elif self.is_in_range('heatlamp_sunset'):
+            self.turn_light(config.HEAT_LAMP_NAME, 0)
 
     def turn_light(self, name, state):
         if not name:

@@ -355,11 +355,55 @@ class TemperatureLogger(Subscriber):
         self.logger.debug('read_temp started')
         listener.loop()
 
+
     def commit_to_db(self, payload):
+        if not isinstance(payload, dict) or not payload:
+            return
         try:
-            self.orm.commit_temperature(payload)
-        except:
+            ts = datetime.now()
+            self.orm.commit_temperature(payload, timestamp=ts)
+            self.save_to_csv(payload, timestamp=ts)
+        except Exception:
             self.logger.exception('Error committing temperature to DB')
+
+    def save_to_csv(self, payload, timestamp):
+        block_path = self.cache.get(cc.EXPERIMENT_BLOCK_PATH)
+        if not block_path:
+            return
+        out_path = Path(block_path) / 'temperature.csv'
+        try:
+            row = {'time': timestamp.isoformat()}
+            row.update(payload)
+            columns = ['time'] + sorted(payload.keys())
+            if out_path.exists():
+                try:
+                    existing_cols = list(pd.read_csv(out_path, nrows=0, index_col=0).columns)
+                except Exception:
+                    existing_cols = []
+
+                if existing_cols:
+                    new_cols = [c for c in columns if c not in existing_cols]
+                    if new_cols:
+                        df_old = pd.read_csv(out_path, index_col=0)
+                        for c in new_cols:
+                            df_old[c] = None
+                        df_old = df_old.reindex(columns=existing_cols + new_cols)
+                        df_old.to_csv(out_path)
+                        existing_cols = existing_cols + new_cols
+
+                    df = pd.DataFrame([{c: row.get(c, None) for c in existing_cols}], columns=existing_cols)
+                    df.to_csv(out_path, mode='a', header=False)
+                else:
+                    df = pd.DataFrame([row], columns=columns)
+                    df.to_csv(out_path)
+                    self.logger.debug(f'Creating temperature log: {out_path}')
+            else:
+                df = pd.DataFrame([row], columns=columns)
+                df.to_csv(out_path)
+                self.logger.debug(f'Creating temperature log: {out_path}')
+        except Exception as exc:
+            self.logger.exception(f'ERROR saving temperature to csv; {exc}')
+
 
 
 class AppHealthCheck(Subscriber):

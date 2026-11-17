@@ -126,6 +126,14 @@ class PeripheryIntegrator:
             self.logger.error(f"Cannot play sound: {wav_path} not found.")
             return
         self.play_wav_file(wav_path)
+        
+            
+    def sound(self, wav_path = config.SOUND_AUDIO_PATH):
+        """Plays sound """
+        if not Path(wav_path).exists():
+            self.logger.error(f"Cannot play sound: {wav_path} not found.")
+            return
+        self.play_wav_file(wav_path)
 
     def play_wav_file(self, wav_path):
         self.logger.info(f'Playing sound for {wav_path}')

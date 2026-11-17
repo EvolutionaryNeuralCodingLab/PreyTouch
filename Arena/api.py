@@ -102,7 +102,7 @@ def index():
                            blank_rec_types=config.blank_rec_types, config_envs=config_envs, predictors=predictors,
                            max_blocks=config.api_max_blocks_to_show, toggels=toggels, psycho_files=utils.get_psycho_files(),
                            extra_time_recording=config.EXTRA_TIME_RECORDING, feeders=feeders, configurations=confs,
-                           is_light_stim=config.LIGHT_STIM_SERIAL is not None, is_cam_trigger=is_cam_trigger,
+                           is_light_stim=config.LIGHT_STIM_SERIAL is not None, is_sound_stim=config.SOUND_AUDIO_PATH is not None, is_cam_trigger=is_cam_trigger,
                            summary_animal_ids=summary_animal_ids, is_log_file=Path(config.LOGGER_FILEPATH).exists(),
                            tunnel_assets=list_tunnel_assets(),
                            acquire_stop={'num_frames': 'Num Frames', 'rec_time': 'Record Time [sec]'})
@@ -567,6 +567,12 @@ def run_predictions():
     except ImportError as exc:
         return Response(f'Error in prediction; {exc}', status=500)
 
+@app.route('/sound')
+def sound():
+    """Play Sound"""
+    # cache.publish_command('sound')
+    periphery_mgr.sound()
+    return Response('ok')
 
 @app.route('/reward')
 def reward():
