@@ -5,25 +5,41 @@ import Vue from 'vue'
 import VueRouter from 'vue-router'
 import App from './App'
 import tunnelBoard from './components/boards/tunnelBoard.vue'
-import pbTunnelBoard from './components/boards/pbTunnelBoard.vue'
 import holesBoard from './components/boards/holesBoard.vue'
 import store from './store'
 import {webSocket} from './js/websocket'
 import mediaBoard from "./components/boards/mediaBoard.vue"
 // import VueMqtt from 'vue-mqtt'
 
+const resetViewportPosition = () => {
+  window.scrollTo(0, 0)
+  document.documentElement.scrollTop = 0
+  document.body.scrollTop = 0
+}
+
+if ('scrollRestoration' in window.history) {
+  window.history.scrollRestoration = 'manual'
+}
+
+window.addEventListener('load', resetViewportPosition)
+window.addEventListener('resize', resetViewportPosition)
+
+
 Vue.use(VueRouter)
 const PageNotFound = { template: '<h1>Page not found</h1>' }
 const routes = [
     { path: '/', component: PageNotFound },
     { path: '/tunnel', component: tunnelBoard},
-    { path: '/pbtunnel', component: pbTunnelBoard},
     { path: '/holes', component: holesBoard},
     { path: '/media', component: mediaBoard}
 ]
 const router = new VueRouter({
   mode: process.env.ROUTER_MODE,
   routes
+})
+
+router.afterEach(() => {
+  resetViewportPosition()
 })
 
 Vue.config.productionTip = false
