@@ -267,6 +267,8 @@ LIGHT_STIM_BAUD = env('LIGHT_STIM_BAUD', 115200, group='LightSTIM', desc='lightS
 
 # Timelapse
 TIMELAPSE_ENABLE = env.bool('TIMELAPSE_ENABLE', True, group='Timelapse', desc='Enable the timelapse capture pipeline')
+TIMELAPSE_CAPTURE_WATCHDOG_ENABLE = env.bool('TIMELAPSE_CAPTURE_WATCHDOG_ENABLE', False, group='Timelapse',
+                                             desc='Restart timelapse capture loop if heartbeat stalls')
 TIMELAPSE_CAMERA_NAMES = env.list('TIMELAPSE_CAMERA_NAMES', ['top', 'back'], group='Timelapse', desc='List of camera names for timelapse captures')
 TIMELAPSE_BASE_DIR = env('TIMELAPSE_BASE_DIR', f'{OUTPUT_DIR}/timelapse', group='Timelapse', desc='Base directory for timelapse artifacts', is_map=False)
 TIMELAPSE_CAPTURES_DIR = env('TIMELAPSE_CAPTURES_DIR', '', group='Timelapse', desc='Override for directory that stores raw timelapse frames', is_map=False)
@@ -283,8 +285,7 @@ TIMELAPSE_OVERLAY_TIMESTAMP = env.bool('TIMELAPSE_OVERLAY_TIMESTAMP', True, grou
 TIMELAPSE_SEND_TIMEOUT = env.int('TIMELAPSE_SEND_TIMEOUT', 30, group='Timelapse', desc='Timeout (seconds) for timelapse telegram sends')
 TIMELAPSE_FFMPEG_TIMEOUT = env.int('TIMELAPSE_FFMPEG_TIMEOUT', 120, group='Timelapse', desc='Timeout (seconds) for timelapse ffmpeg steps')
 TIMELAPSE_MAX_SEND_ATTEMPTS = env.int('TIMELAPSE_MAX_SEND_ATTEMPTS', 1, group='Timelapse', desc='Max timelapse send attempts per camera per day')
-TIMELAPSE_CAPTURE_WATCHDOG_ENABLE = env.bool('TIMELAPSE_CAPTURE_WATCHDOG_ENABLE', True, group='Timelapse',
-                                             desc='Restart timelapse capture loop if heartbeat stalls')
+
 TIMELAPSE_CAPTURE_STALE_SECONDS = env.int('TIMELAPSE_CAPTURE_STALE_SECONDS', 300, group='Timelapse',
                                           desc='Seconds without timelapse heartbeat before restart')
 TIMELAPSE_CAPTURE_WATCHDOG_COOLDOWN = env.int('TIMELAPSE_CAPTURE_WATCHDOG_COOLDOWN', 600, group='Timelapse',
