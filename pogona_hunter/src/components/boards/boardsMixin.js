@@ -204,9 +204,9 @@ export default {
         this.animationHandler = requestAnimationFrame(this.animate)
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
         this.$refs.bugChild.forEach(bug => bug.move(this.$refs.bugChild))
-        if (typeof this.onBoardAnimationFrame === 'function') {
-          this.onBoardAnimationFrame()
-        }
+        // if (typeof this.onBoardAnimationFrame === 'function') {
+        //   this.onBoardAnimationFrame()
+        // }
       } catch (e) {
         console.log(e)
         cancelAnimationFrame(this.animationHandler)
@@ -343,12 +343,12 @@ export default {
         bug_trajectory: this.bugTrajectoryLog,
         app_events: this.eventsLog
       }
-      if (typeof this.collectBoardMetrics === 'function') {
-        const boardMetrics = this.collectBoardMetrics()
-        if (boardMetrics && typeof boardMetrics === 'object') {
-          Object.assign(payload, boardMetrics)
-        }
-      }
+      // if (typeof this.collectBoardMetrics === 'function') {
+      //   const boardMetrics = this.collectBoardMetrics()
+      //   if (boardMetrics && typeof boardMetrics === 'object') {
+      //     Object.assign(payload, boardMetrics)
+      //   }
+      // }
       this.trialData = Object.assign(this.trialData, payload)
       this.$socketClient.set('IS_VISUAL_APP_ON', 0)
       this.$socketClient.publish('log/metric/trial_data', JSON.stringify(this.trialData))
@@ -517,26 +517,28 @@ export default {
       // Clear the canvas first
       ctx.clearRect(0, 0, canvasWidth, canvasHeight)
 
-      const bugTypes = Array.isArray(this.bugsSettings.bugTypes)
-        ? this.bugsSettings.bugTypes
-        : (this.bugsSettings.bugTypes ? [this.bugsSettings.bugTypes] : [])
-      if (!this.bugsSettings.bugMappedBackground || bugTypes.length === 0) {
+      if (!this.bugsSettings.bugMappedBackground || !this.bugsSettings.bugTypes || this.bugsSettings.bugTypes.length < 2) {
         // Fallback to solid background
         ctx.fillStyle = this.getCurrentBackgroundColor()
         ctx.fillRect(0, 0, canvasWidth, canvasHeight)
         return
       }
-      const configuredCount = Number(this.bugsSettings && this.bugsSettings.numOfBugs)
-      const segmentsCount = Number.isFinite(configuredCount) && configuredCount > 0
-        ? configuredCount
-        : bugTypes.length
-      const segmentWidth = canvasWidth / (segmentsCount || 1)
 
-      for (let i = 0; i < segmentsCount; i++) {
-        const bugType = bugTypes[i] || bugTypes[i % bugTypes.length] || bugTypes[0]
-        ctx.fillStyle = this.getBugMappedBackgroundColor(bugType)
-        ctx.fillRect(i * segmentWidth, 0, segmentWidth, canvasHeight)
-      }
+      // Get colors for each bug type
+      const leftBugType = this.bugsSettings.bugTypes[0]
+      const rightBugType = this.bugsSettings.bugTypes[1]
+
+      // Get individual colors for each bug type
+      const leftColor = this.getBugMappedBackgroundColor(leftBugType)
+      const rightColor = this.getBugMappedBackgroundColor(rightBugType)
+
+      // Draw left half
+      ctx.fillStyle = leftColor
+      ctx.fillRect(0, 0, canvasWidth / 2, canvasHeight)
+
+      // Draw right half
+      ctx.fillStyle = rightColor
+      ctx.fillRect(canvasWidth / 2, 0, canvasWidth / 2, canvasHeight)
     },
     drawSolidBackground(currentBugType) {
       // Draw solid background for single bug or regular view

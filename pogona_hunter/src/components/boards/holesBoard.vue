@@ -215,27 +215,24 @@ export default {
       let exitHole = this.normalizeHoleSide(this.bugsSettings.exitHole, 'right')
       if (this.isSplitBugsView) {
         const exit = this.mirrorBugsProps[bugId]
-        if (!exit) {
+        if (!exit || !exit['exitHole']) {
           console.error('No exit found for bugId', bugId, this.mirrorBugsProps)
+          return this.holesPositions[exitHole]
         }
-        exitHole = this.normalizeHoleSide(exit ? exit['exitHole'] : exitHole, exitHole)
-        const positions = this.getHolePositionsForSegment(bugId)
-        return positions[exitHole] || positions.left
+        exitHole = exit['exitHole']
       }
 
-      return this.holesPositions[exitHole] || this.holesPositions.right
+      return this.holesPositions[exitHole]
     },
     entranceHolePos: function (bugId) {
       if (this.isSplitBugsView) {
-        const entrance = this.mirrorBugsProps[bugId]
-          ? this.mirrorBugsProps[bugId]['entranceHole']
-          : null
-        const fallbackEntrance = this.normalizeHoleSide(this.bugsSettings.exitHole, 'right') === 'left'
-          ? 'right'
-          : 'left'
-        const entranceHole = this.normalizeHoleSide(entrance, fallbackEntrance)
-        const positions = this.getHolePositionsForSegment(bugId)
-        return positions[entranceHole] || positions.left
+        const entry = this.mirrorBugsProps[bugId]
+        if (!entry || !entry['entranceHole']) {
+          console.error('No entrance found for bugId', bugId, this.mirrorBugsProps)
+          const fallback = this.bugsSettings.exitHole === 'left' ? 'right' : 'left'
+          return this.holesPositions[fallback]
+        }
+        return this.holesPositions[entry['entranceHole']]
       }
       const entranceHole = this.normalizeHoleSide(this.bugsSettings.exitHole, 'right') === 'left'
         ? 'right'
