@@ -65,6 +65,7 @@ experiment_metrics = {
         'is_write_csv': True,
         'is_write_db': True,
         'csv_file': {'bug_trajectory': 'bug_trajectory.csv',
+                     'bug_trajectory_animation': 'bug_trajectory_animation.csv',
                      'tunnel_transparency': 'tunnel_transparency.csv',
                      'video_frames': 'video_frames.csv',
                      'app_events': 'app_events.csv',
@@ -216,10 +217,15 @@ CACHED_EXPERIMENTS_DIR = env('CACHED_EXPERIMENTS_DIR', 'cached_experiments', gro
 TRIAL_IMAGE_CAMERA = env('TRIAL_IMAGE_CAMERA', None, group='Experiments', desc='Camera used for trial images generation')
 experiment_types = {
     'bugs': ['bug_types', 'reward_bugs', 'bug_speed', 'movement_type', 'exit_hole'],
+    'custom bugs': ['trial_trajectories', 'bug_fps', 'trajectory_mode'],
     'media': ['media_url'],
     'blank': ['blank_rec_type'],
     'psycho': ['psycho_file']
 }
+CUSTOM_BUGS_CSV_COLUMNS = [
+    'x', 'y', 'angle', 'size', 'img-src',
+    'strike-ability', 'is-reward',
+]
 blank_rec_types = [
     'trials',
     'continuous'

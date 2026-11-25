@@ -1,0 +1,383 @@
+<template>
+  <div class="board-canvas-wrapper" oncontextmenu="return false;" v-on:mousedown="analyzeScreenTouch">
+    <div id="bugs-board">
+      <audio ref="audio1">
+        <source src="../../assets/sounds/2.mp3" type="audio/mpeg">
+      </audio>
+      <canvas id="backgroundCanvas" v-bind:style="{background: bugsSettings.backgroundColor}"
+              v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"></canvas>
+      <canvas id="bugCanvas" v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"
+              v-on:mousedown="setCanvasClick($event)">
+        <component
+          :is="bugComponent"
+          v-for="(value, index) in renderBugSlots"
+          :key="value.slotKey || value.bugId || index"
+          :bug-id="value.slotIndex !== undefined ? value.slotIndex : index"
+          :bugsSettings="bugsSettings"
+          :trajectory="isCustomBugs ? trajectories[index] : undefined"
+          :exit-hole-pos="exitHolePos(index)"
+          :entrance-hole-pos="entranceHolePos(index)"
+          :segment-index="index"
+          :segment-count="segmentsCount"
+          :segment-bounds-override="getSegmentBounds(index)"
+          ref="bugChild"
+          v-on:bugRetreated="endTrial"
+          v-on:trajectorySample="recordCustomTrajectory"
+        />
+      </canvas>
+    </div>
+  </div>
+</template>
+<script>
+import holesBug from '../bugs/holesBug.vue'
+import mirroredBug from '../bugs/mirroredBug.vue'
+import customBug from '../bugs/customBug.vue'
+import boardsMixin from './boardsMixin'
+
+export default {
+  name: 'holesBoard',
+  mixins: [boardsMixin],
+  components: {holesBug, mirroredBug, customBug},
+
+  data() {
+    return {
+      bugsSettings: { // extends the mixin's bugSettings
+        holeSize: [200, 200],
+        exitHole: 'right',
+        entranceHole: null,
+        holesHeightScale: 0.1,
+        circleHeightScale: 0.5,
+        circleRadiusScale: 0.2
+      },
+      xpad: 100 // padding for holes
+    }
+  },
+
+  computed: {
+
+    normalizedBugTypes: function () {
+      const value = this.bugsSettings && this.bugsSettings.bugTypes
+      if (Array.isArray(value)) {
+        return value.map(v => String(v).trim()).filter(Boolean)
+      }
+      if (typeof value === 'string') {
+        return value.split(',').map(v => v.trim()).filter(Boolean)
+      }
+      if (value === null || value === undefined) {
+        return []
+      }
+      return [String(value).trim()].filter(Boolean)
+    },
+
+    splitBugsCount: function () {
+      const configuredCount = Number(this.bugsSettings && this.bugsSettings.numOfBugs)
+      const configured = Number.isFinite(configuredCount) && configuredCount > 0 ? configuredCount : 0
+      const bugTypesCount = this.normalizedBugTypes.length
+      const count = Math.max(configured, bugTypesCount)
+      return count > 0 ? count : 1
+    },
+
+    isSplitRequested: function () {
+      const splitValue = this.bugsSettings && this.bugsSettings.isSplitBugsView
+      if (typeof splitValue === 'string') {
+        const normalizedValue = splitValue.trim().toLowerCase()
+        return normalizedValue === 'true' || normalizedValue === '1'
+      }
+      return splitValue === true || splitValue === 1
+    },
+
+    isSplitBugsView: function () {
+      if (this.isCustomBugs) {
+        return false
+      }
+      const configuredCount = Number(this.bugsSettings.numOfBugs)
+      return this.isSplitRequested &&
+      Number.isFinite(configuredCount) &&
+      configuredCount > 1
+    },
+
+    bugComponent: function () {
+      if (this.isCustomBugs) {
+        return 'customBug'
+      }
+      if (this.isSplitBugsView) {
+        return 'mirroredBug'
+      }
+      return 'holesBug'
+    },
+
+    renderBugSlots: function () {
+      if (!this.isSplitBugsView) {
+        return this.bugsProps
+      }
+      return Array.from({length: this.segmentsCount}, (_, slotIndex) => ({
+        slotIndex,
+        slotKey: `mirror-slot-${slotIndex}`
+      }))
+    },
+
+    segmentsCount: function () {
+      if (this.isSplitBugsView) {
+        return this.splitBugsCount
+      }
+      const configuredCount = Number(this.bugsSettings && this.bugsSettings.numOfBugs)
+      const fallbackCount = Array.isArray(this.bugsSettings.bugTypes)
+        ? this.bugsSettings.bugTypes.length
+        : 0
+      const count = Number.isFinite(configuredCount) && configuredCount > 0 ? configuredCount : fallbackCount
+      return count > 0 ? count : 1
+    },
+
+    segmentWidth: function () {
+      const width = this.canvasParams ? this.canvasParams.width : 0
+      return this.segmentsCount > 0 ? width / this.segmentsCount : width
+    },
+
+    holesPositions: function () {
+      let [canvasW, canvasH] = [this.canvasParams.width, this.canvasParams.height]
+      let [holeW, holeH] = this.bugsSettings.holeSize
+      let configuredHolesHeight = (canvasH - holeH / 2) * this.bugsSettings.holesHeightScale
+      return {
+        left: [this.xpad, canvasH - holeH - configuredHolesHeight],
+        right: [canvasW - holeW - this.xpad, canvasH - holeH - configuredHolesHeight]
+      }
+    },
+
+    mirrorBugsProps() {
+      const totalBugs = this.segmentsCount
+      let bugTypes = Array.isArray(this.bugsSettings.bugTypes) ? [...this.bugsSettings.bugTypes] : []
+      if (bugTypes.length === 0 && this.bugsSettings.bugTypes) {
+        bugTypes = [this.bugsSettings.bugTypes]
+      }
+      if (bugTypes.length === 0) {
+        bugTypes = ['']
+      }
+      if (bugTypes.length === 1) {
+        bugTypes = Array(totalBugs).fill(bugTypes[0])
+      } else if (bugTypes.length < totalBugs) {
+        bugTypes = Array.from({length: totalBugs}, (_, i) => bugTypes[i % bugTypes.length])
+      } else if (bugTypes.length > totalBugs) {
+        bugTypes = bugTypes.slice(0, totalBugs)
+      }
+      if (this.bugsSettings.exitHole === 'right') {
+        bugTypes = [...bugTypes].reverse()
+      }
+      console.log('Mirror bug types', bugTypes, totalBugs > 1)
+      const sides = bugTypes.map((bug, i) => ({
+        entranceHole: i % 2 === 0 ? 'left' : 'right',
+        exitHole: i % 2 === 0 ? 'left' : 'right',
+        bugId: `${bug}_${i}`
+      }))
+      console.log('mirrorBugsProps', sides)
+      return sides
+    }
+  },
+
+  methods: {
+
+    async prepareBoardBugs(bugs) {
+      if (this.isCustomBugs) {
+        await Promise.all(bugs.map(bug => bug.prepare(this.ctx)))
+      }
+    },
+
+    startBoardBugs(bugs) {
+      if (this.isCustomBugs) {
+        bugs.forEach(bug => bug.startPlayback())
+      }
+    },
+
+    releaseBoardBugs(bugs) {
+      bugs.forEach(bug => {
+        if (typeof bug.stopPlayback === 'function') {
+          bug.stopPlayback() // Also release old custom bugs when switching experiment types.
+        }
+      })
+    },
+
+    getBugRewardStatus(bug) {
+      return this.isCustomBugs
+        ? bug.isRewardBug
+        : boardsMixin.methods.getBugRewardStatus.call(this, bug)
+    },
+
+    getRewardAnyTouch() {
+      return this.isCustomBugs
+        ? false
+        : boardsMixin.methods.getRewardAnyTouch.call(this)
+    },
+
+    filterTouchCandidates(strikeDistances) {
+      if (!this.isCustomBugs) {
+        return boardsMixin.methods.filterTouchCandidates.call(this, strikeDistances)
+      }
+      const hits = {}
+      Object.keys(strikeDistances).forEach(key => {
+        if (strikeDistances[key][1]) {
+          hits[key] = strikeDistances[key]
+        }
+      })
+      return Object.keys(hits).length > 0 ? hits : strikeDistances // Prefer valid overlapping hits; otherwise retain the nearest miss.
+    },
+
+    normalizeHoleSide(value, fallback = 'right') {
+      if (typeof value !== 'string') {
+        return fallback
+      }
+      const normalized = value.trim().toLowerCase()
+      if (normalized.includes('left')) {
+        return 'left'
+      }
+      if (normalized.includes('right')) {
+        return 'right'
+      }
+      return fallback
+    },
+
+    getSegmentBounds(bugId) {
+      const width = this.segmentWidth || (this.canvasParams ? this.canvasParams.width : 0)
+      const left = width * bugId
+      return {left, right: left + width, width}
+    },
+
+    getSegmentPad(segmentWidth, holeW) {
+      const maxPad = Math.max(0, (segmentWidth - holeW) / 2)
+      return Math.min(this.xpad, maxPad)
+    },
+
+    getHolePositionsForSegment(bugId) {
+      const canvasH = this.canvasParams.height
+      const [holeW, holeH] = this.bugsSettings.holeSize
+      const configuredHolesHeight = (canvasH - holeH / 2) * this.bugsSettings.holesHeightScale
+      const bounds = this.getSegmentBounds(bugId)
+      const pad = this.getSegmentPad(bounds.width, holeW)
+      return {
+        left: [bounds.left + pad, canvasH - holeH - configuredHolesHeight],
+        right: [bounds.right - holeW - pad, canvasH - holeH - configuredHolesHeight]
+      }
+    },
+
+    initDrawing() {
+      if (this.isSplitBugsView && this.bugsSettings.bugMappedBackground) {
+        this.drawSplitBackground()
+      } else if (this.$refs.bugChild && this.$refs.bugChild.length > 0) {
+        const currentBugType = this.$refs.bugChild[0].currentBugType
+        this.drawSolidBackground(currentBugType)
+      } else {
+        this.drawSolidBackground(this.bugsSettings.bugTypes[0] || null)
+      }
+      let image = new Image()
+      let canvas = document.getElementById('backgroundCanvas')
+      let ctx = canvas.getContext('2d')
+      let [holeW, holeH] = this.bugsSettings.holeSize
+      image.src = require('@/assets/hole2.png')
+      image.onload = () => {
+        Object.values(this.holesPositions).forEach(pos => {
+          ctx.drawImage(image, pos[0], pos[1], holeW, holeH)
+          console.log('Drawing holes', pos[0], pos[1], holeW, holeH)
+        })
+      }
+    },
+
+    exitHolePos: function (bugId) {
+      let exitHole = this.normalizeHoleSide(this.bugsSettings.exitHole, 'right')
+      if (this.isSplitBugsView) {
+        const exit = this.mirrorBugsProps[bugId]
+        if (!exit || !exit['exitHole']) {
+          console.error('No exit found for bugId', bugId, this.mirrorBugsProps)
+          return this.holesPositions[exitHole]
+        }
+        exitHole = exit['exitHole']
+      }
+      return this.holesPositions[exitHole]
+    },
+
+    entranceHolePos: function (bugId) {
+      if (this.isSplitBugsView) {
+        const entry = this.mirrorBugsProps[bugId]
+        if (!entry || !entry['entranceHole']) {
+          console.error('No entrance found for bugId', bugId, this.mirrorBugsProps)
+          const fallback = this.bugsSettings.exitHole === 'left' ? 'right' : 'left'
+          return this.holesPositions[fallback]
+        }
+        return this.holesPositions[entry['entranceHole']]
+      }
+      const entranceHole = this.normalizeHoleSide(this.bugsSettings.exitHole, 'right') === 'left'
+        ? 'right'
+        : 'left'
+      return this.holesPositions[entranceHole] || this.holesPositions.left
+    },
+
+    extraTrialData: function () {
+      const bugs = Array.isArray(this.$refs.bugChild) ? this.$refs.bugChild : []
+      const bugTypes = bugs.map(bug => bug && bug.currentBugType).filter(Boolean)
+      const configuredBugTypes = this.normalizeBugTypes(this.bugsSettings.bugTypes)
+      const primaryBugType = bugTypes[0] || configuredBugTypes[0] || null
+      let d = {
+        entrance_hole_pos: this.entranceHolePos,
+        exit_hole_pos: this.exitHolePos,
+        canvas_size: [this.canvas.width, this.canvas.height],
+        bug_type: primaryBugType,
+        bug_types: bugTypes.length > 0 ? bugTypes : configuredBugTypes
+      }
+      if (this.bugsSettings.bugMappedBackground) {
+        d['bug_mapped_background'] = this.bugsSettings.bugMappedBackground
+        d['is_split_background'] = this.isSplitBugsView
+        if (this.isSplitBugsView && this.$refs.bugChild && this.$refs.bugChild.length >= 2) {
+          d['background_colors'] = {
+            left: this.getBugMappedBackgroundColor(this.$refs.bugChild[0].currentBugType),
+            right: this.getBugMappedBackgroundColor(this.$refs.bugChild[1].currentBugType)
+          }
+        } else if (this.$refs.bugChild && this.$refs.bugChild.length > 0) {
+          d['background_color'] = this.getBugMappedBackgroundColor(this.$refs.bugChild[0].currentBugType)
+        }
+      }
+      let bug = this.$refs.bugChild[0]
+      if (bug.isMoveInCircles) {
+        d['circle_radius'] = bug.r
+        d['circle_position'] = bug.r0
+      }
+      if (bug.isAccelerateMovement || bug.isCircleAccelerateMovement) {
+        d['accelerate_multiplier'] = this.bugsSettings.accelerateMultiplier
+      }
+      return d
+    },
+
+    recordCustomTrajectory(sample) {
+      if (
+      this.isCustomBugs &&
+      this.trialData.start_time &&
+      !this.trialData.end_time &&
+      this.bugsProps.length > 0 &&
+      this.bugsSettings.isLogTrajectory &&
+      sample.trial_id === this.bugsSettings.trialDBId
+      ) {
+        this.bugTrajectoryLog.push(sample)
+      }
+    }
+  }
+}
+</script>
+<style scoped>
+#bugCanvas {
+  padding: 0;
+  z-index: 1;
+  display: block;
+  position: absolute;
+  bottom: 0;
+  top: auto;
+}
+#bugs-board {
+  position: fixed;           /* fill the whole display                   */
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+}
+#backgroundCanvas {
+  position: absolute;        /* match bugCanvas so they overlap perfectly*/
+  top: 0;
+  left: 0;
+  display: block;            /* remove inline‑block whitespace           */
+}
+</style>

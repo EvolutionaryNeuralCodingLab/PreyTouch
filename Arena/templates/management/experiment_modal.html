@@ -73,6 +73,8 @@
                             </select>
                         </div>
                     </div>
+                    {% include "management/custom-bugs-options.html" %}
+
                     <div class="form-group row pr-3 bugs-options{{i}}">
                         <label for="numOfBugs{{i}}" class="col col-form-label">Number of Bugs</label>
                         <div class="col-sm-5">
@@ -266,7 +268,8 @@
                             <input type="color" class="form-control" id="backgroundColor{{i}}" value="#e8eaf6">
                         </div>
                         <div class="col-sm-2">
-                            <button type="button" class="btn btn-outline-secondary btn-sm" id="bugMappedBackgroundBtn{{i}}" onclick="openBugMappedBackgroundDialog({{i}})">...</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="bugMappedBackgroundBtn{{i}}" 
+                            onclick="openBugMappedBackgroundDialog({i})">...</button>
                         </div>
                     </div>
                     
@@ -281,7 +284,7 @@
                         <label for="tunnelImage{{i}}" class="col col-form-label">Tunnel Image</label>
                         <div class="col-sm-5">
                             <select class="form-control" id="tunnelImage{{i}}">
-                                <option value="">Default (Parsley)</option>
+                                <option value="">Default</option>
                                 {% for asset in tunnel_assets %}
                                 <option value="{{ asset }}">{{ asset }}</option>
                                 {% endfor %}

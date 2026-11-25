@@ -206,6 +206,31 @@
 
     $("#init_bugs").click(function (e) {
         let blockValues = new Block(1).values
+        if (blockValues.block_type == 'custom bugs') {
+            if ($('#customCsvFiles1').data('pendingUploads') > 0) {
+                alert('Wait for the CSV upload to finish')
+                return
+            }
+
+            const payload = {
+                movementType: 'custom',
+                bugFps: blockValues.bug_fps,
+                backgroundColor: blockValues.background_color || '#e8eaf6',
+                trajectoryFiles: blockValues.trial_trajectories,
+                shuffle: blockValues.trajectory_mode === 'shuffle'
+            }
+
+            $.ajax({
+                url: '/init_custom_bugs',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(payload)
+            }).fail(xhr => {
+                const message = xhr.responseJSON && xhr.responseJSON.error
+                alert(message || 'Could not start custom bugs')
+            })
+            return
+        }
         // let animalSettingsValues = AnimalIDFields.values
         let payload = {
             numOfBugs: blockValues.num_of_bugs,

@@ -22,12 +22,49 @@ class NumericalField extends Field {
   }
 }
 
+class BugFpsField extends Field {
+  get value() {
+    if (super.value === 'native') {
+      return 'native'
+    }
+    return Number($(`#customFpsValue${this.blockId}`).val())
+  }
+
+  set value(val) {
+    if (val === 'native') {
+      super.value = 'native'
+    } else {
+      $(`#customFpsValue${this.blockId}`).val(val)
+      super.value = 'custom'
+    }
+  }
+}
+
 class CheckField extends Field {
   get value() {
     return this.obj.is(":checked")
   }
   set value(val) {
     this.obj.prop('checked', val).trigger('change')
+  }
+}
+
+class RadioField extends Field {
+  constructor(objName, blockId, conditions) {
+    super(objName, blockId, conditions)
+    const name = blockId ? `${objName}${blockId}` : objName
+    this.obj = $(`input[name="${name}"]`)
+  }
+
+  get value() {
+    return this.obj.filter(':checked').val()
+  }
+
+  set value(val) {
+    this.obj.each(function () {
+      this.checked = this.value === val
+    })
+    this.obj.filter(':checked').trigger('change')
   }
 }
 
@@ -70,6 +107,16 @@ class BugMappedBackgroundField extends Field {
     } else {
       super.value = '{}'
     }
+  }
+}
+
+class CustomTrajectoriesField extends Field {
+  get value() {
+    return this.obj.data('trajectories') || []
+  }
+
+  set value(trajectories) {
+    renderCustomTrajectories(this.blockId, trajectories || [])
   }
 }
 
@@ -161,11 +208,17 @@ const Blocks = {
     return blocks
   },
   set values(blocksValues) {
-    mainFields.num_blocks.getField().value = blocksValues.length
-    for (let i = 1; i <= blocksValues.length; i++) {
-      let block = new Block(i)
-      block.values = blocksValues[i - 1]
-    }
+      mainFields.num_blocks.getField().value = blocksValues.length
+
+      for (let i = 1; i <= blocksValues.length; i++) {
+          const {block_type: blockType, ...values} = blocksValues[i - 1]
+
+          if (blockType) {
+              blockFields.main.block_type.getField(i).value = blockType
+          }
+
+          new Block(i).values = values
+      }
   }
 }
 
@@ -295,7 +348,17 @@ const blockFields = {
   },
   blank: {
     blank_rec_type: new FieldObject('blankRecSelect', Field)
-  }
+  },
+  'custom bugs': {
+    trial_trajectories: new FieldObject(
+      'customCsvList',
+      CustomTrajectoriesField
+    ),
+    background_color: new FieldObject('backgroundColor', Field),
+    bug_fps: new FieldObject('customFpsMode', BugFpsField),
+    trajectory_mode: new FieldObject('customTrialMode', RadioField)
+
+  },
 }
 
 const _animalIDFiels = {

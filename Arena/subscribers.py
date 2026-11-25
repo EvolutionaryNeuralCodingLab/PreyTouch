@@ -95,7 +95,7 @@ class ExperimentLogger(Subscriber):
         self.ws = None
         for _ in range(3):
             try:
-                self.ws = connect(config.WEBSOCKET_URL)
+                self.ws = connect(config.WEBSOCKET_URL, max_size=2**24)
             except ConnectionRefusedError:
                 time.sleep(2)
         if self.ws is None:
@@ -321,7 +321,10 @@ class TrialDataLogger(ExperimentLogger):
     def save_to_csv(self, payload, filename=None):
         for key, csv_path in self.config["csv_file"].items():
             if key == 'trials_data':
-                payload_ = {k: v for k, v in payload.items() if k not in ['bug_trajectory', 'video_frames', 'app_events']}
+                payload_ = {k: v for k, v in payload.items() if k not in [
+                        'bug_trajectory', 'bug_trajectory_animation',
+                        'video_frames', 'app_events'
+                    ]}
             else:
                 payload_ = payload.get(key)
                 
@@ -329,6 +332,11 @@ class TrialDataLogger(ExperimentLogger):
                 super().save_to_csv(payload_, filename=csv_path)
 
     def commit_to_db(self, payload):
+        if payload.get('movement_type') == 'custom':
+            payload = {
+                key: value for key, value in payload.items()
+                if key not in ('bug_trajectory', 'bug_trajectory_animation')
+            }
         self.orm.update_trial_data(payload)
 
 
@@ -543,7 +551,7 @@ class WebSocketPublisher(Subscriber):
         self.ws = None
         for _ in range(3):
             try:
-                self.ws = connect(config.WEBSOCKET_URL)
+                self.ws = connect(config.WEBSOCKET_URL, max_size=2**24)
             except ConnectionRefusedError:
                 time.sleep(2)
         if self.ws is None:

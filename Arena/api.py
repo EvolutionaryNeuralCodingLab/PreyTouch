@@ -22,7 +22,9 @@ from flask import Flask, render_template, Response, request, send_from_directory
 import sentry_sdk
 import utils
 from cache import RedisCache, CacheColumns as cc
-import utils
+from uuid import uuid4
+from math import isfinite
+from random import choice
 from experiment import ExperimentCache
 from arena import ArenaManager
 from loggers import init_logger_config, create_arena_handler
@@ -36,6 +38,7 @@ from analysis.strikes.loader import Loader
 from analysis.strikes.strikes import StrikeAnalyzer
 import matplotlib
 matplotlib.use('Agg')
+from custom_bugs import parse_trajectory_csv
 
 
 def _load_config_module():
@@ -210,6 +213,67 @@ def stop_experiment():
         return Response(f'ending experiment {experiment_name}...')
     return Response('No available experiment')
 
+@app.route('/upload_custom_trajectory', methods=['POST'])
+def upload_custom_trajectory():
+    uploaded = request.files.get('file')
+    if uploaded is None or not uploaded.filename:
+        return jsonify(error='Select a trajectory CSV'), 400
+
+    if Path(uploaded.filename).suffix.lower() != '.csv':
+        return jsonify(
+            error='The trajectory file must have a .csv extension'
+        ), 400
+
+    content = uploaded.read()
+
+    try:
+        rows = parse_trajectory_csv(content.decode('utf-8-sig'))
+    except UnicodeDecodeError:
+        return jsonify(error='The CSV must use UTF-8 encoding'), 400
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+
+    upload_dir = (
+        Path(config.EXPERIMENTS_DIR) / 'custom-bugs-inputs'
+    ).resolve()
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    path = upload_dir / f'{uuid4().hex}.csv'
+    with path.open('xb') as saved_file:
+        saved_file.write(content)
+
+    return jsonify(
+        name=uploaded.filename,
+        path=str(path),
+        row_count=len(rows)
+    )
+
+def load_manual_custom_trajectories(trajectory_files, shuffle=False):
+    if not isinstance(trajectory_files, list) or not trajectory_files:
+        raise ValueError('Select at least one trajectory CSV in block 1')
+
+    upload_dir = (Path(config.EXPERIMENTS_DIR) / 'custom-bugs-inputs').resolve()
+    indices = range(len(trajectory_files))
+    if shuffle:
+        indices = [choice(indices)]  # One manual click previews one shuffled trial.
+
+    trajectories = []
+    for index in indices:
+        item = trajectory_files[index]
+        if not isinstance(item, dict) or not isinstance(item.get('path'), str) or not item['path']:
+            raise ValueError(f'Trajectory {index + 1} is missing its saved CSV path')
+
+        path = Path(item['path']).resolve()
+        if path.parent != upload_dir or path.suffix.lower() != '.csv':
+            raise ValueError(f'Trajectory {index + 1} must be an uploaded CSV')
+
+        trajectories.append({
+            'id': index,
+            'name': item.get('name') or path.name,
+            'rows': parse_trajectory_csv(path.read_text(encoding='utf-8-sig'))
+        })
+
+    return trajectories
 
 @app.route('/commit_schedule', methods=['POST'])
 def commit_schedule():
@@ -595,6 +659,8 @@ def arena_switch(name, state):
 def display(state):
     if state == 'off':
         stdout = utils.turn_display_off(logger=arena_mgr.logger)
+    elif request.args.get('board') == 'custom_holes':
+        stdout = utils.turn_display_on(board='custom_holes', logger=arena_mgr.logger)
     else:
         stdout = utils.turn_display_on(logger=arena_mgr.logger)
     return Response('ok')
@@ -648,6 +714,28 @@ def init_bugs():
     if request.method == 'POST':
         cache.publish_command('init_bugs', request.data.decode())
         arena_mgr.logger.info(f'Start bugs with: {request.data.decode()}')
+    return Response('ok')
+
+@app.route('/init_custom_bugs', methods=['POST'])
+def init_custom_bugs():
+    options = request.get_json()
+    if not isinstance(options, dict):
+        return jsonify(error='Expected custom bug settings'), 400
+
+    fps = options.get('bugFps')
+    if fps != 'native' and (type(fps) not in (int, float) or not isfinite(fps) or fps <= 0):
+        return jsonify(error='Bug FPS must be native or a positive number'), 400
+
+    try:
+        options['trajectories'] = load_manual_custom_trajectories(
+            options.pop('trajectoryFiles', None),
+            shuffle=options.pop('shuffle', False) is True
+        )
+    except (OSError, ValueError) as exc:
+        return jsonify(error=str(exc)), 400
+
+    options['hitRadiusScale'] = config.HIT_RADIUS_SCALE
+    cache.publish_command('init_bugs', json.dumps(options))
     return Response('ok')
 
 

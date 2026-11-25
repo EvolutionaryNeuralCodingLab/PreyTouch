@@ -6,6 +6,7 @@ import VueRouter from 'vue-router'
 import App from './App'
 import tunnelBoard from './components/boards/tunnelBoard.vue'
 import holesBoard from './components/boards/holesBoard.vue'
+import customBoard from './components/boards/customBoard.vue'
 import store from './store'
 import {webSocket} from './js/websocket'
 import mediaBoard from "./components/boards/mediaBoard.vue"
@@ -31,6 +32,7 @@ const routes = [
     { path: '/', component: PageNotFound },
     { path: '/tunnel', component: tunnelBoard},
     { path: '/holes', component: holesBoard},
+    { path: '/custom_holes', component: customBoard},
     { path: '/media', component: mediaBoard}
 ]
 const router = new VueRouter({

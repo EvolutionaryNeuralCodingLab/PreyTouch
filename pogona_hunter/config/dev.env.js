@@ -11,4 +11,5 @@ module.exports = merge(prodEnv, {
   BUG_TYPES: '[ "red_cockroach", "green_cockroach"]',
   REWARD_BUGS: '"green_cockroach"',
   RANDOMIZE_TIMING: 1,
+  DEFAULT_CUSTOM_BUG_TYPE: '"worm"',
 })

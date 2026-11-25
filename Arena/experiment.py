@@ -32,7 +32,7 @@ from utils import (
 from subscribers import Subscriber, start_experiment_subscribers
 from periphery_integration import PeripheryIntegrator
 from db_models import ORM, Experiment as Experiment_Model, Strike
-
+from custom_bugs import copy_trajectories_to_block, parse_trajectory_csv
 
 @dataclass
 class Experiment:
@@ -110,7 +110,6 @@ class Experiment:
             if not config.IS_CHECK_SCREEN_MAPPING:
                 # if you don't check the screen's mapping, map it again in each experiment
                 self.exp_validation.map_touchscreen_to_hdmi(is_display_on=True)
-
             try:
                 for i, block in enumerate(self.blocks):
                     if i > 0:
@@ -118,6 +117,11 @@ class Experiment:
                     block.start()
             except EndExperimentException as exc:
                 self.logger.warning(f'Experiment stopped externally; {exc}')
+            finally:
+                self.turn_screen('off')  # Also close the screen after an unexpected trial error.
+                time.sleep(3)
+                self.orm.update_experiment_end_time()
+                self.cache.publish_command('end_experiment')
 
             self.turn_screen('off')
             time.sleep(3)
@@ -191,6 +195,10 @@ class Experiment:
             app_config = json.load(f)
 
         block_type = self.blocks[0].block_type
+        
+        if block_type == 'custom bugs':
+            return 'custom_holes'
+
         if block_type in ['psycho', 'blank', 'media']:
             return block_type
         curr_mt = self.blocks[0].movement_type
@@ -253,6 +261,10 @@ class Block:
     tunnel_rotation: float = None
     tunnel_scale: float = None
     tunnel_opacity: float = None
+
+    trial_trajectories: list = field(default_factory=list)
+    bug_fps: Union[str, float] = 60
+    trajectory_mode: str = 'all'
 
     media_url: str = ''
 
@@ -362,6 +374,8 @@ class Block:
             self.create_bugs_order()
 
         special_trials = self.init_special_trials()
+        if self.block_type == 'custom bugs':
+            self.create_trajectory_order()
         for trial_id in range(1, self.num_trials + 1):
             self._run_one_trial(trial_id, special_trials=special_trials)
             self.wait(self.iti, trial_id, label='ITI')
@@ -374,6 +388,12 @@ class Block:
 
     def init_block(self):
         mkdir(self.block_path)
+        if self.block_type == 'custom bugs':
+            self.trial_trajectories = copy_trajectories_to_block(
+                self.trial_trajectories,
+                self.block_path
+            )
+
         self.save_block_log_files()
         self.cache.set(cc.EXPERIMENT_BLOCK_ID, self.block_id, timeout=self.overall_block_duration)
         self.cache.set(cc.EXPERIMENT_BLOCK_PATH, self.block_path, timeout=self.overall_block_duration + self.iti)
@@ -501,6 +521,35 @@ class Block:
 
         return combined_bugs
 
+    def create_trajectory_order(self) -> list:
+        """Prepare trajectory indices for each trial."""
+        indices = list(range(len(self.trial_trajectories)))
+        if not indices:
+            raise EndExperimentException(
+                'Custom bugs requires at least one trajectory CSV'
+            )
+
+        if self.trajectory_mode == 'all':
+            order = [indices.copy() for _ in range(self.num_trials)]
+
+        elif self.trajectory_mode == 'shuffle':
+            order = []
+            while len(order) < self.num_trials:
+                cycle = indices.copy()
+                random.shuffle(cycle)
+                order.extend([[index] for index in cycle])
+
+            order = order[:self.num_trials]
+
+        else:
+            raise EndExperimentException(
+                f'Unknown custom bugs trajectory mode: {self.trajectory_mode}'
+            )
+
+        self.trial_trajectory_order = order
+        return order
+
+
     @staticmethod
     def get_screen_resolution():
         screen_resolution = getattr(config, 'SCREEN_RESOLUTION', '1920,1080')
@@ -602,9 +651,11 @@ class Block:
             self.run_psycho()
             self.cache.set(cc.IS_VISUAL_APP_ON, True, timeout=int(self.trial_duration)+10)
 
-        if self.block_type in ['bugs', 'media']:
+        if self.block_type in ['bugs', 'custom bugs', 'media']:
             if self.is_media_block:
                 command, options = 'init_media', self.media_options
+            elif self.block_type == 'custom bugs':
+                command, options = 'init_bugs', self.custom_bug_options(trial_id)
             else:
                 command, options = 'init_bugs', self.bug_options
                 if self.is_random_low_horizontal:
@@ -796,6 +847,36 @@ class Block:
         return {
             'trialID': 1,  # default value, changed in init_media,
             'url': f'{config.MANAGEMENT_URL}/media/{self.media_url}'
+        }
+
+    def custom_bug_options(self, trial_id: int) -> dict:
+        trajectories = []
+
+        for index in self.trial_trajectory_order[trial_id - 1]:
+            trajectory = self.trial_trajectories[index]
+            csv_text = Path(trajectory['path']).read_text(
+                encoding='utf-8-sig'
+            )
+
+            trajectories.append({
+                'id': index,
+                'name': trajectory['name'],
+                'rows': parse_trajectory_csv(csv_text)
+            })
+
+        return {
+            'trajectories': trajectories,
+            'bugFps': self.bug_fps,
+            'trialDuration': self.trial_duration,
+            'backgroundColor': self.background_color,
+            'hitRadiusScale': self.hit_radius_scale,
+            'movementType': 'custom',
+            'numOfBugs': len(trajectories),
+            'isSplitBugsView': False,
+            'bugMappedBackground': {},
+            'rewardAnyTouchProb': 0,
+            'holesHeightScale': self.holes_height_scale,
+            'isLogTrajectory': True,
         }
 
     @property

@@ -1,0 +1,65 @@
+<div class="custom-options{{i}}" style="display:none">
+    <div class="form-group row pr-3">
+        <label for="customCsvFiles{{i}}" class="col col-form-label">
+            Load CSVs
+        </label>
+        <div class="col">
+            <button type="button" class="btn btn-sm btn-outline-secondary"
+                    onclick="document.getElementById('customCsvFiles{{i}}').click()">
+                Browse…
+            </button>
+            <input type="file" id="customCsvFiles{{i}}" accept=".csv" multiple hidden>
+        </div>
+    </div>
+
+    <p>Each CSV defines one bug trajectory.</p>
+
+    <p>
+        Uploaded trajectories:
+        <strong id="customTotal{{i}}">0</strong>
+    </p>
+
+    <ul id="customCsvList{{i}}" class="list-group mb-3"></ul>
+
+    <div class="form-group">
+        <div class="form-check">
+            <input type="radio" class="form-check-input"
+                   name="customTrialMode{{i}}" id="customAllBugs{{i}}"
+                   value="all" checked>
+            <label for="customAllBugs{{i}}" class="form-check-label">
+                All bugs trajectories in each trial
+            </label>
+        </div>
+
+        <div class="form-check">
+            <input type="radio" class="form-check-input"
+                   name="customTrialMode{{i}}" id="customShuffleBugs{{i}}"
+                   value="shuffle">
+            <label for="customShuffleBugs{{i}}" class="form-check-label">
+                Shuffled bug per trial
+            </label>
+        </div>
+    </div>
+
+    <div class="form-group row pr-3">
+        <label for="customFpsMode{{i}}" class="col col-form-label">
+            Playback mode
+        </label>
+        <div class="col">
+            <select id="customFpsMode{{i}}" class="form-control">
+                <option value="custom" selected>Custom FPS</option>
+                <option value="native">Pogona Hunter native</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="form-group row pr-3" id="customFpsValueDiv{{i}}">
+        <label for="customFpsValue{{i}}" class="col col-form-label">
+            Bug FPS
+        </label>
+        <div class="col-sm-5">
+            <input type="number" class="form-control"
+                   id="customFpsValue{{i}}" value="10" step="any">
+        </div>
+    </div>
+</div>

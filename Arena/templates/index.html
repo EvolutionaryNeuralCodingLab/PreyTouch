@@ -18,6 +18,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.js" type="text/javascript"></script>
     <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.min.js"></script>
     <script src="{{ url_for('static', filename='fields.js') }}" type="text/javascript"></script>
+    <script src="{{ url_for('static', filename='experiment-uploads.js') }}" type="text/javascript"></script>
     <script src="{{ url_for('static', filename='WebSocketClient.js') }}" type="text/javascript"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.4.0/css/font-awesome.css" rel="stylesheet">
     <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.0/moment.min.js"></script>
@@ -345,16 +346,24 @@
         })
 
         $displayToggle.change(() => {
-           if (isToggleDisplayCheckPause || $displayToggle.prop('disabled')) {
-               return
-           }
-           isToggleDisplayCheckPause = true
-           let requestedState = $displayToggle.prop('checked') ? 'on' : 'off'
-           $.get(`/display/${requestedState}`).done(() => {
-                setTimeout(() => {
-                  isToggleDisplayCheckPause = false
-                }, apiCheckTimeout)
-           })
+            if (isToggleDisplayCheckPause || $displayToggle.prop('disabled')) {
+                return
+            }
+            isToggleDisplayCheckPause = true
+            const requestedState = $displayToggle.prop('checked') ? 'on' : 'off'
+            let displayUrl = `/display/${requestedState}`
+
+            if (requestedState === 'on' && isCustomBugsExperiment(1)) {
+                displayUrl += '?board=custom_holes'
+            }
+
+            $.get(displayUrl)
+                .fail(xhr => console.error('Display request failed', xhr.status))
+                .always(() => {
+                    setTimeout(() => {
+                        isToggleDisplayCheckPause = false
+                    }, apiCheckTimeout)
+                })
         })
 
         for (let toggle of peripheryToggles) {
@@ -475,6 +484,41 @@
 
         // Inside block listeners
         for (let i = 1; i <= maxBlocks; i++) {
+            // load csvs, one at a time
+             $(`#customCsvFiles${i}`).change(async function () {
+                const $input = $(this)
+                const files = Array.from(this.files)
+
+                $input.val('')
+                $input.data(
+                    'pendingUploads',
+                    ($input.data('pendingUploads') || 0) + files.length
+                )
+
+                for (const file of files) {
+                    try {
+                        const trajectory = await uploadCustomTrajectory(file)
+                        const trajectories =
+                            $(`#customCsvList${i}`).data('trajectories') || []
+
+                        renderCustomTrajectories(
+                            i,
+                            [...trajectories, trajectory]
+                        )
+                    } catch (error) {
+                        const message = error.responseJSON
+                            ? error.responseJSON.error
+                            : 'Could not upload the CSV'
+
+                        alert(`${file.name}: ${message}`)
+                    } finally {
+                        $input.data(
+                            'pendingUploads',
+                            $input.data('pendingUploads') - 1
+                        )
+                    }
+                }
+            })
             // bug types listener
             let $bugType = $(`#bugTypeSelect${i}`)
             $bugType.bsMultiSelect()
@@ -588,8 +632,31 @@
                 }
             }).trigger('change')
 
+            $(`#customFpsMode${i}`).change(function () {
+                const useCustomFps = this.value === 'custom'
+                $(`#customFpsValueDiv${i}`).toggle(useCustomFps)
+                $(`#customFpsValue${i}`).prop(
+                    'disabled',
+                    !isCustomBugsExperiment(i) || !useCustomFps
+                )
+            })
+
             $(`#blockTypeSelect${i}`).change(function () {
-                if (isMediaExperiment(i)) {
+                const isCustom = isCustomBugsExperiment(i)
+
+                $(`.custom-options${i}`).toggle(isCustom)
+                $(`.custom-options${i} :input`).prop('disabled', !isCustom)
+                $(`#bugMappedBackgroundBtn${i}`).toggle(!isCustom)
+                $(`#customFpsMode${i}`).trigger('change')
+
+                if (isCustom) {
+                    $(`.trial-options${i}`).show()
+                    $(`.bugs-options${i}`).hide()
+                    $(`.media-options${i}`).hide()
+                    $(`.psycho-options${i}`).hide()
+                    $(`.blank-options${i}`).hide()
+                    $(`#backgroundColorDiv${i}`).show()
+                } else if (isMediaExperiment(i)) {
                     $(`.trial-options${i}`).show()
                     $(`.media-options${i}`).show()
                     $(`.bugs-options${i}`).hide()
@@ -672,6 +739,10 @@
         let saveExperimentModal$ = $('#saveExperimentModal')
 
         $startExpButton.click(function (event) {
+            if (hasPendingCustomUploads()) {
+                alert('Please wait for the CSV uploads to finish.')
+                return
+            }
             $.ajax({
                 url: "/start_experiment",
                 type: "POST",
@@ -685,6 +756,10 @@
         });
 
         $("#saveExperiment").click(() => {
+            if (hasPendingCustomUploads()) {
+                alert('Please wait for the CSV uploads to finish.')
+                return
+            }
             let params = AllFields.values
             console.log(params)
             params['name'] = $('#saveExperimentName').val()
@@ -795,6 +870,27 @@
 
         function isPsychoExperiment(i) {
             return $(`#blockTypeSelect${i}`).val() === 'psycho'
+        }
+
+        function isCustomBugsExperiment(i) {
+            return $(`#blockTypeSelect${i}`).val() === 'custom bugs'
+        }
+
+        function hasPendingCustomUploads() {
+            const numBlocks = $('#isIdenticalBlocks').is(':checked')
+                ? 1
+                : Number($('#numBlocks').val())
+
+            for (let i = 1; i <= numBlocks; i++) {
+                const pending =
+                    $(`#customCsvFiles${i}`).data('pendingUploads') || 0
+
+                if (isCustomBugsExperiment(i) && pending > 0) {
+                    return true
+                }
+            }
+
+            return false
         }
 
         function getCheckedCameras() {
